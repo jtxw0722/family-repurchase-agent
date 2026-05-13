@@ -1,0 +1,42 @@
+# Java / Maven
+target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.descriptions.xml
+AlibabaUndefineMagicConstant.xml
+AliDeprecation.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+data/*.sqlite
+data/*.sqlite-*
+data/*.db
+data/*.db-*
+data/inbox/*
+!data/inbox/.gitkeep
+
+# Generated reports
+reports/*.md
+!reports/.gitkeep
+!examples/sample_report.md
+
+# Logs
+*.log
+logs/
+
+# Temp
+*.tmp
+*.temp
+.cache/

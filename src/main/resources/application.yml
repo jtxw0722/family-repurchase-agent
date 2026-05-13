@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:sqlite:./data/family-consumption.sqlite
+    driver-class-name: org.sqlite.JDBC
+  main:
+    banner-mode: off
+
+server:
+  port: 8080
+
+family-agent:
+  allowed-data-dirs:
+    - ./examples
+    - ./data/inbox
+  reports-dir: ./reports

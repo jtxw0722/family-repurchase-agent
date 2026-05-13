@@ -1,0 +1,197 @@
+# Family Consumption Agent
+
+本地优先的家庭消耗品复购分析工具。
+
+它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成月度消费报告。
+
+当前版本是一个 Spring Boot 后端 MVP，提供 REST Tool API 和 CLI 辅助入口。后续可以作为 Tool Server 接入 OpenClaw / Codex / Claude Code / Spring AI。
+
+## 功能
+
+- CSV 订单导入
+- SQLite 本地存储
+- 商品名称归一化
+- 单位价格计算
+- 当前价格与历史价格对比
+- 实付为 0 等异常记录进入待复核列表
+- Markdown 月度报告生成
+- REST Tool API
+- CLI 辅助命令
+
+## 技术栈
+
+| 类型 | 选型 |
+|---|---|
+| 语言 | Java 17+ |
+| 框架 | Spring Boot 3.x |
+| 数据库 | SQLite |
+| 文件导入 | Apache Commons CSV |
+| 测试 | JUnit 5 |
+| 构建 | Maven |
+
+## 快速开始
+
+环境要求：
+
+```bash
+java -version
+mvn -version
+```
+
+需要 JDK 17+ 和 Maven 3.8+。
+
+运行测试：
+
+```bash
+mvn test
+```
+
+打包并启动：
+
+```bash
+mvn package
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar
+```
+
+服务启动后会自动准备本地目录和 SQLite 数据库：
+
+```text
+data/family-consumption.sqlite
+data/inbox/
+reports/
+```
+
+默认服务地址：
+
+```text
+http://localhost:8080
+```
+
+## REST API
+
+导入订单：
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/import-file" `
+  -H "Content-Type: application/json" `
+  -d "{\"filePath\":\"examples/sample_orders.csv\"}"
+```
+
+判断价格：
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/compare-price" `
+  -H "Content-Type: application/json" `
+  -d "{\"productName\":\"猫砂\",\"price\":89,\"quantity\":12,\"unit\":\"kg\"}"
+```
+
+生成报告：
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/generate-report" `
+  -H "Content-Type: application/json" `
+  -d "{\"month\":\"2026-05\"}"
+```
+
+查看待复核记录：
+
+```powershell
+curl "http://localhost:8080/api/tools/review-items"
+```
+
+## CLI
+
+```bash
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import examples/sample_orders.csv
+
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
+
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar report --month=2026-05
+
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review list
+```
+
+## 项目结构
+
+```text
+src/main/java/com/jtxw/familyagent/
+├── application/        # 应用服务
+├── domain/             # 领域模型与规则
+├── infrastructure/     # 数据库、导入、报告输出
+└── interfaces/         # REST API 和 CLI
+
+src/main/resources/
+├── application.yml
+└── db/schema.sql
+
+examples/               # 合成示例数据
+docs/                   # 项目文档
+adapters/               # Agent Host 适配示例
+evals/                  # 评测用例
+```
+
+## 数据口径
+
+默认只统计可信记录：
+
+```text
+decision = include
+is_duplicate = 0
+dedupe_status = unique
+```
+
+以下记录会优先进入待复核：
+
+- 实付金额为 0
+- 数量或规格无法解析
+- 疑似重复订单
+- 赠品、试用、售后补发
+- 购物金、礼品卡、组合支付等需要折算的记录
+
+## 隐私边界
+
+项目默认本地运行，订单数据保存在本机 SQLite 中。
+
+不做：
+
+- 登录电商平台
+- 读取 Cookie 或浏览器会话
+- 爬取购物网站
+- 自动下单
+- 上传真实订单数据
+
+`examples/` 只放合成示例数据，不提交真实订单、手机号、地址、订单号或支付流水。
+
+## Roadmap
+
+### v0.1
+
+- [x] Spring Boot 项目骨架
+- [x] SQLite 自动初始化
+- [x] CSV 导入
+- [x] 单位价格计算
+- [x] 价格对比
+- [x] Markdown 报告
+- [x] 待复核记录
+- [x] REST Tool API
+- [x] CLI 辅助入口
+
+### v0.2
+
+- [ ] 人工复核 apply 流程
+- [ ] 重复订单检测
+- [ ] Excel 导入
+- [ ] 购物金 / 礼品卡折算
+- [ ] 报告模板增强
+
+### v0.3+
+
+- [ ] MCP Server
+- [ ] OpenClaw Plugin 原型
+- [ ] Codex Skill 示例
+- [ ] Claude Code Subagent 示例
+- [ ] Spring AI Tool Calling
+
+## License
+
+MIT
