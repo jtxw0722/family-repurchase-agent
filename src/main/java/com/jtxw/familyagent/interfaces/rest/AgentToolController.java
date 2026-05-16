@@ -7,14 +7,17 @@ import com.jtxw.familyagent.application.ReviewApplicationService;
 import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.MonthlyReportResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Author: jtxw
@@ -59,7 +62,19 @@ public class AgentToolController {
         return reviewApplicationService.listPending();
     }
 
+    @PostMapping("/review-items/{id}/apply")
+    public ReviewApplyResult applyReview(@PathVariable long id, @Valid @RequestBody ReviewApplyRequest request) {
+        return reviewApplicationService.apply(id, request.action(), request.note());
+    }
+
     public record ImportFileRequest(@NotBlank String filePath) {}
     public record ComparePriceRequest(@NotBlank String productName, @Positive double price, @Positive double quantity, @NotBlank String unit) {}
     public record GenerateReportRequest(@NotBlank String month) {}
+    public record ReviewApplyRequest(@NotBlank String action, String note) {}
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    public Map<String, String> handleBadRequest(RuntimeException exception) {
+        return Map.of("error", exception.getMessage());
+    }
 }

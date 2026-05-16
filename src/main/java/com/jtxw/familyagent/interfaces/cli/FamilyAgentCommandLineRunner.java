@@ -7,6 +7,7 @@ import com.jtxw.familyagent.application.ReviewApplicationService;
 import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.MonthlyReportResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import org.springframework.boot.ApplicationArguments;
@@ -59,7 +60,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
                 case "import" -> importFile(sourceArgs);
                 case "price" -> price(sourceArgs, args);
                 case "report" -> report(args);
-                case "review" -> review(sourceArgs);
+                case "review" -> review(sourceArgs, args);
                 default -> printHelp();
             }
         } finally {
@@ -117,7 +118,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         System.out.println("待复核记录：" + result.pendingReviewCount() + " 条");
     }
 
-    private void review(List<String> sourceArgs) {
+    private void review(List<String> sourceArgs, ApplicationArguments args) {
         if (sourceArgs.size() >= 2 && "list".equals(sourceArgs.get(1))) {
             List<ReviewItem> items = reviewApplicationService.listPending();
             if (items.isEmpty()) {
@@ -130,7 +131,19 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
             }
             return;
         }
-        System.out.println("用法：review list");
+        if (sourceArgs.size() >= 3 && "apply".equals(sourceArgs.get(1))) {
+            long reviewId = Long.parseLong(sourceArgs.get(2));
+            String action = getString(args, "action", null);
+            String note = getString(args, "note", null);
+            ReviewApplyResult result = reviewApplicationService.apply(reviewId, action, note);
+            System.out.println(result.message());
+            System.out.println("复核 ID：" + result.reviewId());
+            System.out.println("记录 ID：" + result.recordId());
+            System.out.println("动作：" + result.action());
+            System.out.println("统计决策：" + result.decision());
+            return;
+        }
+        System.out.println("用法：review list | review apply <id> --action=include|exclude [--note=说明]");
     }
 
     private void printHelp() {
@@ -141,6 +154,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         System.out.println("  price <商品名> --price <金额> --quantity <数量> --unit <单位>");
         System.out.println("  report --month YYYY-MM");
         System.out.println("  review list");
+        System.out.println("  review apply <id> --action=include|exclude [--note <说明>]");
     }
 
     private double getDouble(ApplicationArguments args, String name) {

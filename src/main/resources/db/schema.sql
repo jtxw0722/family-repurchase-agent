@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS review_items (
     reason_code TEXT NOT NULL,
     reason_message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    review_decision TEXT,
+    review_note TEXT,
     created_at TEXT NOT NULL,
     resolved_at TEXT
 );

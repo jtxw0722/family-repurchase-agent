@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * @Author: jtxw
@@ -44,8 +45,22 @@ public class DatabaseInitializer implements ApplicationRunner {
                     jdbcTemplate.execute(trimmed);
                 }
             }
+            ensureReviewItemColumns();
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
+        }
+    }
+
+    private void ensureReviewItemColumns() {
+        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(review_items)")
+                .stream()
+                .map(row -> String.valueOf(row.get("name")))
+                .toList();
+        if (!columns.contains("review_decision")) {
+            jdbcTemplate.execute("ALTER TABLE review_items ADD COLUMN review_decision TEXT");
+        }
+        if (!columns.contains("review_note")) {
+            jdbcTemplate.execute("ALTER TABLE review_items ADD COLUMN review_note TEXT");
         }
     }
 

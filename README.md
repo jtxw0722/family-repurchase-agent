@@ -99,6 +99,14 @@ curl -X POST "http://localhost:8080/api/tools/generate-report" `
 curl "http://localhost:8080/api/tools/review-items"
 ```
 
+应用复核结果：
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
+  -H "Content-Type: application/json" `
+  -d "{\"action\":\"exclude\",\"note\":\"试用装，不纳入正式统计\"}"
+```
+
 ## CLI
 
 ```bash
@@ -109,6 +117,8 @@ java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar price "猫砂" --pr
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar report --month=2026-05
 
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review list
+
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
 ```
 
 ## 项目结构
@@ -178,7 +188,7 @@ dedupe_status = unique
 
 ### v0.2
 
-- [ ] 人工复核 apply 流程
+- [x] 人工复核 apply 流程
 - [ ] 重复订单检测
 - [ ] Excel 导入
 - [ ] 购物金 / 礼品卡折算

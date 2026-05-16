@@ -11,6 +11,8 @@ public class ReviewItem {
     private final String reasonCode;
     private final String reasonMessage;
     private final String status;
+    private final String reviewDecision;
+    private final String reviewNote;
     private final String createdAt;
     private final String resolvedAt;
 
@@ -19,6 +21,8 @@ public class ReviewItem {
                       String reasonCode,
                       String reasonMessage,
                       String status,
+                      String reviewDecision,
+                      String reviewNote,
                       String createdAt,
                       String resolvedAt) {
         this.id = id;
@@ -26,6 +30,8 @@ public class ReviewItem {
         this.reasonCode = reasonCode;
         this.reasonMessage = reasonMessage;
         this.status = status;
+        this.reviewDecision = reviewDecision;
+        this.reviewNote = reviewNote;
         this.createdAt = createdAt;
         this.resolvedAt = resolvedAt;
     }
@@ -48,6 +54,14 @@ public class ReviewItem {
 
     public String status() {
         return status;
+    }
+
+    public String reviewDecision() {
+        return reviewDecision;
+    }
+
+    public String reviewNote() {
+        return reviewNote;
     }
 
     public String createdAt() {
@@ -76,6 +90,14 @@ public class ReviewItem {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getReviewDecision() {
+        return reviewDecision;
+    }
+
+    public String getReviewNote() {
+        return reviewNote;
     }
 
     public String getCreatedAt() {

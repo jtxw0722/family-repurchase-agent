@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * @Author: jtxw
@@ -30,6 +31,19 @@ public class ReviewItemRepository {
         return jdbcTemplate.query("SELECT * FROM review_items WHERE status='pending' ORDER BY id", rowMapper());
     }
 
+    public Optional<ReviewItem> findById(long id) {
+        List<ReviewItem> items = jdbcTemplate.query("SELECT * FROM review_items WHERE id = ?", rowMapper(), id);
+        return items.stream().findFirst();
+    }
+
+    public int resolve(long id, String reviewDecision, String reviewNote) {
+        return jdbcTemplate.update("""
+                UPDATE review_items
+                SET status = ?, review_decision = ?, review_note = ?, resolved_at = ?
+                WHERE id = ? AND status = 'pending'
+                """, "resolved", reviewDecision, reviewNote, ClockUtils.nowText(), id);
+    }
+
     public int countPending() {
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM review_items WHERE status='pending'", Integer.class);
         return count == null ? 0 : count;
@@ -38,7 +52,8 @@ public class ReviewItemRepository {
     private RowMapper<ReviewItem> rowMapper() {
         return (rs, rowNum) -> new ReviewItem(
                 rs.getLong("id"), rs.getLong("record_id"), rs.getString("reason_code"),
-                rs.getString("reason_message"), rs.getString("status"), rs.getString("created_at"),
+                rs.getString("reason_message"), rs.getString("status"), rs.getString("review_decision"),
+                rs.getString("review_note"), rs.getString("created_at"),
                 rs.getString("resolved_at")
         );
     }

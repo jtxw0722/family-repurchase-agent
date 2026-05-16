@@ -48,6 +48,10 @@ public class PurchaseRecordRepository {
                 """, Double.class, normalizedName);
     }
 
+    public int updateDecision(long id, String decision) {
+        return jdbcTemplate.update("UPDATE purchase_records SET decision = ? WHERE id = ?", decision, id);
+    }
+
     public List<PurchaseRecord> listIncludedByMonth(String month) {
         return jdbcTemplate.query("""
                 SELECT * FROM purchase_records
