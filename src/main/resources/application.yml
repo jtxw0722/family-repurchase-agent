@@ -13,3 +13,11 @@ family-agent:
     - ./examples
     - ./data/inbox
   reports-dir: ./reports
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha

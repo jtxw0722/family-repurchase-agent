@@ -5,6 +5,9 @@ import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
 import com.jtxw.familyagent.domain.model.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
@@ -20,6 +23,7 @@ import java.util.Map;
  * @Date: 2026/05/13/10:28
  * @Description: REST Tool API 控制器，暴露导入、比价、报告和复核查询接口。
  */
+@Tag(name = "Agent Tool API", description = "家庭消费分析工具接口")
 @RestController
 @RequestMapping("/api/tools")
 public class AgentToolController {
@@ -47,6 +51,7 @@ public class AgentToolController {
      * @param request 文件导入请求
      * @return 导入结果，包括导入记录数和待复核记录数
      */
+    @Operation(summary = "导入订单文件", description = "导入本地 CSV 订单文件，并生成购买记录和待复核记录。")
     @PostMapping("/import-file")
     public ImportResult importFile(@Valid @RequestBody ImportFileRequest request) {
         return importApplicationService.importCsv(Path.of(request.filePath()));
@@ -58,6 +63,7 @@ public class AgentToolController {
      * @param request 当前价格比较请求
      * @return 价格判断结果，包括当前单位价格、历史统计值和判断说明
      */
+    @Operation(summary = "比较当前价格", description = "比较当前商品单位价格与本地历史价格，返回价格判断结果。")
     @PostMapping("/compare-price")
     public PriceDecisionResult comparePrice(@Valid @RequestBody ComparePriceRequest request) {
         return priceAnalysisApplicationService.comparePrice(request.productName(), request.price(), request.quantity(), request.unit());
@@ -71,6 +77,7 @@ public class AgentToolController {
      * @param request 月度报告请求
      * @return 报告生成结果，包括统计记录数、总金额和报告路径
      */
+    @Operation(summary = "生成月度报告", description = "根据指定月份生成 Markdown 消费分析报告。")
     @PostMapping("/generate-report")
     public MonthlyReportResult generateReport(@Valid @RequestBody GenerateReportRequest request) {
         return reportApplicationService.generateMonthlyReport(request.month());
@@ -81,6 +88,7 @@ public class AgentToolController {
      *
      * @return 待复核记录列表
      */
+    @Operation(summary = "查看待复核记录", description = "查询当前待人工复核的异常订单记录。")
     @GetMapping("/review-items")
     public List<ReviewItem> listReviewItems() {
         return reviewApplicationService.listPending();
@@ -95,15 +103,18 @@ public class AgentToolController {
      * @param request 复核动作请求
      * @return 复核应用结果
      */
+    @Operation(summary = "应用复核结果", description = "将人工复核结果应用到待复核记录，并同步更新关联购买记录的统计决策。")
     @PostMapping("/review-items/{id}/apply")
     public ReviewApplyResult applyReview(@PathVariable long id, @Valid @RequestBody ReviewApplyRequest request) {
         return reviewApplicationService.apply(id, request.action(), request.note());
     }
 
+    @Schema(description = "本地订单文件导入请求")
     public static class ImportFileRequest {
         /**
          * 本地订单文件路径
          */
+        @Schema(description = "本地 CSV 订单文件路径", example = "examples/sample_orders.csv", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String filePath;
 
@@ -123,25 +134,30 @@ public class AgentToolController {
         }
     }
 
+    @Schema(description = "当前价格比较请求")
     public static class ComparePriceRequest {
         /**
          * 原始商品名称
          */
+        @Schema(description = "原始商品名称，会在服务端进行本地规则归一化", example = "猫砂", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String productName;
         /**
          * 当前总价
          */
+        @Schema(description = "当前购买总价", example = "89", requiredMode = Schema.RequiredMode.REQUIRED)
         @Positive
         private double price;
         /**
          * 当前商品数量
          */
+        @Schema(description = "当前购买数量", example = "12", requiredMode = Schema.RequiredMode.REQUIRED)
         @Positive
         private double quantity;
         /**
          * 数量单位
          */
+        @Schema(description = "数量单位，用于计算单位价格", example = "kg", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String unit;
 
@@ -197,10 +213,12 @@ public class AgentToolController {
         }
     }
 
+    @Schema(description = "月度报告生成请求")
     public static class GenerateReportRequest {
         /**
          * 报告月份，格式为 yyyy-MM
          */
+        @Schema(description = "报告月份，格式为 yyyy-MM", example = "2026-05", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String month;
 
@@ -220,15 +238,18 @@ public class AgentToolController {
         }
     }
 
+    @Schema(description = "人工复核应用请求")
     public static class ReviewApplyRequest {
         /**
          * 复核动作，取值 include 或 exclude
          */
+        @Schema(description = "复核动作，include 表示纳入统计，exclude 表示排除统计", example = "include", allowableValues = {"include", "exclude"}, requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String action;
         /**
          * 复核备注
          */
+        @Schema(description = "人工复核备注", example = "确认是正常家庭消耗品购买记录")
         private String note;
 
         public ReviewApplyRequest() {
