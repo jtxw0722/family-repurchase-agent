@@ -43,6 +43,35 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 判断本地数据库中是否已存在相同订单。
+     *
+     * <p>该查询使用订单时间、平台、归属人、归一化商品名、SKU、数量、单位、
+     * 实付金额和币种做精确匹配，不按来源文件或导入批次区分。</p>
+     *
+     * @param record 待检查的消费记录
+     * @return 是否已存在相同订单
+     */
+    public boolean existsDuplicate(PurchaseRecord record) {
+        // 字符字段使用 COALESCE 做空值安全比较，数值字段保留 NULL 与 NULL 等价
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM purchase_records
+                WHERE COALESCE(order_time, '') = COALESCE(?, '')
+                  AND COALESCE(platform, '') = COALESCE(?, '')
+                  AND COALESCE(owner, '') = COALESCE(?, '')
+                  AND COALESCE(normalized_name, '') = COALESCE(?, '')
+                  AND COALESCE(sku, '') = COALESCE(?, '')
+                  AND (quantity = ? OR (quantity IS NULL AND ? IS NULL))
+                  AND COALESCE(unit, '') = COALESCE(?, '')
+                  AND (total_amount = ? OR (total_amount IS NULL AND ? IS NULL))
+                  AND COALESCE(currency, '') = COALESCE(?, '')
+                """, Integer.class,
+                record.orderTime(), record.platform(), record.owner(), record.normalizedName(), record.sku(),
+                record.quantity(), record.quantity(), record.unit(), record.totalAmount(), record.totalAmount(),
+                record.currency());
+        return count != null && count > 0;
+    }
+
+    /**
      * 查询指定商品的历史有效单价样本。
      *
      * <p>默认只返回正式统计口径内的记录：
@@ -72,6 +101,26 @@ public class PurchaseRecordRepository {
      */
     public int updateDecision(long id, String decision) {
         return jdbcTemplate.update("UPDATE purchase_records SET decision = ? WHERE id = ?", decision, id);
+    }
+
+    /**
+     * 更新消费记录的统计决策和去重状态。
+     *
+     * <p>用于处理疑似重复订单的人工复核结果：确认纳入时恢复为 unique，
+     * 确认排除时保持 duplicate。</p>
+     *
+     * @param id           消费记录 ID
+     * @param decision     统计决策
+     * @param duplicate    是否为重复订单
+     * @param dedupeStatus 去重状态
+     * @return 更新记录数
+     */
+    public int updateDecisionAndDedupe(long id, String decision, boolean duplicate, String dedupeStatus) {
+        return jdbcTemplate.update("""
+                UPDATE purchase_records
+                SET decision = ?, is_duplicate = ?, dedupe_status = ?
+                WHERE id = ?
+                """, decision, duplicate ? 1 : 0, dedupeStatus, id);
     }
 
     /**

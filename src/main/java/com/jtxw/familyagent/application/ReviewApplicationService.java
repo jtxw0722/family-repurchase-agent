@@ -63,7 +63,15 @@ public class ReviewApplicationService {
         }
 
         String decision = "include".equals(normalizedAction) ? "include" : "exclude";
-        int updatedRecordCount = purchaseRecordRepository.updateDecision(reviewItem.recordId(), decision);
+        int updatedRecordCount;
+        if ("DUPLICATE_ORDER".equals(reviewItem.reasonCode())) {
+            // 重复订单被人工确认为 include 时，需要恢复去重状态，避免继续被统计查询过滤
+            boolean duplicate = "exclude".equals(decision);
+            updatedRecordCount = purchaseRecordRepository.updateDecisionAndDedupe(reviewItem.recordId(), decision,
+                    duplicate, duplicate ? "duplicate" : "unique");
+        } else {
+            updatedRecordCount = purchaseRecordRepository.updateDecision(reviewItem.recordId(), decision);
+        }
         if (updatedRecordCount == 0) {
             throw new IllegalStateException("关联订单记录不存在：" + reviewItem.recordId());
         }
