@@ -54,7 +54,7 @@ public class AgentToolController {
     @Operation(summary = "导入订单文件", description = "导入本地 CSV 订单文件，并生成购买记录和待复核记录。")
     @PostMapping("/import-file")
     public ImportResult importFile(@Valid @RequestBody ImportFileRequest request) {
-        return importApplicationService.importCsv(Path.of(request.filePath()));
+        return importApplicationService.importCsv(Path.of(request.filePath()), request.owner());
     }
 
     /**
@@ -117,6 +117,11 @@ public class AgentToolController {
         @Schema(description = "本地 CSV 订单文件路径", example = "examples/sample_orders.csv", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String filePath;
+        /**
+         * 导入时指定的订单归属人
+         */
+        @Schema(description = "导入时指定的订单归属人；为空时使用 CSV owner 字段或文件名后缀识别", example = "jtxw")
+        private String owner;
 
         public ImportFileRequest() {
         }
@@ -125,12 +130,24 @@ public class AgentToolController {
             return filePath;
         }
 
+        public String owner() {
+            return owner;
+        }
+
         public String getFilePath() {
             return filePath;
         }
 
         public void setFilePath(String filePath) {
             this.filePath = filePath;
+        }
+
+        public String getOwner() {
+            return owner;
+        }
+
+        public void setOwner(String owner) {
+            this.owner = owner;
         }
     }
 

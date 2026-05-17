@@ -4,11 +4,7 @@ import com.jtxw.familyagent.application.ImportApplicationService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
-import com.jtxw.familyagent.domain.model.ImportResult;
-import com.jtxw.familyagent.domain.model.MonthlyReportResult;
-import com.jtxw.familyagent.domain.model.PriceDecisionResult;
-import com.jtxw.familyagent.domain.model.ReviewApplyResult;
-import com.jtxw.familyagent.domain.model.ReviewItem;
+import com.jtxw.familyagent.domain.model.*;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -54,18 +50,23 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
             return;
         }
         String command = sourceArgs.get(0);
+        int exitCode = 0;
         try {
             switch (command) {
                 case "init" -> init();
-                case "import" -> importFile(sourceArgs);
+                case "import" -> importFile(sourceArgs, args);
                 case "price" -> price(sourceArgs, args);
                 case "report" -> report(args);
                 case "review" -> review(sourceArgs, args);
                 default -> printHelp();
             }
+        } catch (RuntimeException e) {
+            System.err.println("执行失败：" + e.getMessage());
+            exitCode = 1;
         } finally {
-            int exitCode = SpringApplication.exit(applicationContext, () -> 0);
-            System.exit(exitCode);
+            int finalExitCode = exitCode;
+            SpringApplication.exit(applicationContext, () -> finalExitCode);
+            System.exit(finalExitCode);
         }
     }
 
@@ -74,12 +75,12 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         System.out.println("初始化完成：SQLite 数据库已准备好。");
     }
 
-    private void importFile(List<String> sourceArgs) {
+    private void importFile(List<String> sourceArgs, ApplicationArguments args) {
         if (sourceArgs.size() < 2) {
-            System.out.println("请提供文件路径，例如：import examples/sample_orders.csv");
+            System.out.println("请提供文件路径，例如：import examples/sample_orders.csv --owner=jtxw");
             return;
         }
-        ImportResult result = importApplicationService.importCsv(Path.of(sourceArgs.get(1)));
+        ImportResult result = importApplicationService.importCsv(Path.of(sourceArgs.get(1)), getString(args, "owner", null));
         System.out.println(result.message());
         System.out.println("批次 ID：" + result.batchId());
     }
@@ -150,7 +151,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         System.out.println("Family Consumption Agent");
         System.out.println("用法：");
         System.out.println("  init");
-        System.out.println("  import <csv-file>");
+        System.out.println("  import <csv-file> [--owner=<归属人>]");
         System.out.println("  price <商品名> --price <金额> --quantity <数量> --unit <单位>");
         System.out.println("  report --month YYYY-MM");
         System.out.println("  review list");

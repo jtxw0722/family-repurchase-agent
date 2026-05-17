@@ -22,12 +22,13 @@ class CsvPurchaseImporterTest {
         Path file = testFile("standard.csv");
         Files.writeString(file, """
                 order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
-                2026-05-01,taobao,JTXW,混合猫砂 12kg,12kg,宠物用品,猫砂,12,kg,89,CNY
+                2026-05-01,taobao,jtxw,混合猫砂 12kg,12kg,宠物用品,猫砂,12,kg,89,CNY
                 """, StandardCharsets.UTF_8);
 
         List<RawPurchaseRecord> records = new CsvPurchaseImporter().importFile(file);
 
         assertThat(records).hasSize(1);
+        assertThat(records.get(0).owner()).isEqualTo("JTXW");
         assertThat(records.get(0).productName()).isEqualTo("混合猫砂 12kg");
         assertThat(records.get(0).quantity()).isEqualTo(12D);
         assertThat(records.get(0).totalAmount()).isEqualTo(89D);
@@ -35,7 +36,7 @@ class CsvPurchaseImporterTest {
 
     @Test
     void shouldImportChineseOrderExportTemplate() throws Exception {
-        Path file = testFile("chinese.csv");
+        Path file = testFile("orders-chinese.csv");
         Files.writeString(file, """
                 订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
                 1,2026-01-23 02:32:45,交易成功,百亿补贴品牌优选,乳铁蛋白粉,https://item.taobao.com/item.htm?id=1,100g,1,￥76.96,￥76.96,￥0.00
@@ -48,7 +49,7 @@ class CsvPurchaseImporterTest {
         RawPurchaseRecord record = records.get(0);
         assertThat(record.orderTime()).isEqualTo("2026-01-23 02:32:45");
         assertThat(record.platform()).isEqualTo("taobao");
-        assertThat(record.owner()).isEqualTo("default");
+        assertThat(record.owner()).isEqualTo("CHINESE");
         assertThat(record.productName()).isEqualTo("乳铁蛋白粉");
         assertThat(record.sku()).isEqualTo("100g");
         assertThat(record.quantity()).isEqualTo(1D);
@@ -68,6 +69,32 @@ class CsvPurchaseImporterTest {
         assertThatThrownBy(() -> new CsvPurchaseImporter().importFile(file))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("不支持的 CSV 表头");
+    }
+
+    @Test
+    void shouldUseOwnerOverride() throws Exception {
+        Path file = testFile("chinese.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                1,2026-01-23 02:32:45,交易成功,百亿补贴品牌优选,乳铁蛋白粉,https://item.taobao.com/item.htm?id=1,100g,1,￥76.96,￥76.96,￥0.00
+                """, StandardCharsets.UTF_8);
+
+        List<RawPurchaseRecord> records = new CsvPurchaseImporter().importFile(file, "jtxw");
+
+        assertThat(records.get(0).owner()).isEqualTo("JTXW");
+    }
+
+    @Test
+    void shouldRejectChineseTemplateWithoutOwnerContext() throws Exception {
+        Path file = testFile("chinese.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                1,2026-01-23 02:32:45,交易成功,百亿补贴品牌优选,乳铁蛋白粉,https://item.taobao.com/item.htm?id=1,100g,1,￥76.96,￥76.96,￥0.00
+                """, StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new CsvPurchaseImporter().importFile(file))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("无法确定订单归属 owner");
     }
 
     private Path testFile(String name) throws Exception {

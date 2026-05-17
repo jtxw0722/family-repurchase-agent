@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -31,6 +32,17 @@ public class CsvPurchaseImporter {
      * @return 原始订单记录列表
      */
     public List<RawPurchaseRecord> importFile(Path file) {
+        return importFile(file, null);
+    }
+
+    /**
+     * 读取本地 CSV 订单文件并转换为原始订单记录。
+     *
+     * @param file          本地 CSV 文件路径
+     * @param ownerOverride 导入时指定的订单归属人，为空时优先使用 CSV 字段或文件名后缀
+     * @return 原始订单记录列表
+     */
+    public List<RawPurchaseRecord> importFile(Path file, String ownerOverride) {
         try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8);
              CSVParser parser = CSVFormat.DEFAULT.builder()
                      .setHeader()
@@ -42,8 +54,8 @@ public class CsvPurchaseImporter {
             List<RawPurchaseRecord> records = new ArrayList<>();
             for (CSVRecord record : parser) {
                 RawPurchaseRecord rawRecord = switch (schema) {
-                    case STANDARD -> readStandardRecord(record);
-                    case CHINESE_ORDER_EXPORT -> readChineseOrderExportRecord(record);
+                    case STANDARD -> readStandardRecord(record, file, ownerOverride);
+                    case CHINESE_ORDER_EXPORT -> readChineseOrderExportRecord(record, file, ownerOverride);
                 };
                 if (rawRecord != null) {
                     records.add(rawRecord);
@@ -74,11 +86,11 @@ public class CsvPurchaseImporter {
         return true;
     }
 
-    private RawPurchaseRecord readStandardRecord(CSVRecord record) {
+    private RawPurchaseRecord readStandardRecord(CSVRecord record, Path file, String ownerOverride) {
         return new RawPurchaseRecord(
                 get(record, "order_time"),
                 get(record, "platform"),
-                get(record, "owner"),
+                resolveOwner(get(record, "owner"), file, ownerOverride),
                 get(record, "product_name"),
                 get(record, "sku"),
                 get(record, "category"),
@@ -90,7 +102,7 @@ public class CsvPurchaseImporter {
         );
     }
 
-    private RawPurchaseRecord readChineseOrderExportRecord(CSVRecord record) {
+    private RawPurchaseRecord readChineseOrderExportRecord(CSVRecord record, Path file, String ownerOverride) {
         // 交易关闭不代表实际消费，导入阶段直接跳过，避免进入价格统计和月度报告
         if (!"交易成功".equals(get(record, "订单状态"))) {
             return null;
@@ -98,7 +110,7 @@ public class CsvPurchaseImporter {
         return new RawPurchaseRecord(
                 get(record, "订单提交时间"),
                 inferPlatform(get(record, "商品链接")),
-                "default",
+                resolveOwner("", file, ownerOverride),
                 get(record, "商品名称"),
                 get(record, "型号款式"),
                 "",
@@ -117,6 +129,36 @@ public class CsvPurchaseImporter {
     private String getOrDefault(CSVRecord record, String name, String defaultValue) {
         String value = get(record, name);
         return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private String resolveOwner(String recordOwner, Path file, String ownerOverride) {
+        if (ownerOverride != null && !ownerOverride.isBlank()) {
+            return normalizeOwner(ownerOverride);
+        }
+        if (recordOwner != null && !recordOwner.isBlank()) {
+            return normalizeOwner(recordOwner);
+        }
+        String filenameOwner = extractOwnerFromFilename(file);
+        if (filenameOwner != null && !filenameOwner.isBlank()) {
+            return normalizeOwner(filenameOwner);
+        }
+        throw new IllegalArgumentException("无法确定订单归属 owner，请传入 owner 参数，或使用 文件名-owner.csv 格式。");
+    }
+
+    private String normalizeOwner(String owner) {
+        // owner 是后续统计和重复判断维度，统一大小写避免 jtxw 与 JTXW 被拆成两个人
+        return owner.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String extractOwnerFromFilename(Path file) {
+        String filename = file.getFileName().toString();
+        int dotIndex = filename.lastIndexOf('.');
+        String basename = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
+        int dashIndex = basename.lastIndexOf('-');
+        if (dashIndex < 0 || dashIndex == basename.length() - 1) {
+            return null;
+        }
+        return basename.substring(dashIndex + 1).trim();
     }
 
     private Double parseDouble(String text) {

@@ -69,13 +69,32 @@ http://localhost:8080
 
 ## REST API
 
+接口文档：
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
 导入订单：
 
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/import-file" `
   -H "Content-Type: application/json" `
-  -d "{\"filePath\":\"examples/sample_orders.csv\"}"
+  -d "{\"filePath\":\"examples/sample_orders.csv\",\"owner\":\"jtxw\"}"
 ```
+
+`owner` 为可选参数。导入时会按以下顺序确定订单归属人：
+
+1. 请求体中的 `owner`
+2. CSV 中的 `owner` 字段
+3. 文件名后缀，例如 `订单数据-jtxw.csv`
+
+最终入库前会统一为大写，例如 `jtxw` 和 `JTXW` 都会保存为 `JTXW`。
+
+当前支持两类 CSV：
+
+- 项目标准模板：`order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency`
+- 中文订单导出模板：`订单提交时间、订单状态、店铺名称、商品名称、商品链接、型号款式、商品数量、实付金额`
 
 判断价格：
 
@@ -110,7 +129,7 @@ curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
 ## CLI
 
 ```bash
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import examples/sample_orders.csv
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
 
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
 
@@ -119,6 +138,18 @@ java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar report --month=2026
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review list
 
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
+```
+
+导入中文订单导出 CSV 时，如果文件内没有 `owner` 字段，可以使用参数指定：
+
+```bash
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
+```
+
+也可以通过文件名指定：
+
+```bash
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据-jtxw.csv
 ```
 
 ## 项目结构

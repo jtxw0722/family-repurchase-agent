@@ -63,8 +63,19 @@ public class ImportApplicationService {
      * @return 导入结果
      */
     public ImportResult importCsv(Path file) {
+        return importCsv(file, null);
+    }
+
+    /**
+     * 导入订单文件并写入本地数据库。
+     *
+     * @param file          本地订单 CSV 文件路径
+     * @param ownerOverride 导入时指定的订单归属人，为空时由导入器从 CSV 字段或文件名识别
+     * @return 导入结果
+     */
+    public ImportResult importCsv(Path file, String ownerOverride) {
         databaseInitializer.initialize();
-        List<RawPurchaseRecord> rawRecords = csvPurchaseImporter.importFile(file);
+        List<RawPurchaseRecord> rawRecords = csvPurchaseImporter.importFile(file, ownerOverride);
         long batchId = importBatchRepository.create(file.toString());
         // 当前批次内的订单指纹，用于识别同一个文件中的重复行
         Set<String> currentBatchFingerprints = new HashSet<>();
