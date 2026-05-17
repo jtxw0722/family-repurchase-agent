@@ -64,8 +64,8 @@ public class ImportApplicationService {
      */
     public ImportResult importCsv(Path file) {
         databaseInitializer.initialize();
-        long batchId = importBatchRepository.create(file.toString());
         List<RawPurchaseRecord> rawRecords = csvPurchaseImporter.importFile(file);
+        long batchId = importBatchRepository.create(file.toString());
         // 当前批次内的订单指纹，用于识别同一个文件中的重复行
         Set<String> currentBatchFingerprints = new HashSet<>();
         // 待复核统计
