@@ -12,8 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -23,6 +23,12 @@ import java.util.Map;
  */
 @Component
 public class CsvPurchaseImporter {
+    private final OrderImportMapper orderImportMapper;
+
+    public CsvPurchaseImporter(OrderImportMapper orderImportMapper) {
+        this.orderImportMapper = orderImportMapper;
+    }
+
     /**
      * 读取本地 CSV 订单文件并转换为原始订单记录。
      *
@@ -50,13 +56,10 @@ public class CsvPurchaseImporter {
                      .setTrim(true)
                      .build()
                      .parse(reader)) {
-            ImportSchema schema = detectSchema(parser.getHeaderMap());
+            OrderImportMapper.ImportSchema schema = orderImportMapper.detectSchema(parser.getHeaderMap().keySet());
             List<RawPurchaseRecord> records = new ArrayList<>();
             for (CSVRecord record : parser) {
-                RawPurchaseRecord rawRecord = switch (schema) {
-                    case STANDARD -> readStandardRecord(record, file, ownerOverride);
-                    case CHINESE_ORDER_EXPORT -> readChineseOrderExportRecord(record, file, ownerOverride);
-                };
+                RawPurchaseRecord rawRecord = orderImportMapper.map(schema, toValueMap(record, parser.getHeaderMap()), file, ownerOverride);
                 if (rawRecord != null) {
                     records.add(rawRecord);
                 }
@@ -67,136 +70,11 @@ public class CsvPurchaseImporter {
         }
     }
 
-    private ImportSchema detectSchema(Map<String, Integer> headerMap) {
-        if (hasHeaders(headerMap, "order_time", "product_name", "quantity", "total_amount")) {
-            return ImportSchema.STANDARD;
+    private Map<String, String> toValueMap(CSVRecord record, Map<String, Integer> headerMap) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String header : headerMap.keySet()) {
+            values.put(header, record.isMapped(header) ? record.get(header) : "");
         }
-        if (hasHeaders(headerMap, "订单提交时间", "订单状态", "店铺名称", "商品名称", "商品链接", "型号款式", "商品数量", "实付金额")) {
-            return ImportSchema.CHINESE_ORDER_EXPORT;
-        }
-        throw new IllegalArgumentException("不支持的 CSV 表头，请使用项目标准模板或已支持的中文订单导出模板。当前表头：" + headerMap.keySet());
-    }
-
-    private boolean hasHeaders(Map<String, Integer> headerMap, String... headers) {
-        for (String header : headers) {
-            if (!headerMap.containsKey(header)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private RawPurchaseRecord readStandardRecord(CSVRecord record, Path file, String ownerOverride) {
-        return new RawPurchaseRecord(
-                get(record, "order_time"),
-                get(record, "platform"),
-                resolveOwner(get(record, "owner"), file, ownerOverride),
-                get(record, "product_name"),
-                get(record, "sku"),
-                get(record, "category"),
-                get(record, "sub_category"),
-                parseDouble(get(record, "quantity")),
-                get(record, "unit"),
-                parseDouble(get(record, "total_amount")),
-                getOrDefault(record, "currency", "CNY")
-        );
-    }
-
-    private RawPurchaseRecord readChineseOrderExportRecord(CSVRecord record, Path file, String ownerOverride) {
-        // 交易关闭不代表实际消费，导入阶段直接跳过，避免进入价格统计和月度报告
-        if (!"交易成功".equals(get(record, "订单状态"))) {
-            return null;
-        }
-        return new RawPurchaseRecord(
-                get(record, "订单提交时间"),
-                inferPlatform(get(record, "商品链接")),
-                resolveOwner("", file, ownerOverride),
-                get(record, "商品名称"),
-                get(record, "型号款式"),
-                "",
-                "",
-                parseDouble(get(record, "商品数量")),
-                "件",
-                parseDouble(get(record, "实付金额")),
-                "CNY"
-        );
-    }
-
-    private String get(CSVRecord record, String name) {
-        return record.isMapped(name) ? record.get(name) : "";
-    }
-
-    private String getOrDefault(CSVRecord record, String name, String defaultValue) {
-        String value = get(record, name);
-        return value == null || value.isBlank() ? defaultValue : value;
-    }
-
-    private String resolveOwner(String recordOwner, Path file, String ownerOverride) {
-        if (ownerOverride != null && !ownerOverride.isBlank()) {
-            return normalizeOwner(ownerOverride);
-        }
-        if (recordOwner != null && !recordOwner.isBlank()) {
-            return normalizeOwner(recordOwner);
-        }
-        String filenameOwner = extractOwnerFromFilename(file);
-        if (filenameOwner != null && !filenameOwner.isBlank()) {
-            return normalizeOwner(filenameOwner);
-        }
-        throw new IllegalArgumentException("无法确定订单归属 owner，请传入 owner 参数，或使用 文件名-owner.csv 格式。");
-    }
-
-    private String normalizeOwner(String owner) {
-        // owner 是后续统计和重复判断维度，统一大小写避免 jtxw 与 JTXW 被拆成两个人
-        return owner.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private String extractOwnerFromFilename(Path file) {
-        String filename = file.getFileName().toString();
-        int dotIndex = filename.lastIndexOf('.');
-        String basename = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
-        int dashIndex = basename.lastIndexOf('-');
-        if (dashIndex < 0 || dashIndex == basename.length() - 1) {
-            return null;
-        }
-        return basename.substring(dashIndex + 1).trim();
-    }
-
-    private Double parseDouble(String text) {
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        String normalized = text.trim()
-                .replace("￥", "")
-                .replace("¥", "")
-                .replace(",", "");
-        return Double.parseDouble(normalized);
-    }
-
-    private String inferPlatform(String link) {
-        String value = link == null ? "" : link.toLowerCase();
-        if (value.contains("taobao.com") || value.contains("tmall.com")) {
-            return "taobao";
-        }
-        if (value.contains("jd.com")) {
-            return "jd";
-        }
-        if (value.contains("yangkeduo.com") || value.contains("pinduoduo.com")) {
-            return "pdd";
-        }
-        return "unknown";
-    }
-
-    /**
-     * CSV 导入模板类型。
-     */
-    private enum ImportSchema {
-        /**
-         * 项目标准 CSV 模板，使用 order_time、product_name 等英文字段
-         */
-        STANDARD,
-        /**
-         * 中文电商订单导出模板，使用订单提交时间、商品名称、实付金额等中文字段
-         */
-        CHINESE_ORDER_EXPORT
+        return values;
     }
 }

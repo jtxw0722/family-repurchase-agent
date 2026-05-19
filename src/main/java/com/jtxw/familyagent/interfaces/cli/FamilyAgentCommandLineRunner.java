@@ -151,7 +151,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         System.out.println("Family Consumption Agent");
         System.out.println("用法：");
         System.out.println("  init");
-        System.out.println("  import <csv-file> [--owner=<归属人>]");
+        System.out.println("  import <csv-or-xlsx-file> [--owner=<归属人>]");
         System.out.println("  price <商品名> --price <金额> --quantity <数量> --unit <单位>");
         System.out.println("  report --month YYYY-MM");
         System.out.println("  review list");

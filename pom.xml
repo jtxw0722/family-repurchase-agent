@@ -20,6 +20,7 @@
         <java.version>17</java.version>
         <sqlite-jdbc.version>3.53.1.0</sqlite-jdbc.version>
         <commons-csv.version>1.14.0</commons-csv.version>
+        <poi.version>5.4.1</poi.version>
     </properties>
 
     <dependencies>
@@ -48,6 +49,13 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
             <version>${commons-csv.version}</version>
+        </dependency>
+
+        <!-- Excel导入 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
 
         <dependency>

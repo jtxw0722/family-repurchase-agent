@@ -8,6 +8,7 @@ import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
 import com.jtxw.familyagent.domain.policy.ProductNormalizer;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
+import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
@@ -28,6 +29,7 @@ import java.util.Set;
 public class ImportApplicationService {
     private final DatabaseInitializer databaseInitializer;
     private final CsvPurchaseImporter csvPurchaseImporter;
+    private final ExcelPurchaseImporter excelPurchaseImporter;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
     private final ProductNormalizer productNormalizer;
     private final UnitPriceCalculator unitPriceCalculator;
@@ -37,6 +39,7 @@ public class ImportApplicationService {
 
     public ImportApplicationService(DatabaseInitializer databaseInitializer,
                                     CsvPurchaseImporter csvPurchaseImporter,
+                                    ExcelPurchaseImporter excelPurchaseImporter,
                                     DuplicateDetectionPolicy duplicateDetectionPolicy,
                                     ProductNormalizer productNormalizer,
                                     UnitPriceCalculator unitPriceCalculator,
@@ -45,6 +48,7 @@ public class ImportApplicationService {
                                     ReviewItemRepository reviewItemRepository) {
         this.databaseInitializer = databaseInitializer;
         this.csvPurchaseImporter = csvPurchaseImporter;
+        this.excelPurchaseImporter = excelPurchaseImporter;
         this.duplicateDetectionPolicy = duplicateDetectionPolicy;
         this.productNormalizer = productNormalizer;
         this.unitPriceCalculator = unitPriceCalculator;
@@ -56,26 +60,37 @@ public class ImportApplicationService {
     /**
      * 导入订单文件并写入本地数据库。
      *
-     * <p>导入流程包括：读取 CSV 文件、商品名称归一化、单位价格计算、重复订单检测、
+     * <p>导入流程包括：读取订单文件、商品名称归一化、单位价格计算、重复订单检测、
      * 订单明细入库，并将实付金额为 0 或疑似重复的记录加入待复核列表。</p>
      *
-     * @param file 本地订单 CSV 文件路径
+     * @param file 本地订单文件路径
      * @return 导入结果
      */
     public ImportResult importCsv(Path file) {
-        return importCsv(file, null);
+        return importFile(file, null);
     }
 
     /**
      * 导入订单文件并写入本地数据库。
      *
-     * @param file          本地订单 CSV 文件路径
-     * @param ownerOverride 导入时指定的订单归属人，为空时由导入器从 CSV 字段或文件名识别
+     * @param file          本地订单文件路径
+     * @param ownerOverride 导入时指定的订单归属人，为空时由导入器从文件字段或文件名识别
      * @return 导入结果
      */
     public ImportResult importCsv(Path file, String ownerOverride) {
+        return importFile(file, ownerOverride);
+    }
+
+    /**
+     * 导入订单文件并写入本地数据库。
+     *
+     * @param file          本地订单文件路径
+     * @param ownerOverride 导入时指定的订单归属人，为空时由导入器从文件字段或文件名识别
+     * @return 导入结果
+     */
+    public ImportResult importFile(Path file, String ownerOverride) {
         databaseInitializer.initialize();
-        List<RawPurchaseRecord> rawRecords = csvPurchaseImporter.importFile(file, ownerOverride);
+        List<RawPurchaseRecord> rawRecords = importRawRecords(file, ownerOverride);
         long batchId = importBatchRepository.create(file.toString());
         // 当前批次内的订单指纹，用于识别同一个文件中的重复行
         Set<String> currentBatchFingerprints = new HashSet<>();
@@ -125,5 +140,16 @@ public class ImportApplicationService {
         return new ImportResult(batchId, rawRecords.size(), importedCount, reviewCount,
                 "导入完成：共 " + rawRecords.size() + " 条，成功 " + importedCount + " 条，疑似重复 "
                         + duplicateCount + " 条，待复核 " + reviewCount + " 条。");
+    }
+
+    private List<RawPurchaseRecord> importRawRecords(Path file, String ownerOverride) {
+        String filename = file.getFileName().toString().toLowerCase();
+        if (filename.endsWith(".csv")) {
+            return csvPurchaseImporter.importFile(file, ownerOverride);
+        }
+        if (filename.endsWith(".xlsx")) {
+            return excelPurchaseImporter.importFile(file, ownerOverride);
+        }
+        throw new IllegalArgumentException("不支持的订单文件类型，仅支持 .csv 和 .xlsx：" + file);
     }
 }

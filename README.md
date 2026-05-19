@@ -8,7 +8,7 @@
 
 ## 功能
 
-- CSV 订单导入
+- CSV / Excel 订单导入
 - SQLite 本地存储
 - 商品名称归一化
 - 单位价格计算
@@ -25,7 +25,7 @@
 | 语言 | Java 17+ |
 | 框架 | Spring Boot 3.x |
 | 数据库 | SQLite |
-| 文件导入 | Apache Commons CSV |
+| 文件导入 | Apache Commons CSV / Apache POI |
 | 测试 | JUnit 5 |
 | 构建 | Maven |
 
@@ -91,7 +91,7 @@ curl -X POST "http://localhost:8080/api/tools/import-file" `
 
 最终入库前会统一为大写，例如 `jtxw` 和 `JTXW` 都会保存为 `JTXW`。
 
-当前支持两类 CSV：
+当前支持 CSV 和 Excel 两种文件格式。表头支持：
 
 - 项目标准模板：`order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency`
 - 中文订单导出模板：`订单提交时间、订单状态、店铺名称、商品名称、商品链接、型号款式、商品数量、实付金额`
@@ -140,16 +140,18 @@ java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review list
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
 ```
 
-导入中文订单导出 CSV 时，如果文件内没有 `owner` 字段，可以使用参数指定：
+导入中文订单导出 CSV / Excel 时，如果文件内没有 `owner` 字段，可以使用参数指定：
 
 ```bash
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
 ```
 
 也可以通过文件名指定：
 
 ```bash
 java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据-jtxw.csv
+java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
 ```
 
 ## 项目结构
@@ -221,7 +223,7 @@ dedupe_status = unique
 
 - [x] 人工复核 apply 流程
 - [x] 重复订单检测
-- [ ] Excel 导入
+- [x] Excel 导入
 - [ ] 购物金 / 礼品卡折算
 - [ ] 报告模板增强
 

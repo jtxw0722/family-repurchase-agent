@@ -51,7 +51,7 @@ public class AgentToolController {
      * @param request 文件导入请求
      * @return 导入结果，包括导入记录数和待复核记录数
      */
-    @Operation(summary = "导入订单文件", description = "导入本地 CSV 订单文件，并生成购买记录和待复核记录。")
+    @Operation(summary = "导入订单文件", description = "导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录。")
     @PostMapping("/import-file")
     public ImportResult importFile(@Valid @RequestBody ImportFileRequest request) {
         return importApplicationService.importCsv(Path.of(request.filePath()), request.owner());
@@ -114,7 +114,7 @@ public class AgentToolController {
         /**
          * 本地订单文件路径
          */
-        @Schema(description = "本地 CSV 订单文件路径", example = "examples/sample_orders.csv", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "本地 CSV 或 Excel 订单文件路径", example = "examples/sample_orders.csv", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         private String filePath;
         /**

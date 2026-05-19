@@ -25,7 +25,7 @@ class CsvPurchaseImporterTest {
                 2026-05-01,taobao,jtxw,混合猫砂 12kg,12kg,宠物用品,猫砂,12,kg,89,CNY
                 """, StandardCharsets.UTF_8);
 
-        List<RawPurchaseRecord> records = new CsvPurchaseImporter().importFile(file);
+        List<RawPurchaseRecord> records = importer().importFile(file);
 
         assertThat(records).hasSize(1);
         assertThat(records.get(0).owner()).isEqualTo("JTXW");
@@ -43,7 +43,7 @@ class CsvPurchaseImporterTest {
                 2,2026-01-23 02:35:45,交易关闭,百亿补贴品牌优选,已关闭订单,https://item.taobao.com/item.htm?id=2,100g,1,￥76.96,￥76.96,￥0.00
                 """, StandardCharsets.UTF_8);
 
-        List<RawPurchaseRecord> records = new CsvPurchaseImporter().importFile(file);
+        List<RawPurchaseRecord> records = importer().importFile(file);
 
         assertThat(records).hasSize(1);
         RawPurchaseRecord record = records.get(0);
@@ -66,9 +66,9 @@ class CsvPurchaseImporterTest {
                 猫砂,89
                 """, StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> new CsvPurchaseImporter().importFile(file))
+        assertThatThrownBy(() -> importer().importFile(file))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("不支持的 CSV 表头");
+                .hasMessageContaining("不支持的订单文件表头");
     }
 
     @Test
@@ -79,7 +79,7 @@ class CsvPurchaseImporterTest {
                 1,2026-01-23 02:32:45,交易成功,百亿补贴品牌优选,乳铁蛋白粉,https://item.taobao.com/item.htm?id=1,100g,1,￥76.96,￥76.96,￥0.00
                 """, StandardCharsets.UTF_8);
 
-        List<RawPurchaseRecord> records = new CsvPurchaseImporter().importFile(file, "jtxw");
+        List<RawPurchaseRecord> records = importer().importFile(file, "jtxw");
 
         assertThat(records.get(0).owner()).isEqualTo("JTXW");
     }
@@ -92,9 +92,13 @@ class CsvPurchaseImporterTest {
                 1,2026-01-23 02:32:45,交易成功,百亿补贴品牌优选,乳铁蛋白粉,https://item.taobao.com/item.htm?id=1,100g,1,￥76.96,￥76.96,￥0.00
                 """, StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> new CsvPurchaseImporter().importFile(file))
+        assertThatThrownBy(() -> importer().importFile(file))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("无法确定订单归属 owner");
+    }
+
+    private CsvPurchaseImporter importer() {
+        return new CsvPurchaseImporter(new OrderImportMapper());
     }
 
     private Path testFile(String name) throws Exception {
