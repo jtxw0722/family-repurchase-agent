@@ -18,7 +18,7 @@ public class DuplicateDetectionPolicy {
      * 判断消费记录是否为重复订单。
      *
      * <p>重复判断采用保守的精确匹配口径：订单时间、平台、归属人、归一化商品名、SKU、
-     * 数量、单位、实付金额和币种全部一致时，才认为是重复记录。</p>
+     * 数量、单位、当前统计金额和币种全部一致时，才认为是重复记录。</p>
      *
      * @param record                   待判断的消费记录
      * @param currentBatchFingerprints 当前导入批次内已出现的订单指纹

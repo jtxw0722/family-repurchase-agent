@@ -6,6 +6,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 
 /**
@@ -31,14 +33,16 @@ public class PurchaseRecordRepository {
         jdbcTemplate.update("""
                         INSERT INTO purchase_records(
                             batch_id, order_time, platform, owner, product_name, normalized_name, sku,
-                            category, sub_category, quantity, unit, total_amount, unit_price, currency,
-                            decision, is_duplicate, dedupe_status, source_file, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            category, sub_category, quantity, unit, total_amount, product_amount, paid_amount,
+                            shipping_fee, amount_source, unit_price, currency, decision, is_duplicate,
+                            dedupe_status, source_file, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 record.batchId(), record.orderTime(), record.platform(), record.owner(), record.productName(),
                 record.normalizedName(), record.sku(), record.category(), record.subCategory(), record.quantity(),
-                record.unit(), record.totalAmount(), record.unitPrice(), record.currency(), record.decision(),
-                record.duplicate() ? 1 : 0, record.dedupeStatus(), record.sourceFile(), ClockUtils.nowText());
+                record.unit(), record.totalAmount(), record.productAmount(), record.paidAmount(), record.shippingFee(),
+                record.amountSource(), record.unitPrice(), record.currency(), record.decision(), record.duplicate() ? 1 : 0,
+                record.dedupeStatus(), record.sourceFile(), ClockUtils.nowText());
         return jdbcTemplate.queryForObject("SELECT last_insert_rowid()", Long.class);
     }
 
@@ -46,7 +50,7 @@ public class PurchaseRecordRepository {
      * 判断本地数据库中是否已存在相同订单。
      *
      * <p>该查询使用订单时间、平台、归属人、归一化商品名、SKU、数量、单位、
-     * 实付金额和币种做精确匹配，不按来源文件或导入批次区分。</p>
+     * 当前统计金额和币种做精确匹配，不按来源文件或导入批次区分。</p>
      *
      * @param record 待检查的消费记录
      * @return 是否已存在相同订单
@@ -127,7 +131,7 @@ public class PurchaseRecordRepository {
      * 查询指定月份内纳入正式统计的消费记录。
      *
      * <p>默认只返回 decision = include、is_duplicate = 0、dedupe_status = unique，
-     * 且实付金额大于 0 的记录。</p>
+     * 且统计金额大于 0 的记录。</p>
      *
      * @param month 月份，格式为 yyyy-MM
      * @return 月度有效消费记录列表
@@ -149,10 +153,17 @@ public class PurchaseRecordRepository {
                 rs.getLong("id"), rs.getLong("batch_id"), rs.getString("order_time"),
                 rs.getString("platform"), rs.getString("owner"), rs.getString("product_name"),
                 rs.getString("normalized_name"), rs.getString("sku"), rs.getString("category"),
-                rs.getString("sub_category"), rs.getDouble("quantity"), rs.getString("unit"),
-                rs.getDouble("total_amount"), rs.getDouble("unit_price"), rs.getString("currency"),
+                rs.getString("sub_category"), nullableDouble(rs, "quantity"), rs.getString("unit"),
+                nullableDouble(rs, "total_amount"), nullableDouble(rs, "product_amount"),
+                nullableDouble(rs, "paid_amount"), nullableDouble(rs, "shipping_fee"),
+                rs.getString("amount_source"), nullableDouble(rs, "unit_price"), rs.getString("currency"),
                 rs.getString("decision"), rs.getInt("is_duplicate") == 1, rs.getString("dedupe_status"),
                 rs.getString("source_file"), rs.getString("created_at")
         );
+    }
+
+    private Double nullableDouble(ResultSet rs, String columnName) throws SQLException {
+        double value = rs.getDouble(columnName);
+        return rs.wasNull() ? null : value;
     }
 }

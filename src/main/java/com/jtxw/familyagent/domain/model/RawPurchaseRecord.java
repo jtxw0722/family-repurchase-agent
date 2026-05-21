@@ -43,9 +43,21 @@ public class RawPurchaseRecord {
      */
     private final String unit;
     /**
-     * 实付总金额
+     * 当前用于统计的总金额，导入阶段默认等于实付金额
      */
     private final Double totalAmount;
+    /**
+     * 商品金额，未扣除购物金、礼品卡等支付抵扣
+     */
+    private final Double productAmount;
+    /**
+     * 导入文件中的实付金额
+     */
+    private final Double paidAmount;
+    /**
+     * 导入文件中的运费
+     */
+    private final Double shippingFee;
     /**
      * 交易币种
      */
@@ -62,6 +74,24 @@ public class RawPurchaseRecord {
                              String unit,
                              Double totalAmount,
                              String currency) {
+        this(orderTime, platform, owner, productName, sku, category, subCategory, quantity, unit,
+                totalAmount, totalAmount, totalAmount, null, currency);
+    }
+
+    public RawPurchaseRecord(String orderTime,
+                             String platform,
+                             String owner,
+                             String productName,
+                             String sku,
+                             String category,
+                             String subCategory,
+                             Double quantity,
+                             String unit,
+                             Double totalAmount,
+                             Double productAmount,
+                             Double paidAmount,
+                             Double shippingFee,
+                             String currency) {
         this.orderTime = orderTime;
         this.platform = platform;
         this.owner = owner;
@@ -72,6 +102,9 @@ public class RawPurchaseRecord {
         this.quantity = quantity;
         this.unit = unit;
         this.totalAmount = totalAmount;
+        this.productAmount = productAmount;
+        this.paidAmount = paidAmount;
+        this.shippingFee = shippingFee;
         this.currency = currency;
     }
 
@@ -113,6 +146,18 @@ public class RawPurchaseRecord {
 
     public Double totalAmount() {
         return totalAmount;
+    }
+
+    public Double productAmount() {
+        return productAmount;
+    }
+
+    public Double paidAmount() {
+        return paidAmount;
+    }
+
+    public Double shippingFee() {
+        return shippingFee;
     }
 
     public String currency() {
@@ -157,6 +202,18 @@ public class RawPurchaseRecord {
 
     public Double getTotalAmount() {
         return totalAmount;
+    }
+
+    public Double getProductAmount() {
+        return productAmount;
+    }
+
+    public Double getPaidAmount() {
+        return paidAmount;
+    }
+
+    public Double getShippingFee() {
+        return shippingFee;
     }
 
     public String getCurrency() {

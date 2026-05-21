@@ -26,6 +26,8 @@ data/*.db
 data/*.db-*
 data/inbox/*
 !data/inbox/.gitkeep
+/订单数据*.csv
+/订单数据*.xlsx
 
 # Generated reports
 reports/*.md

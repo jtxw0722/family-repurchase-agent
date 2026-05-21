@@ -94,7 +94,7 @@ curl -X POST "http://localhost:8080/api/tools/import-file" `
 当前支持 CSV 和 Excel 两种文件格式。表头支持：
 
 - 项目标准模板：`order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency`
-- 中文订单导出模板：`订单提交时间、订单状态、店铺名称、商品名称、商品链接、型号款式、商品数量、实付金额`
+- 中文订单导出模板：`订单提交时间、订单状态、店铺名称、商品名称、商品链接、型号款式、商品数量、商品金额、实付金额、运费`
 
 判断价格：
 
@@ -183,6 +183,12 @@ is_duplicate = 0
 dedupe_status = unique
 ```
 
+金额口径：
+
+- 普通记录默认使用 `实付金额` 作为统计金额
+- 当 `实付金额 = 0` 且 `商品金额 > 0` 时，按 `商品金额 + 运费` 折算统计金额
+- 折算记录会进入待复核，原因编码为 `PAYMENT_ADJUSTMENT`
+
 以下记录会优先进入待复核：
 
 - 实付金额为 0
@@ -224,7 +230,7 @@ dedupe_status = unique
 - [x] 人工复核 apply 流程
 - [x] 重复订单检测
 - [x] Excel 导入
-- [ ] 购物金 / 礼品卡折算
+- [x] 购物金 / 礼品卡折算
 - [ ] 报告模板增强
 
 ### v0.3+

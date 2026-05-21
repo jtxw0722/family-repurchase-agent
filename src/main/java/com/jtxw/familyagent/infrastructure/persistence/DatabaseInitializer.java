@@ -51,10 +51,33 @@ public class DatabaseInitializer implements ApplicationRunner {
                     jdbcTemplate.execute(trimmed);
                 }
             }
+            ensurePurchaseRecordAmountColumns();
             ensureReviewItemColumns();
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
         }
+    }
+
+    private void ensurePurchaseRecordAmountColumns() {
+        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(purchase_records)")
+                .stream()
+                .map(row -> String.valueOf(row.get("name")))
+                .toList();
+        if (!columns.contains("product_amount")) {
+            jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN product_amount REAL");
+        }
+        if (!columns.contains("paid_amount")) {
+            jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN paid_amount REAL");
+        }
+        if (!columns.contains("shipping_fee")) {
+            jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN shipping_fee REAL");
+        }
+        if (!columns.contains("amount_source")) {
+            jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN amount_source TEXT DEFAULT 'paid_amount'");
+        }
+        jdbcTemplate.update("UPDATE purchase_records SET product_amount = total_amount WHERE product_amount IS NULL AND total_amount IS NOT NULL");
+        jdbcTemplate.update("UPDATE purchase_records SET paid_amount = total_amount WHERE paid_amount IS NULL AND total_amount IS NOT NULL");
+        jdbcTemplate.update("UPDATE purchase_records SET amount_source = 'paid_amount' WHERE amount_source IS NULL OR amount_source = ''");
     }
 
     private void ensureReviewItemColumns() {

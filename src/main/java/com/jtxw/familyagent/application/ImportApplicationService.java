@@ -5,6 +5,7 @@ import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
+import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
 import com.jtxw.familyagent.domain.policy.ProductNormalizer;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
@@ -31,6 +32,7 @@ public class ImportApplicationService {
     private final CsvPurchaseImporter csvPurchaseImporter;
     private final ExcelPurchaseImporter excelPurchaseImporter;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
+    private final PaymentAdjustmentPolicy paymentAdjustmentPolicy;
     private final ProductNormalizer productNormalizer;
     private final UnitPriceCalculator unitPriceCalculator;
     private final ImportBatchRepository importBatchRepository;
@@ -41,6 +43,7 @@ public class ImportApplicationService {
                                     CsvPurchaseImporter csvPurchaseImporter,
                                     ExcelPurchaseImporter excelPurchaseImporter,
                                     DuplicateDetectionPolicy duplicateDetectionPolicy,
+                                    PaymentAdjustmentPolicy paymentAdjustmentPolicy,
                                     ProductNormalizer productNormalizer,
                                     UnitPriceCalculator unitPriceCalculator,
                                     ImportBatchRepository importBatchRepository,
@@ -50,6 +53,7 @@ public class ImportApplicationService {
         this.csvPurchaseImporter = csvPurchaseImporter;
         this.excelPurchaseImporter = excelPurchaseImporter;
         this.duplicateDetectionPolicy = duplicateDetectionPolicy;
+        this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
         this.productNormalizer = productNormalizer;
         this.unitPriceCalculator = unitPriceCalculator;
         this.importBatchRepository = importBatchRepository;
@@ -61,7 +65,7 @@ public class ImportApplicationService {
      * 导入订单文件并写入本地数据库。
      *
      * <p>导入流程包括：读取订单文件、商品名称归一化、单位价格计算、重复订单检测、
-     * 订单明细入库，并将实付金额为 0 或疑似重复的记录加入待复核列表。</p>
+     * 订单明细入库，并将金额折算、实付金额为 0 或疑似重复的记录加入待复核列表。</p>
      *
      * @param file 本地订单文件路径
      * @return 导入结果
@@ -102,14 +106,17 @@ public class ImportApplicationService {
         int duplicateCount = 0;
         for (RawPurchaseRecord raw : rawRecords) {
             String normalizedName = productNormalizer.normalize(raw.productName());
+            PaymentAdjustmentPolicy.PaymentAdjustmentResult amountResult = paymentAdjustmentPolicy.adjust(raw);
+            Double totalAmount = amountResult.totalAmount();
             Double unitPrice = null;
-            if (raw.totalAmount() != null && raw.quantity() != null && raw.quantity() > 0) {
-                unitPrice = unitPriceCalculator.calculate(raw.totalAmount(), raw.quantity());
+            if (totalAmount != null && raw.quantity() != null && raw.quantity() > 0) {
+                unitPrice = unitPriceCalculator.calculate(totalAmount, raw.quantity());
             }
             // 候选记录先按正常订单构造，用于生成去重指纹和查询历史重复
             PurchaseRecord candidate = new PurchaseRecord(
                     null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
-                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), raw.totalAmount(),
+                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), totalAmount,
+                    raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), "include", false, "unique", file.toString(), ClockUtils.nowText()
             );
             // 同时检查历史数据库和当前批次，避免重复导入影响价格统计和月度报告
@@ -118,7 +125,8 @@ public class ImportApplicationService {
             // 疑似重复订单默认排除统计，后续可通过人工复核恢复纳入
             PurchaseRecord record = new PurchaseRecord(
                     null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
-                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), raw.totalAmount(),
+                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), totalAmount,
+                    raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), duplicate ? "exclude" : "include", duplicate,
                     duplicate ? "duplicate" : "unique", file.toString(), ClockUtils.nowText()
             );
@@ -130,9 +138,13 @@ public class ImportApplicationService {
                         "疑似重复订单，已默认排除统计；如确认不是重复购买，可人工复核为 include。");
                 reviewCount++;
                 duplicateCount++;
-            } else if (raw.totalAmount() != null && raw.totalAmount() == 0D) {
+            } else if (amountResult.reviewRequired()) {
+                // 金额折算会影响单价和月度统计，必须保留人工确认入口
+                reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
+                reviewCount++;
+            } else if (totalAmount != null && totalAmount == 0D) {
                 // 0 元记录可能是赠品、售后或抵扣场景，继续沿用人工复核流程
-                reviewItemRepository.create(recordId, "ZERO_PAYMENT", "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。 ");
+                reviewItemRepository.create(recordId, "ZERO_PAYMENT", "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。");
                 reviewCount++;
             }
         }

@@ -77,6 +77,9 @@ public class OrderImportMapper {
         if (!"交易成功".equals(get(values, "订单状态"))) {
             return null;
         }
+        Double paidAmount = parseDouble(get(values, "实付金额"));
+        Double productAmount = parseDouble(get(values, "商品金额"));
+        Double shippingFee = parseDouble(get(values, "运费"));
         return new RawPurchaseRecord(
                 get(values, "订单提交时间"),
                 inferPlatform(get(values, "商品链接")),
@@ -87,7 +90,10 @@ public class OrderImportMapper {
                 "",
                 parseDouble(get(values, "商品数量")),
                 "件",
-                parseDouble(get(values, "实付金额")),
+                paidAmount,
+                productAmount,
+                paidAmount,
+                shippingFee,
                 "CNY"
         );
     }
@@ -165,7 +171,7 @@ public class OrderImportMapper {
          */
         STANDARD,
         /**
-         * 中文电商订单导出模板，使用订单提交时间、商品名称、实付金额等中文字段
+         * 中文电商订单导出模板，使用订单提交时间、商品名称、商品金额、实付金额等中文字段
          */
         CHINESE_ORDER_EXPORT
     }

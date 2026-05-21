@@ -38,6 +38,9 @@ class ExcelPurchaseImporterTest {
         assertThat(record.quantity()).isEqualTo(1D);
         assertThat(record.unit()).isEqualTo("件");
         assertThat(record.totalAmount()).isEqualTo(76.96D);
+        assertThat(record.productAmount()).isEqualTo(76.96D);
+        assertThat(record.paidAmount()).isEqualTo(76.96D);
+        assertThat(record.shippingFee()).isZero();
     }
 
     @Test

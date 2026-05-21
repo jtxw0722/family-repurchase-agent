@@ -55,9 +55,25 @@ public class PurchaseRecord {
      */
     private final String unit;
     /**
-     * 实付总金额
+     * 当前用于统计的总金额
      */
     private final Double totalAmount;
+    /**
+     * 商品金额，未扣除购物金、礼品卡等支付抵扣
+     */
+    private final Double productAmount;
+    /**
+     * 导入文件中的实付金额
+     */
+    private final Double paidAmount;
+    /**
+     * 导入文件中的运费
+     */
+    private final Double shippingFee;
+    /**
+     * 统计金额来源，例如 paid_amount 或 product_amount_adjusted
+     */
+    private final String amountSource;
     /**
      * 按数量和单位折算后的单位价格
      */
@@ -107,6 +123,35 @@ public class PurchaseRecord {
                           String dedupeStatus,
                           String sourceFile,
                           String createdAt) {
+        this(id, batchId, orderTime, platform, owner, productName, normalizedName, sku, category, subCategory,
+                quantity, unit, totalAmount, totalAmount, totalAmount, null, "paid_amount", unitPrice, currency,
+                decision, duplicate, dedupeStatus, sourceFile, createdAt);
+    }
+
+    public PurchaseRecord(Long id,
+                          Long batchId,
+                          String orderTime,
+                          String platform,
+                          String owner,
+                          String productName,
+                          String normalizedName,
+                          String sku,
+                          String category,
+                          String subCategory,
+                          Double quantity,
+                          String unit,
+                          Double totalAmount,
+                          Double productAmount,
+                          Double paidAmount,
+                          Double shippingFee,
+                          String amountSource,
+                          Double unitPrice,
+                          String currency,
+                          String decision,
+                          boolean duplicate,
+                          String dedupeStatus,
+                          String sourceFile,
+                          String createdAt) {
         this.id = id;
         this.batchId = batchId;
         this.orderTime = orderTime;
@@ -120,6 +165,10 @@ public class PurchaseRecord {
         this.quantity = quantity;
         this.unit = unit;
         this.totalAmount = totalAmount;
+        this.productAmount = productAmount;
+        this.paidAmount = paidAmount;
+        this.shippingFee = shippingFee;
+        this.amountSource = amountSource == null || amountSource.isBlank() ? "paid_amount" : amountSource;
         this.unitPrice = unitPrice;
         this.currency = currency;
         this.decision = decision;
@@ -179,6 +228,22 @@ public class PurchaseRecord {
 
     public Double totalAmount() {
         return totalAmount;
+    }
+
+    public Double productAmount() {
+        return productAmount;
+    }
+
+    public Double paidAmount() {
+        return paidAmount;
+    }
+
+    public Double shippingFee() {
+        return shippingFee;
+    }
+
+    public String amountSource() {
+        return amountSource;
     }
 
     public Double unitPrice() {
@@ -259,6 +324,22 @@ public class PurchaseRecord {
 
     public Double getTotalAmount() {
         return totalAmount;
+    }
+
+    public Double getProductAmount() {
+        return productAmount;
+    }
+
+    public Double getPaidAmount() {
+        return paidAmount;
+    }
+
+    public Double getShippingFee() {
+        return shippingFee;
+    }
+
+    public String getAmountSource() {
+        return amountSource;
     }
 
     public Double getUnitPrice() {
