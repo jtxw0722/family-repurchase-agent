@@ -1,5 +1,10 @@
 # Family Consumption Agent
 
+[![CI](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-17%2B-blue)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
+![Release](https://img.shields.io/github/v/release/jtxw0722/family-consumption-agent?display_name=tag)
+
 本地优先的家庭消耗品复购分析工具。
 
 它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成月度消费报告。
@@ -50,7 +55,7 @@ mvn test
 
 ```bash
 mvn package
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar
 ```
 
 服务启动后会自动准备本地目录和 SQLite 数据库：
@@ -129,29 +134,29 @@ curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
 ## CLI
 
 ```bash
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
 
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
 
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar report --month=2026-05
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar report --month=2026-05
 
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review list
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar review list
 
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
 ```
 
 导入中文订单导出 CSV / Excel 时，如果文件内没有 `owner` 字段，可以使用参数指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
 ```
 
 也可以通过文件名指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据-jtxw.csv
-java -jar target/family-consumption-agent-0.1.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据-jtxw.csv
+java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
 ```
 
 ## 项目结构
