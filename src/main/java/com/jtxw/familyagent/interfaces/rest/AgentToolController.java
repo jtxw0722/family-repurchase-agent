@@ -86,11 +86,11 @@ public class AgentToolController {
     /**
      * 查询当前待人工复核的异常记录。
      *
-     * @return 待复核记录列表
+     * @return 待复核详情列表，包含复核原因和关联订单信息
      */
-    @Operation(summary = "查看待复核记录", description = "查询当前待人工复核的异常订单记录。")
+    @Operation(summary = "查看待复核记录", description = "查询当前待人工复核的异常订单记录，并返回关联订单的商品、金额、单价和来源文件等信息。")
     @GetMapping("/review-items")
-    public List<ReviewItem> listReviewItems() {
+    public List<ReviewItemDetail> listReviewItems() {
         return reviewApplicationService.listPending();
     }
 

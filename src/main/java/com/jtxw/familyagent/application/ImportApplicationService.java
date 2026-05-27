@@ -143,9 +143,11 @@ public class ImportApplicationService {
                 reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
                 reviewCount++;
             } else if (totalAmount != null && totalAmount == 0D) {
-                // 0 元记录可能是赠品、售后或抵扣场景，继续沿用人工复核流程
-                reviewItemRepository.create(recordId, "ZERO_PAYMENT", "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。");
-                reviewCount++;
+                if (!isTrustedZeroPayment(raw)) {
+                    // 无明确赠品或试用标识的 0 元记录仍需人工确认，避免售后补发、组合支付等场景误入库
+                    reviewItemRepository.create(recordId, "ZERO_PAYMENT", "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。");
+                    reviewCount++;
+                }
             }
         }
         importBatchRepository.complete(batchId, rawRecords.size(), importedCount, reviewCount);
@@ -163,5 +165,18 @@ public class ImportApplicationService {
             return excelPurchaseImporter.importFile(file, ownerOverride);
         }
         throw new IllegalArgumentException("不支持的订单文件类型，仅支持 .csv 和 .xlsx：" + file);
+    }
+
+    private boolean isTrustedZeroPayment(RawPurchaseRecord raw) {
+        String text = String.join(" ",
+                safeText(raw.productName()),
+                safeText(raw.sku()),
+                safeText(raw.category()),
+                safeText(raw.subCategory()));
+        return text.contains("赠品") || text.contains("试用");
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value;
     }
 }

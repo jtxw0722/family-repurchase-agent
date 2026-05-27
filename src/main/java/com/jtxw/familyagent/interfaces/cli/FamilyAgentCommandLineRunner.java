@@ -121,14 +121,20 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
 
     private void review(List<String> sourceArgs, ApplicationArguments args) {
         if (sourceArgs.size() >= 2 && "list".equals(sourceArgs.get(1))) {
-            List<ReviewItem> items = reviewApplicationService.listPending();
+            List<ReviewItemDetail> items = reviewApplicationService.listPending();
             if (items.isEmpty()) {
                 System.out.println("当前没有待复核记录。");
                 return;
             }
-            for (ReviewItem item : items) {
-                System.out.printf("#%d record=%d reason=%s message=%s status=%s%n",
-                        item.id(), item.recordId(), item.reasonCode(), item.reasonMessage(), item.status());
+            for (ReviewItemDetail item : items) {
+                System.out.printf("#%d record=%d reason=%s status=%s product=%s amount=%.2f paid=%s source=%s%n",
+                        item.id(), item.recordId(), item.reasonCode(), item.status(), valueOrDash(item.productName()),
+                        item.totalAmount() == null ? 0D : item.totalAmount(), valueOrDash(item.paidAmount()),
+                        valueOrDash(item.amountSource()));
+                System.out.printf("  owner=%s time=%s sku=%s unitPrice=%s file=%s%n",
+                        valueOrDash(item.owner()), valueOrDash(item.orderTime()), valueOrDash(item.sku()),
+                        valueOrDash(item.unitPrice()), valueOrDash(item.sourceFile()));
+                System.out.println("  message=" + item.reasonMessage());
             }
             return;
         }
@@ -176,5 +182,9 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
 
     private String valueOrDash(Double value) {
         return value == null ? "-" : String.format("%.4f", value);
+    }
+
+    private String valueOrDash(String value) {
+        return value == null || value.isBlank() ? "-" : value;
     }
 }

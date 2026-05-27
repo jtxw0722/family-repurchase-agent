@@ -2,6 +2,7 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
+import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
@@ -32,11 +33,13 @@ public class ReviewApplicationService {
     /**
      * 查询当前待处理的人工复核项。
      *
-     * @return 待复核记录列表
+     * <p>返回复核项基础信息和关联订单摘要，便于人工判断是否纳入统计。</p>
+     *
+     * @return 待复核详情列表
      */
-    public List<ReviewItem> listPending() {
+    public List<ReviewItemDetail> listPending() {
         databaseInitializer.initialize();
-        return reviewItemRepository.listPending();
+        return reviewItemRepository.listPendingDetails();
     }
 
     /**
