@@ -47,28 +47,68 @@ class FamilyConsumptionMcpServerApplicationTest {
         assertThat(properties.keySet()).containsAll(Set.of(
                 "productName",
                 "normalizedName",
+                "current",
+                "baseline",
+                "decision",
+                "evidence",
+                "warnings"
+        ));
+        assertThat(properties.keySet()).doesNotContain(
                 "currentUnitPrice",
                 "unit",
                 "historicalMin",
                 "historicalMedian",
                 "historicalAverage",
                 "sampleSize",
-                "decision",
                 "decisionText",
-                "reason"
-        ));
-        assertThat(properties.keySet()).doesNotContain(
+                "reason",
                 "historicalAverageUnitPrice",
                 "historicalMinUnitPrice",
                 "historicalMaxUnitPrice",
                 "reviewRequired"
         );
-        assertThat((Map<String, Object>) properties.get("historicalMin"))
+        Map<String, Object> baseline = (Map<String, Object>) properties.get("baseline");
+        Map<String, Object> baselineProperties = (Map<String, Object>) baseline.get("properties");
+        assertThat(baselineProperties.keySet()).containsAll(Set.of(
+                "sampleSize", "unit", "historicalMin", "historicalMedian", "historicalAverage", "dateRange"
+        ));
+        assertThat((Map<String, Object>) baselineProperties.get("historicalMin"))
                 .containsEntry("type", java.util.List.of("number", "null"));
-        assertThat((Map<String, Object>) properties.get("historicalMedian"))
+        assertThat((Map<String, Object>) baselineProperties.get("historicalMedian"))
                 .containsEntry("type", java.util.List.of("number", "null"));
-        assertThat((Map<String, Object>) properties.get("historicalAverage"))
+        assertThat((Map<String, Object>) baselineProperties.get("historicalAverage"))
                 .containsEntry("type", java.util.List.of("number", "null"));
+
+        Map<String, Object> current = (Map<String, Object>) properties.get("current");
+        Map<String, Object> currentProperties = (Map<String, Object>) current.get("properties");
+        assertThat(currentProperties.keySet()).containsAll(Set.of("price", "quantity", "unit", "unitPrice", "formula"));
+
+        Map<String, Object> decision = (Map<String, Object>) properties.get("decision");
+        Map<String, Object> decisionProperties = (Map<String, Object>) decision.get("properties");
+        assertThat(decisionProperties.keySet()).containsAll(Set.of("code", "text", "reason", "confidence"));
+
+        Map<String, Object> evidence = (Map<String, Object>) properties.get("evidence");
+        Map<String, Object> evidenceProperties = (Map<String, Object>) evidence.get("properties");
+        assertThat(evidenceProperties.keySet()).containsAll(Set.of(
+                "source", "sourceRecords", "excludedRecordCount", "excludedReasons", "outliers"
+        ));
+
+        Map<String, Object> sourceRecords = (Map<String, Object>) evidenceProperties.get("sourceRecords");
+        Map<String, Object> sourceRecordSchema = (Map<String, Object>) sourceRecords.get("items");
+        Map<String, Object> sourceRecordProperties = (Map<String, Object>) sourceRecordSchema.get("properties");
+        assertThat(sourceRecordProperties.keySet()).containsAll(Set.of(
+                "recordId",
+                "role",
+                "purchaseDate",
+                "productName",
+                "price",
+                "quantity",
+                "unit",
+                "unitPrice",
+                "unitPriceUnit",
+                "originalQuantity",
+                "originalUnit"
+        ));
     }
 
     private static class FakeRestClient extends FamilyAgentRestClient {

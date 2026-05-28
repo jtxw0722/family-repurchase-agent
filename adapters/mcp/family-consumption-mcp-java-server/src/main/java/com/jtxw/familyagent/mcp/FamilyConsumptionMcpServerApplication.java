@@ -112,15 +112,38 @@ public class FamilyConsumptionMcpServerApplication {
                         .outputSchema(objectSchema(properties(
                                 property("productName", stringSchema("原始商品名称")),
                                 property("normalizedName", stringSchema("标准化商品名称")),
-                                property("currentUnitPrice", numberSchema("当前单位价格")),
-                                property("unit", stringSchema("计量单位")),
-                                property("historicalMin", nullableNumberSchema("历史最低单位价格")),
-                                property("historicalMedian", nullableNumberSchema("历史中位数单位价格")),
-                                property("historicalAverage", nullableNumberSchema("历史平均单位价格")),
-                                property("sampleSize", numberSchema("历史样本数量")),
-                                property("decision", stringSchema("价格判断结果")),
-                                property("decisionText", stringSchema("价格判断展示文本")),
-                                property("reason", stringSchema("判断原因"))
+                                property("current", objectSchema(properties(
+                                        property("price", numberSchema("当前总价")),
+                                        property("quantity", numberSchema("当前数量")),
+                                        property("unit", stringSchema("计量单位")),
+                                        property("unitPrice", numberSchema("当前单位价格")),
+                                        property("formula", stringSchema("单位价格计算表达式"))
+                                ))),
+                                property("baseline", objectSchema(properties(
+                                        property("sampleSize", numberSchema("历史样本数量")),
+                                        property("unit", stringSchema("历史统计统一单位")),
+                                        property("historicalMin", nullableNumberSchema("历史最低单位价格")),
+                                        property("historicalMedian", nullableNumberSchema("历史中位数单位价格")),
+                                        property("historicalAverage", nullableNumberSchema("历史平均单位价格")),
+                                        property("dateRange", nullableObjectSchema(properties(
+                                                property("from", stringSchema("历史样本最早购买日期")),
+                                                property("to", stringSchema("历史样本最晚购买日期"))
+                                        )))
+                                ))),
+                                property("decision", objectSchema(properties(
+                                        property("code", stringSchema("价格判断编码")),
+                                        property("text", stringSchema("价格判断展示文本")),
+                                        property("reason", stringSchema("判断原因")),
+                                        property("confidence", stringSchema("判断置信度"))
+                                ))),
+                                property("evidence", objectSchema(properties(
+                                        property("source", stringSchema("证据来源")),
+                                        property("sourceRecords", arraySchema(sourceRecordOutputSchema())),
+                                        property("excludedRecordCount", numberSchema("被排除记录数量")),
+                                        property("excludedReasons", arraySchema(stringSchema("排除原因"))),
+                                        property("outliers", arraySchema(sourceRecordOutputSchema()))
+                                ))),
+                                property("warnings", arraySchema(stringSchema("风险提示")))
                         )))
                         .build(),
                 this::handleComparePrice
@@ -307,6 +330,36 @@ public class FamilyConsumptionMcpServerApplication {
 
     private static Map<String, Object> nullableNumberSchema(String description) {
         return Map.of("type", List.of("number", "null"), "description", description);
+    }
+
+    private static Map<String, Object> nullableStringSchema(String description) {
+        return Map.of("type", List.of("string", "null"), "description", description);
+    }
+
+    private static Map<String, Object> nullableObjectSchema(Map<String, Object> properties) {
+        Map<String, Object> schema = objectSchema(properties);
+        schema.put("type", List.of("object", "null"));
+        return schema;
+    }
+
+    private static Map<String, Object> sourceRecordOutputSchema() {
+        return objectSchema(properties(
+                property("recordId", nullableNumberSchema("历史记录 ID")),
+                property("role", stringSchema("证据角色")),
+                property("purchaseDate", nullableStringSchema("购买日期")),
+                property("productName", stringSchema("历史记录商品名称")),
+                property("price", nullableNumberSchema("历史记录统计金额")),
+                property("quantity", nullableNumberSchema("统一口径数量")),
+                property("unit", nullableStringSchema("统一口径单位")),
+                property("unitPrice", nullableNumberSchema("统一口径单位价格")),
+                property("unitPriceUnit", nullableStringSchema("单位价格口径单位")),
+                property("originalQuantity", nullableNumberSchema("原始记录数量")),
+                property("originalUnit", nullableStringSchema("原始记录单位"))
+        ));
+    }
+
+    private static Map<String, Object> arraySchema(Map<String, Object> itemSchema) {
+        return Map.of("type", "array", "items", itemSchema);
     }
 
     private static Map<String, Object> booleanSchema(String description) {

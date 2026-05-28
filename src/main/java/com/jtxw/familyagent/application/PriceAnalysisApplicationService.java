@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.policy.PriceDecisionPolicy;
 import com.jtxw.familyagent.domain.policy.ProductNormalizer;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
@@ -46,7 +47,7 @@ public class PriceAnalysisApplicationService {
     public PriceDecisionResult comparePrice(String productName, double price, double quantity, String unit) {
         databaseInitializer.initialize();
         String normalizedName = productNormalizer.normalize(productName);
-        List<Double> history = purchaseRecordRepository.listUnitPrices(normalizedName);
+        List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalizedName);
         return priceDecisionPolicy.decide(productName, normalizedName, price, quantity, unit, history);
     }
 }

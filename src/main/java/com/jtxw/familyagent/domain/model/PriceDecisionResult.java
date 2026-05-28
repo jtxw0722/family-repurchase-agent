@@ -2,17 +2,19 @@ package com.jtxw.familyagent.domain.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.List;
+
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/00:36
- * @Description: 价格判断结果对象，承载当前单价、历史统计和决策说明。
+ * @Description: 价格判断结果对象，承载当前价格、历史统计、决策说明和证据链。
  */
 @Schema(description = "价格判断结果")
 public class PriceDecisionResult {
     /**
      * 原始商品名称
      */
-    @Schema(description = "原始商品名称", example = "猫砂")
+    @Schema(description = "原始商品名称", example = "名创优品猫砂")
     private final String productName;
     /**
      * 归一化后的商品名称
@@ -20,73 +22,45 @@ public class PriceDecisionResult {
     @Schema(description = "归一化后的商品名称，用于匹配本地历史价格样本", example = "猫砂")
     private final String normalizedName;
     /**
-     * 本次输入价格折算后的单位价格
+     * 当前价格计算依据
      */
-    @Schema(description = "本次输入价格折算后的单位价格", example = "7.42")
-    private final double currentUnitPrice;
+    @Schema(description = "当前价格计算依据")
+    private final Current current;
     /**
-     * 单位价格使用的计量单位
+     * 历史价格统计基准
      */
-    @Schema(description = "单位价格使用的计量单位", example = "kg")
-    private final String unit;
+    @Schema(description = "历史价格统计基准")
+    private final Baseline baseline;
     /**
-     * 历史最低单位价格；样本不足时为空
+     * 价格判断结论
      */
-    @Schema(description = "历史最低单位价格，样本不足时为空", example = "6.90", nullable = true)
-    private final Double historicalMin;
+    @Schema(description = "价格判断结论")
+    private final Decision decision;
     /**
-     * 历史单位价格中位数；样本不足时为空
+     * 判断证据来源和代表性历史记录
      */
-    @Schema(description = "历史单位价格中位数，样本不足时为空", example = "7.50", nullable = true)
-    private final Double historicalMedian;
+    @Schema(description = "判断证据来源和代表性历史记录")
+    private final Evidence evidence;
     /**
-     * 历史单位价格平均值；样本不足时为空
+     * 风险提示
      */
-    @Schema(description = "历史单位价格平均值，样本不足时为空", example = "7.62", nullable = true)
-    private final Double historicalAverage;
-    /**
-     * 用于本次价格判断的历史样本数量
-     */
-    @Schema(description = "用于本次价格判断的历史样本数量", example = "5")
-    private final int sampleSize;
-    /**
-     * 机器可读的价格判断编码
-     */
-    @Schema(description = "机器可读的价格判断编码", example = "normal", allowableValues = {"no_history", "good_price", "normal", "expensive"})
-    private final String decision;
-    /**
-     * 面向用户展示的价格判断文案
-     */
-    @Schema(description = "面向用户展示的价格判断文案", example = "价格正常")
-    private final String decisionText;
-    /**
-     * 价格判断原因说明
-     */
-    @Schema(description = "价格判断原因说明", example = "当前单位价格接近历史中位数")
-    private final String reason;
+    @Schema(description = "风险提示")
+    private final List<String> warnings;
 
     public PriceDecisionResult(String productName,
                                String normalizedName,
-                               double currentUnitPrice,
-                               String unit,
-                               Double historicalMin,
-                               Double historicalMedian,
-                               Double historicalAverage,
-                               int sampleSize,
-                               String decision,
-                               String decisionText,
-                               String reason) {
+                               Current current,
+                               Baseline baseline,
+                               Decision decision,
+                               Evidence evidence,
+                               List<String> warnings) {
         this.productName = productName;
         this.normalizedName = normalizedName;
-        this.currentUnitPrice = currentUnitPrice;
-        this.unit = unit;
-        this.historicalMin = historicalMin;
-        this.historicalMedian = historicalMedian;
-        this.historicalAverage = historicalAverage;
-        this.sampleSize = sampleSize;
+        this.current = current;
+        this.baseline = baseline;
         this.decision = decision;
-        this.decisionText = decisionText;
-        this.reason = reason;
+        this.evidence = evidence;
+        this.warnings = warnings == null ? List.of() : List.copyOf(warnings);
     }
 
     public String productName() {
@@ -97,40 +71,56 @@ public class PriceDecisionResult {
         return normalizedName;
     }
 
+    public Current current() {
+        return current;
+    }
+
+    public Baseline baseline() {
+        return baseline;
+    }
+
+    public Evidence evidence() {
+        return evidence;
+    }
+
+    public List<String> warnings() {
+        return warnings;
+    }
+
     public double currentUnitPrice() {
-        return currentUnitPrice;
+        return current.unitPrice();
     }
 
     public String unit() {
-        return unit;
+        return current.unit();
     }
 
     public Double historicalMin() {
-        return historicalMin;
+        return baseline.historicalMin();
     }
 
     public Double historicalMedian() {
-        return historicalMedian;
+        return baseline.historicalMedian();
     }
 
     public Double historicalAverage() {
-        return historicalAverage;
+        return baseline.historicalAverage();
     }
 
     public int sampleSize() {
-        return sampleSize;
+        return baseline.sampleSize();
     }
 
     public String decision() {
-        return decision;
+        return decision.code();
     }
 
     public String decisionText() {
-        return decisionText;
+        return decision.text();
     }
 
     public String reason() {
-        return reason;
+        return decision.reason();
     }
 
     public String getProductName() {
@@ -141,39 +131,414 @@ public class PriceDecisionResult {
         return normalizedName;
     }
 
-    public double getCurrentUnitPrice() {
-        return currentUnitPrice;
+    public Current getCurrent() {
+        return current;
     }
 
-    public String getUnit() {
-        return unit;
+    public Baseline getBaseline() {
+        return baseline;
     }
 
-    public Double getHistoricalMin() {
-        return historicalMin;
-    }
-
-    public Double getHistoricalMedian() {
-        return historicalMedian;
-    }
-
-    public Double getHistoricalAverage() {
-        return historicalAverage;
-    }
-
-    public int getSampleSize() {
-        return sampleSize;
-    }
-
-    public String getDecision() {
+    public Decision getDecision() {
         return decision;
     }
 
-    public String getDecisionText() {
-        return decisionText;
+    public Evidence getEvidence() {
+        return evidence;
     }
 
-    public String getReason() {
-        return reason;
+    public List<String> getWarnings() {
+        return warnings;
+    }
+
+    @Schema(description = "当前价格计算依据")
+    public static class Current {
+        private final double price;
+        private final double quantity;
+        private final String unit;
+        private final double unitPrice;
+        private final String formula;
+
+        public Current(double price, double quantity, String unit, double unitPrice, String formula) {
+            this.price = price;
+            this.quantity = quantity;
+            this.unit = unit;
+            this.unitPrice = unitPrice;
+            this.formula = formula;
+        }
+
+        public double price() {
+            return price;
+        }
+
+        public double quantity() {
+            return quantity;
+        }
+
+        public String unit() {
+            return unit;
+        }
+
+        public double unitPrice() {
+            return unitPrice;
+        }
+
+        public String formula() {
+            return formula;
+        }
+
+        public double getPrice() {
+            return price;
+        }
+
+        public double getQuantity() {
+            return quantity;
+        }
+
+        public String getUnit() {
+            return unit;
+        }
+
+        public double getUnitPrice() {
+            return unitPrice;
+        }
+
+        public String getFormula() {
+            return formula;
+        }
+    }
+
+    @Schema(description = "历史价格统计基准")
+    public static class Baseline {
+        private final int sampleSize;
+        private final String unit;
+        private final Double historicalMin;
+        private final Double historicalMedian;
+        private final Double historicalAverage;
+        private final DateRange dateRange;
+
+        public Baseline(int sampleSize,
+                        String unit,
+                        Double historicalMin,
+                        Double historicalMedian,
+                        Double historicalAverage,
+                        DateRange dateRange) {
+            this.sampleSize = sampleSize;
+            this.unit = unit;
+            this.historicalMin = historicalMin;
+            this.historicalMedian = historicalMedian;
+            this.historicalAverage = historicalAverage;
+            this.dateRange = dateRange;
+        }
+
+        public int sampleSize() {
+            return sampleSize;
+        }
+
+        public String unit() {
+            return unit;
+        }
+
+        public Double historicalMin() {
+            return historicalMin;
+        }
+
+        public Double historicalMedian() {
+            return historicalMedian;
+        }
+
+        public Double historicalAverage() {
+            return historicalAverage;
+        }
+
+        public DateRange dateRange() {
+            return dateRange;
+        }
+
+        public int getSampleSize() {
+            return sampleSize;
+        }
+
+        public String getUnit() {
+            return unit;
+        }
+
+        public Double getHistoricalMin() {
+            return historicalMin;
+        }
+
+        public Double getHistoricalMedian() {
+            return historicalMedian;
+        }
+
+        public Double getHistoricalAverage() {
+            return historicalAverage;
+        }
+
+        public DateRange getDateRange() {
+            return dateRange;
+        }
+    }
+
+    @Schema(description = "历史样本日期范围")
+    public static class DateRange {
+        private final String from;
+        private final String to;
+
+        public DateRange(String from, String to) {
+            this.from = from;
+            this.to = to;
+        }
+
+        public String from() {
+            return from;
+        }
+
+        public String to() {
+            return to;
+        }
+
+        public String getFrom() {
+            return from;
+        }
+
+        public String getTo() {
+            return to;
+        }
+    }
+
+    @Schema(description = "价格判断结论")
+    public static class Decision {
+        private final String code;
+        private final String text;
+        private final String reason;
+        private final String confidence;
+
+        public Decision(String code, String text, String reason, String confidence) {
+            this.code = code;
+            this.text = text;
+            this.reason = reason;
+            this.confidence = confidence;
+        }
+
+        public String code() {
+            return code;
+        }
+
+        public String text() {
+            return text;
+        }
+
+        public String reason() {
+            return reason;
+        }
+
+        public String confidence() {
+            return confidence;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
+        public String getConfidence() {
+            return confidence;
+        }
+    }
+
+    @Schema(description = "判断证据来源和代表性历史记录")
+    public static class Evidence {
+        private final String source;
+        private final List<SourceRecord> sourceRecords;
+        private final int excludedRecordCount;
+        private final List<String> excludedReasons;
+        private final List<SourceRecord> outliers;
+
+        public Evidence(String source,
+                        List<SourceRecord> sourceRecords,
+                        int excludedRecordCount,
+                        List<String> excludedReasons,
+                        List<SourceRecord> outliers) {
+            this.source = source;
+            this.sourceRecords = sourceRecords == null ? List.of() : List.copyOf(sourceRecords);
+            this.excludedRecordCount = excludedRecordCount;
+            this.excludedReasons = excludedReasons == null ? List.of() : List.copyOf(excludedReasons);
+            this.outliers = outliers == null ? List.of() : List.copyOf(outliers);
+        }
+
+        public String source() {
+            return source;
+        }
+
+        public List<SourceRecord> sourceRecords() {
+            return sourceRecords;
+        }
+
+        public int excludedRecordCount() {
+            return excludedRecordCount;
+        }
+
+        public List<String> excludedReasons() {
+            return excludedReasons;
+        }
+
+        public List<SourceRecord> outliers() {
+            return outliers;
+        }
+
+        public String getSource() {
+            return source;
+        }
+
+        public List<SourceRecord> getSourceRecords() {
+            return sourceRecords;
+        }
+
+        public int getExcludedRecordCount() {
+            return excludedRecordCount;
+        }
+
+        public List<String> getExcludedReasons() {
+            return excludedReasons;
+        }
+
+        public List<SourceRecord> getOutliers() {
+            return outliers;
+        }
+    }
+
+    @Schema(description = "代表性历史记录")
+    public static class SourceRecord {
+        private final Long recordId;
+        private final String role;
+        private final String purchaseDate;
+        private final String productName;
+        private final Double price;
+        private final Double quantity;
+        private final String unit;
+        private final Double unitPrice;
+        private final String unitPriceUnit;
+        private final Double originalQuantity;
+        private final String originalUnit;
+
+        public SourceRecord(Long recordId,
+                            String role,
+                            String purchaseDate,
+                            String productName,
+                            Double price,
+                            Double quantity,
+                            String unit,
+                            Double unitPrice,
+                            String unitPriceUnit,
+                            Double originalQuantity,
+                            String originalUnit) {
+            this.recordId = recordId;
+            this.role = role;
+            this.purchaseDate = purchaseDate;
+            this.productName = productName;
+            this.price = price;
+            this.quantity = quantity;
+            this.unit = unit;
+            this.unitPrice = unitPrice;
+            this.unitPriceUnit = unitPriceUnit;
+            this.originalQuantity = originalQuantity;
+            this.originalUnit = originalUnit;
+        }
+
+        public Long recordId() {
+            return recordId;
+        }
+
+        public String role() {
+            return role;
+        }
+
+        public String purchaseDate() {
+            return purchaseDate;
+        }
+
+        public String productName() {
+            return productName;
+        }
+
+        public Double price() {
+            return price;
+        }
+
+        public Double quantity() {
+            return quantity;
+        }
+
+        public String unit() {
+            return unit;
+        }
+
+        public Double unitPrice() {
+            return unitPrice;
+        }
+
+        public String unitPriceUnit() {
+            return unitPriceUnit;
+        }
+
+        public Double originalQuantity() {
+            return originalQuantity;
+        }
+
+        public String originalUnit() {
+            return originalUnit;
+        }
+
+        public Long getRecordId() {
+            return recordId;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public String getPurchaseDate() {
+            return purchaseDate;
+        }
+
+        public String getProductName() {
+            return productName;
+        }
+
+        public Double getPrice() {
+            return price;
+        }
+
+        public Double getQuantity() {
+            return quantity;
+        }
+
+        public String getUnit() {
+            return unit;
+        }
+
+        public Double getUnitPrice() {
+            return unitPrice;
+        }
+
+        public String getUnitPriceUnit() {
+            return unitPriceUnit;
+        }
+
+        public Double getOriginalQuantity() {
+            return originalQuantity;
+        }
+
+        public String getOriginalUnit() {
+            return originalUnit;
+        }
     }
 }

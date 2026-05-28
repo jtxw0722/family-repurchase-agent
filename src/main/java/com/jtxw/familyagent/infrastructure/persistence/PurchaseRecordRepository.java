@@ -97,6 +97,28 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 查询指定商品的历史有效价格记录。
+     *
+     * <p>默认只返回正式统计口径内的记录：
+     * decision = include，is_duplicate = 0，dedupe_status = unique。</p>
+     *
+     * @param normalizedName 归一化商品名称
+     * @return 历史有效价格记录列表
+     */
+    public List<PurchaseRecord> listPriceHistoryRecords(String normalizedName) {
+        return jdbcTemplate.query("""
+                SELECT * FROM purchase_records
+                WHERE normalized_name = ?
+                  AND decision = 'include'
+                  AND is_duplicate = 0
+                  AND dedupe_status = 'unique'
+                  AND unit_price IS NOT NULL
+                  AND total_amount > 0
+                ORDER BY order_time
+                """, rowMapper(), normalizedName);
+    }
+
+    /**
      * 更新消费记录的统计决策。
      *
      * @param id       消费记录 ID
