@@ -57,7 +57,7 @@ class ImportFilePathValidatorTest {
         Path symlink = importsDir.resolve("link.csv");
 
         try {
-            Files.createSymbolicLink(symlink, privateFile);
+            Files.createSymbolicLink(symlink, privateFile.toAbsolutePath().normalize());
         } catch (UnsupportedOperationException | IOException | SecurityException e) {
             return;
         }
@@ -70,7 +70,7 @@ class ImportFilePathValidatorTest {
     }
 
     private Path createWorkspaceTempDir() throws IOException {
-        Path targetDir = Path.of("target");
+        Path targetDir = Path.of("target").toAbsolutePath().normalize();
         Files.createDirectories(targetDir);
         return Files.createTempDirectory(targetDir, "import-validator-");
     }
