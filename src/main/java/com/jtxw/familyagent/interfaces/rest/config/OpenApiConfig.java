@@ -20,7 +20,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Family Consumption Agent API")
-                        .version("0.2.0")
+                        .version("0.3.0")
                         .description("本地优先家庭消费分析项目的 REST Tool API。"));
     }
 }

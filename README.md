@@ -1,4 +1,4 @@
-# Family Consumption Agent
+﻿# Family Consumption Agent
 
 [![CI](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-17%2B-blue)
@@ -10,6 +10,7 @@
 它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成月度消费报告。
 
 当前版本是一个 Spring Boot 后端 MVP，提供 REST Tool API 和 CLI 辅助入口。后续可以作为 Tool Server 接入 OpenClaw / Codex / Claude Code / Spring AI。
+v0.3 开始补充独立 Java MCP stdio Server，供 Claude Desktop / Cursor 等 MCP Host 调用本地 REST Tool API。
 
 ## 功能
 
@@ -22,6 +23,7 @@
 - Markdown 月度报告生成
 - REST Tool API
 - CLI 辅助命令
+- Java MCP stdio Server
 
 ## 技术栈
 
@@ -55,7 +57,7 @@ mvn test
 
 ```bash
 mvn package
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar
 ```
 
 服务启动后会自动准备本地目录和 SQLite 数据库：
@@ -134,29 +136,29 @@ curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
 ## CLI
 
 ```bash
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
 
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
 
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar report --month=2026-05
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar report --month=2026-05
 
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar review list
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar review list
 
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
 ```
 
 导入中文订单导出 CSV / Excel 时，如果文件内没有 `owner` 字段，可以使用参数指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
 ```
 
 也可以通过文件名指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据-jtxw.csv
-java -jar target/family-consumption-agent-0.2.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据-jtxw.csv
+java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
 ```
 
 ## 项目结构
@@ -176,6 +178,26 @@ examples/               # 合成示例数据
 docs/                   # 项目文档
 adapters/               # Agent Host 适配示例
 evals/                  # 评测用例
+```
+
+## MCP Server
+
+Java MCP stdio Server 位于：
+
+```text
+adapters/mcp/family-consumption-mcp-java-server/
+```
+
+当前暴露：
+
+- `import_file`
+- `compare_price`
+- `generate_report`
+
+它只做 MCP 协议适配和 HTTP 转发，不直接访问 SQLite。使用方式见：
+
+```text
+adapters/mcp/family-consumption-mcp-java-server/README.md
 ```
 
 ## 数据口径
@@ -240,7 +262,7 @@ dedupe_status = unique
 
 ### v0.3+
 
-- [ ] MCP Server
+- [x] Java MCP stdio Server
 - [ ] OpenClaw Plugin 原型
 - [ ] Codex Skill 示例
 - [ ] Claude Code Subagent 示例
@@ -249,3 +271,4 @@ dedupe_status = unique
 ## License
 
 MIT
+
