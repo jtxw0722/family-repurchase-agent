@@ -25,13 +25,17 @@ jobs:
           cache: maven
 
       - name: Build package
-        run: mvn package
+        run: |
+          mvn package
+          mvn -f adapters/mcp/family-consumption-mcp-java-server/pom.xml package
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG_NAME" target/family-consumption-agent-*.jar \
+          gh release create "$TAG_NAME" \
+            target/family-consumption-agent-*.jar \
+            adapters/mcp/family-consumption-mcp-java-server/target/family-consumption-mcp-java-server-*.jar \
             --title "$TAG_NAME" \
             --generate-notes
