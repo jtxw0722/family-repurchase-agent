@@ -5,36 +5,218 @@
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
 ![Release](https://img.shields.io/github/v/release/jtxw0722/family-repurchase-agent?display_name=tag)
 
-本地优先的家庭消耗品复购分析工具。
+> 本地优先的家庭复购品价格决策 Agent，基于 Java、Spring Boot、SQLite、MCP Server 和 OpenClaw Plugin 构建。
 
-它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成复购品价格报告。
+**Family Repurchase Agent** 是一个面向家庭高频复购品的价格决策 Agent。
 
-当前版本是一个 Spring Boot 后端 MVP，提供 REST Tool API 和 CLI 辅助入口。后续可以作为 Tool Server 接入 OpenClaw / Codex / Claude Code / Spring AI。
-v0.3 开始补充独立 Java MCP stdio Server，供 Claude Desktop / Cursor 等 MCP Host 调用本地 REST Tool API。
+它关注的不是“我花了多少钱”，而是：
 
-## 功能
+> **这个价格现在值不值得买？**
 
-- CSV / Excel 订单导入
-- SQLite 本地存储
-- 商品名称归一化
-- 单位价格计算
-- 当前价格与历史价格对比
-- 实付为 0 等异常记录进入待复核列表
-- Markdown 价格报告生成
-- REST Tool API
-- CLI 辅助命令
-- Java MCP stdio Server
+针对猫砂、纸巾、洗衣液等高频复购品，系统支持将不同规格、不同单位、不同包装形式的商品价格归一化为单位价格，并结合历史购买记录计算价格基准线，判断当前价格是否值得购买。同时通过 MCP Server 和 OpenClaw Plugin 将价格分析能力封装为 Agent 可调用工具。
+
+---
+
+## 项目动机
+
+家庭复购品的购买决策并不适合只看订单总价。
+
+同一类商品经常存在不同规格、不同单位、组合装、优惠券、赠品和平台价格差异。例如：
+
+```text
+10kg
+20斤
+5kg * 4袋
+500ml * 12瓶
+买二送一
+第二件半价
+```
+
+对用户来说，真正有价值的问题是：
+
+* 当前价格折算到标准单位后是多少？
+* 它相对历史最低价、中位价、最近购买价处于什么区间？
+* 这个价格是否值得现在购买？
+* 是否适合囤货，还是应该等待更低价格？
+
+Family Repurchase Agent 使用本地价格样本、单位价格归一化和历史价格基准线来回答这些问题，而不是让 LLM 直接凭经验生成结论。
+
+---
+
+## 示例
+
+输入：
+
+```text
+猫砂 119.3 元 / 40kg
+```
+
+示例输出：
+
+```text
+单位价格：2.98 元/kg
+历史中位价：4.20 元/kg
+历史最低价：2.80 元/kg
+样本数量：23
+判断：当前价格低于历史中位价，接近历史低位，可以考虑补货
+```
+
+> 示例输出仅用于展示结果形态，实际判断取决于本地 SQLite 中的历史价格样本。
+
+---
+
+## 核心能力
+
+### 1. 单位价格归一化
+
+系统会将不同包装规格统一换算为标准单位价格，例如：
+
+```text
+元/kg
+元/L
+元/片
+元/包
+元/瓶
+```
+
+用于解决电商商品规格不统一导致的价格不可比问题。
+
+---
+
+### 2. 历史价格基准线
+
+系统基于本地历史价格样本计算：
+
+* 历史最低价
+* 历史中位价
+* 历史平均价
+* 最近购买价
+* 样本数量
+
+价格判断基于这些可验证数据，而不是模型猜测。
+
+---
+
+### 3. 复购品维度建模
+
+系统通过商品名称归一化和别名映射，将不同品牌、规格、平台下的相似商品映射到统一复购品维度。
+
+例如：
+
+```text
+名创优品膨润土猫砂 10kg*4
+MINISO 猫砂 40kg
+膨润土猫砂组合装
+```
+
+可以归一到统一的复购品维度：
+
+```text
+normalizedName = 猫砂
+standardUnit   = kg
+```
+
+---
+
+### 4. 数据质量复核
+
+对可能影响历史价格基准线的异常样本，系统会进入人工复核流程，例如：
+
+* 实付金额为 0
+* 疑似重复记录
+* 数量或单位无法解析
+* 赠品、试用装、售后补发
+* 购物金、礼品卡、组合支付等需要折算的记录
+
+只有可信记录才会进入正式统计口径，避免错误样本污染历史价格判断。
+
+---
+
+### 5. 可解释输出
+
+每个价格判断均输出计算公式、样本数量和历史基准，避免纯大模型生成造成不可验证结论。
+
+---
+
+### 6. Agent 工具接口
+
+项目通过以下方式暴露能力：
+
+* REST Tool API
+* CLI
+* Java MCP stdio Server
+* OpenClaw Plugin Prototype
+
+Agent Host 负责自然语言理解、工具选择和用户交互；后端负责可测试、可复核的价格计算和数据处理。
+
+---
+
+## 当前状态
+
+`v0.4.0` 是 Family Repurchase Agent 的定位与命名统一版本。
+
+当前已实现：
+
+* CSV / Excel 导入
+* SQLite 本地存储
+* 商品名称归一化
+* 单位价格计算
+* 当前价格与历史价格对比
+* 重复记录检测
+* 异常样本人工复核
+* Markdown 复购品价格报告
+* REST Tool API
+* CLI 辅助命令
+* Java MCP stdio Server
+* OpenClaw Plugin Prototype
+
+已规划但尚未实现：
+
+* 自然语言价格样本录入
+* `PurchaseCandidate` 候选态
+* dry-run / confirm 写入流程
+* 更完整的价格基准线计算器
+* 价格样本批量导入与价格报告增强
+
+---
+
+## 架构
+
+```text
+CLI / REST / MCP / OpenClaw
+        ↓
+Spring Boot Tool API
+        ↓
+Application Service
+        ↓
+Domain Policy
+        ↓
+Repository
+        ↓
+SQLite
+```
+
+后端将确定性逻辑保留在 Java Application Service 和 Domain Policy 中。
+
+MCP Server 和 OpenClaw Plugin 只是 adapter：它们负责协议适配、参数校验、路径安全检查和 HTTP 转发，不直接访问 SQLite，也不实现业务规则。
+
+这种边界让 Agent 负责自然语言理解和工具选择，让后端负责可测试、可复核的价格计算。
+
+---
 
 ## 技术栈
 
-| 类型 | 选型 |
-|---|---|
-| 语言 | Java 17+ |
-| 框架 | Spring Boot 3.x |
-| 数据库 | SQLite |
-| 文件导入 | Apache Commons CSV / Apache POI |
-| 测试 | JUnit 5 |
-| 构建 | Maven |
+| 类型       | 选型                                                |
+| -------- | ------------------------------------------------- |
+| 语言       | Java 17+                                          |
+| 框架       | Spring Boot 3.x                                   |
+| 数据库      | SQLite                                            |
+| 文件导入     | Apache Commons CSV / Apache POI                   |
+| 测试       | JUnit 5                                           |
+| 构建       | Maven                                             |
+| Agent 集成 | Java MCP stdio Server / OpenClaw Plugin Prototype |
+
+---
 
 ## 快速开始
 
@@ -60,7 +242,7 @@ mvn package
 java -jar target/family-repurchase-agent-0.4.0.jar
 ```
 
-服务启动后会自动准备本地目录和 SQLite 数据库：
+默认本地目录：
 
 ```text
 data/family-repurchase.sqlite
@@ -68,21 +250,17 @@ data/inbox/
 reports/
 ```
 
-默认服务地址：
-
-```text
-http://localhost:8080
-```
-
-## REST API
-
-接口文档：
+OpenAPI：
 
 ```text
 http://localhost:8080/swagger-ui.html
 ```
 
-导入订单：
+---
+
+## API 示例
+
+### 导入文件
 
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/import-file" `
@@ -90,20 +268,7 @@ curl -X POST "http://localhost:8080/api/tools/import-file" `
   -d "{\"filePath\":\"examples/sample_orders.csv\",\"owner\":\"jtxw\"}"
 ```
 
-`owner` 为可选参数。导入时会按以下顺序确定订单归属人：
-
-1. 请求体中的 `owner`
-2. CSV 中的 `owner` 字段
-3. 文件名后缀，例如 `订单数据-jtxw.csv`
-
-最终入库前会统一为大写，例如 `jtxw` 和 `JTXW` 都会保存为 `JTXW`。
-
-当前支持 CSV 和 Excel 两种文件格式。表头支持：
-
-- 项目标准模板：`order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency`
-- 中文订单导出模板：`订单提交时间、订单状态、店铺名称、商品名称、商品链接、型号款式、商品数量、商品金额、实付金额、运费`
-
-判断价格：
+### 判断当前价格
 
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/compare-price" `
@@ -111,7 +276,7 @@ curl -X POST "http://localhost:8080/api/tools/compare-price" `
   -d "{\"productName\":\"猫砂\",\"price\":89,\"quantity\":12,\"unit\":\"kg\"}"
 ```
 
-生成报告：
+### 生成报告
 
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/generate-report" `
@@ -119,21 +284,9 @@ curl -X POST "http://localhost:8080/api/tools/generate-report" `
   -d "{\"month\":\"2026-05\"}"
 ```
 
-查看待复核记录：
+---
 
-```powershell
-curl "http://localhost:8080/api/tools/review-items"
-```
-
-应用复核结果：
-
-```powershell
-curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
-  -H "Content-Type: application/json" `
-  -d "{\"action\":\"exclude\",\"note\":\"试用装，不纳入正式统计\"}"
-```
-
-## CLI
+## CLI 示例
 
 ```bash
 java -jar target/family-repurchase-agent-0.4.0.jar import examples/sample_orders.csv --owner=jtxw
@@ -141,25 +294,38 @@ java -jar target/family-repurchase-agent-0.4.0.jar import examples/sample_orders
 java -jar target/family-repurchase-agent-0.4.0.jar price "猫砂" --price=89 --quantity=12 --unit=kg
 
 java -jar target/family-repurchase-agent-0.4.0.jar report --month=2026-05
-
-java -jar target/family-repurchase-agent-0.4.0.jar review list
-
-java -jar target/family-repurchase-agent-0.4.0.jar review apply 1 --action=exclude --note=试用装
 ```
 
-导入中文订单导出 CSV / Excel 时，如果文件内没有 `owner` 字段，可以使用参数指定：
+---
 
-```bash
-java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据.csv --owner=jtxw
-java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据.xlsx --owner=jtxw
+## MCP / Agent 集成
+
+当前 MCP tools：
+
+* `import_file`
+* `compare_price`
+* `generate_report`
+
+当前 OpenClaw Plugin tools：
+
+* `family_repurchase_import_file`
+* `family_repurchase_compare_price`
+* `family_repurchase_generate_report`
+
+当前 tool name 与 v0.4 后端保持兼容。后续版本会逐步迁移到更明确的价格样本语义：
+
+* `record_price_sample`
+* `import_price_samples`
+* `compare_current_price`
+* `generate_price_report`
+
+适配器路径：
+
+```text
+adapters/mcp/family-repurchase-mcp-java-server/
+adapters/openclaw/family-repurchase-openclaw-plugin/
 ```
-
-也可以通过文件名指定：
-
-```bash
-java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据-jtxw.csv
-java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据-jtxw.xlsx
-```
+---
 
 ## 项目结构
 
@@ -167,111 +333,65 @@ java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据-jtxw.xlsx
 src/main/java/com/jtxw/familyagent/
 ├── application/        # 应用服务
 ├── domain/             # 领域模型与规则
-├── infrastructure/     # 数据库、导入、报告输出
+├── infrastructure/     # SQLite、导入器、报告输出
 └── interfaces/         # REST API 和 CLI
 
-src/main/resources/
-├── application.yml
-└── db/schema.sql
+adapters/
+├── mcp/                # Java MCP stdio Server
+├── openclaw/           # OpenClaw Plugin Prototype
+├── claude-code/        # Claude Code adapter
+└── codex/              # Codex Skill adapter
 
 examples/               # 合成示例数据
-docs/                   # 项目文档
-adapters/               # Agent Host 适配示例
 evals/                  # 评测用例
 ```
 
-## MCP Server
+---
+适配器文档：
 
-Java MCP stdio Server 位于：
+* [MCP Java Server](adapters/mcp/family-repurchase-mcp-java-server/README.md)
+* [OpenClaw Plugin Prototype](adapters/openclaw/family-repurchase-openclaw-plugin/README.md)
 
-```text
-adapters/mcp/family-repurchase-mcp-java-server/
-```
+---
 
-当前暴露：
+## 隐私与安全
 
-- `import_file`
-- `compare_price`
-- `generate_report`
+Family Repurchase Agent 默认本地运行。
 
-它只做 MCP 协议适配和 HTTP 转发，不直接访问 SQLite。使用方式见：
+- 数据默认保存在本机 SQLite
+- 不登录电商平台
+- 不读取 Cookie 或浏览器会话
+- 不爬取购物网站
+- 不自动下单
+- 不上传真实订单数据到云端
+- `examples/` 仅使用合成示例数据
 
-```text
-adapters/mcp/family-repurchase-mcp-java-server/README.md
-```
-
-## 数据口径
-
-默认只统计可信记录：
-
-```text
-decision = include
-is_duplicate = 0
-dedupe_status = unique
-```
-
-金额口径：
-
-- 普通记录默认使用 `实付金额` 作为统计金额
-- 当 `实付金额 = 0` 且 `商品金额 > 0` 时，按 `商品金额 + 运费` 折算统计金额
-- 折算记录会进入待复核，原因编码为 `PAYMENT_ADJUSTMENT`
-
-以下记录会优先进入待复核：
-
-- 实付金额为 0
-- 数量或规格无法解析
-- 疑似重复订单
-- 赠品、试用、售后补发
-- 购物金、礼品卡、组合支付等需要折算的记录
-
-## 隐私边界
-
-项目默认本地运行，订单数据保存在本机 SQLite 中。
-
-不做：
-
-- 登录电商平台
-- 读取 Cookie 或浏览器会话
-- 爬取购物网站
-- 自动下单
-- 上传真实订单数据
-
-`examples/` 只放合成示例数据，不提交真实订单、手机号、地址、订单号或支付流水。
+---
 
 ## Roadmap
 
-### v0.1
+* `v0.5`: `record_price_sample`
 
-- [x] Spring Boot 项目骨架
-- [x] SQLite 自动初始化
-- [x] CSV 导入
-- [x] 单位价格计算
-- [x] 价格对比
-- [x] Markdown 报告
-- [x] 待复核记录
-- [x] REST Tool API
-- [x] CLI 辅助入口
+    * 自然语言输入
+    * 槽位提取
+    * dry-run `PurchaseCandidate`
+    * 用户确认后写入正式样本库
 
-### v0.2
+* `v0.6`: `compare_current_price`
 
-- [x] 人工复核 apply 流程
-- [x] 重复订单检测
-- [x] Excel 导入
-- [x] 购物金 / 礼品卡折算
-- [x] 报告模板增强
+    * 更强的单位换算模型
+    * 历史最低价 / 中位价 / 平均价
+    * warning 模型
+    * 可解释购买建议
 
-### v0.3
+* `v0.7`: `import_price_samples` / `generate_price_report`
 
-- [x] Java MCP stdio Server
-- [x] OpenClaw Plugin 原型
-- [ ] Codex Skill 示例
-- [ ] Claude Code Subagent 示例
+    * 批量价格样本导入
+    * 样本质量摘要
+    * 面向价格决策的报告模板
 
-### v0.4+
-
-- [ ] Spring AI Tool Calling
+---
 
 ## License
 
 MIT
-
