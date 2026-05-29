@@ -260,12 +260,15 @@ dedupe_status = unique
 - [x] 购物金 / 礼品卡折算
 - [x] 报告模板增强
 
-### v0.3+
+### v0.3
 
 - [x] Java MCP stdio Server
-- [ ] OpenClaw Plugin 原型
+- [x] OpenClaw Plugin 原型
 - [ ] Codex Skill 示例
 - [ ] Claude Code Subagent 示例
+
+### v0.4+
+
 - [ ] Spring AI Tool Calling
 
 ## License

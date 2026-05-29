@@ -38,6 +38,13 @@ reports/*.md
 *.log
 logs/
 
+# Node / plugin local artifacts
+node_modules/
+coverage/
+.npm-cache/
+adapters/openclaw/family-consumption-openclaw-plugin/dist/
+/adapters/openclaw.zip
+
 # Temp
 *.tmp
 *.temp
