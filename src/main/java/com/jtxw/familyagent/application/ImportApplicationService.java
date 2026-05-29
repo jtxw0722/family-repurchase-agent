@@ -119,7 +119,7 @@ public class ImportApplicationService {
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), "include", false, "unique", file.toString(), ClockUtils.nowText()
             );
-            // 同时检查历史数据库和当前批次，避免重复导入影响价格统计和月度报告
+            // 同时检查历史数据库和当前批次，避免重复导入影响价格统计和价格报告
             boolean duplicate = duplicateDetectionPolicy.isDuplicate(candidate, currentBatchFingerprints,
                     purchaseRecordRepository.existsDuplicate(candidate));
             // 疑似重复订单默认排除统计，后续可通过人工复核恢复纳入
@@ -139,7 +139,7 @@ public class ImportApplicationService {
                 reviewCount++;
                 duplicateCount++;
             } else if (amountResult.reviewRequired()) {
-                // 金额折算会影响单价和月度统计，必须保留人工确认入口
+                // 金额折算会影响单价和价格统计，必须保留人工确认入口
                 reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
                 reviewCount++;
             } else if (totalAmount != null && totalAmount == 0D) {

@@ -3,11 +3,11 @@ package com.jtxw.familyagent.domain.model;
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/01:18
- * @Description: 标准化后的消费记录实体，表示可持久化和统计的订单明细。
+ * @Description: 标准化后的购买记录实体，表示可持久化和统计的订单明细。
  */
 public class PurchaseRecord {
     /**
-     * 消费记录主键 ID
+     * 购买记录主键 ID
      */
     private final Long id;
     /**
@@ -39,11 +39,11 @@ public class PurchaseRecord {
      */
     private final String sku;
     /**
-     * 一级消费分类
+     * 一级商品分类
      */
     private final String category;
     /**
-     * 二级消费分类
+     * 二级商品分类
      */
     private final String subCategory;
     /**

@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:sqlite:./data/family-consumption.sqlite
+    url: jdbc:sqlite:./data/family-repurchase.sqlite
     driver-class-name: org.sqlite.JDBC
   main:
     banner-mode: off

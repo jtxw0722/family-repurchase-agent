@@ -1,6 +1,6 @@
 package com.jtxw.familyagent.application;
 
-import com.jtxw.familyagent.domain.model.MonthlyReportResult;
+import com.jtxw.familyagent.domain.model.PriceReportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * @Author: jtxw
  * @Date: 2026/05/12/14:18
- * @Description: 报告应用服务，汇总月度消费记录并生成 Markdown 报告。
+ * @Description: 报告应用服务，汇总复购品价格样本记录并生成 Markdown 报告。
  */
 @Service
 public class ReportApplicationService {
@@ -33,19 +33,19 @@ public class ReportApplicationService {
     }
 
     /**
-     * 生成指定月份的本地消费报告。
+     * 生成指定月份的本地复购品价格报告。
      *
-     * <p>报告只统计正式统计口径内的消费记录，并附带当前待复核记录数量。</p>
+     * <p>报告只统计正式统计口径内的购买记录，并附带当前待复核记录数量。</p>
      *
      * @param month 报告月份，格式为 yyyy-MM
-     * @return 月度报告生成结果
+     * @return 价格报告生成结果
      */
-    public MonthlyReportResult generateMonthlyReport(String month) {
+    public PriceReportResult generatePriceReport(String month) {
         databaseInitializer.initialize();
         List<PurchaseRecord> records = purchaseRecordRepository.listIncludedByMonth(month);
         int pendingReviewCount = reviewItemRepository.countPending();
         String reportPath = markdownReportWriter.write(month, records, pendingReviewCount);
         double total = records.stream().mapToDouble(PurchaseRecord::totalAmount).sum();
-        return new MonthlyReportResult(month, records.size(), total, pendingReviewCount, reportPath);
+        return new PriceReportResult(month, records.size(), total, pendingReviewCount, reportPath);
     }
 }

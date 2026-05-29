@@ -1,13 +1,13 @@
-﻿# Family Consumption Agent
+# Family Repurchase Agent
 
-[![CI](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/jtxw0722/family-consumption-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/jtxw0722/family-repurchase-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/jtxw0722/family-repurchase-agent/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-17%2B-blue)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
-![Release](https://img.shields.io/github/v/release/jtxw0722/family-consumption-agent?display_name=tag)
+![Release](https://img.shields.io/github/v/release/jtxw0722/family-repurchase-agent?display_name=tag)
 
 本地优先的家庭消耗品复购分析工具。
 
-它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成月度消费报告。
+它不是普通记账应用，重点是把本地订单数据导入后，计算单位价格、对比历史价格、标记异常记录，并生成复购品价格报告。
 
 当前版本是一个 Spring Boot 后端 MVP，提供 REST Tool API 和 CLI 辅助入口。后续可以作为 Tool Server 接入 OpenClaw / Codex / Claude Code / Spring AI。
 v0.3 开始补充独立 Java MCP stdio Server，供 Claude Desktop / Cursor 等 MCP Host 调用本地 REST Tool API。
@@ -20,7 +20,7 @@ v0.3 开始补充独立 Java MCP stdio Server，供 Claude Desktop / Cursor 等 
 - 单位价格计算
 - 当前价格与历史价格对比
 - 实付为 0 等异常记录进入待复核列表
-- Markdown 月度报告生成
+- Markdown 价格报告生成
 - REST Tool API
 - CLI 辅助命令
 - Java MCP stdio Server
@@ -57,13 +57,13 @@ mvn test
 
 ```bash
 mvn package
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar
+java -jar target/family-repurchase-agent-0.4.0.jar
 ```
 
 服务启动后会自动准备本地目录和 SQLite 数据库：
 
 ```text
-data/family-consumption.sqlite
+data/family-repurchase.sqlite
 data/inbox/
 reports/
 ```
@@ -136,29 +136,29 @@ curl -X POST "http://localhost:8080/api/tools/review-items/1/apply" `
 ## CLI
 
 ```bash
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import examples/sample_orders.csv --owner=jtxw
+java -jar target/family-repurchase-agent-0.4.0.jar import examples/sample_orders.csv --owner=jtxw
 
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar price "猫砂" --price=89 --quantity=12 --unit=kg
+java -jar target/family-repurchase-agent-0.4.0.jar price "猫砂" --price=89 --quantity=12 --unit=kg
 
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar report --month=2026-05
+java -jar target/family-repurchase-agent-0.4.0.jar report --month=2026-05
 
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar review list
+java -jar target/family-repurchase-agent-0.4.0.jar review list
 
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar review apply 1 --action=exclude --note=试用装
+java -jar target/family-repurchase-agent-0.4.0.jar review apply 1 --action=exclude --note=试用装
 ```
 
 导入中文订单导出 CSV / Excel 时，如果文件内没有 `owner` 字段，可以使用参数指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据.csv --owner=jtxw
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据.xlsx --owner=jtxw
+java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据.csv --owner=jtxw
+java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据.xlsx --owner=jtxw
 ```
 
 也可以通过文件名指定：
 
 ```bash
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据-jtxw.csv
-java -jar target/family-consumption-agent-0.3.0-SNAPSHOT.jar import 订单数据-jtxw.xlsx
+java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据-jtxw.csv
+java -jar target/family-repurchase-agent-0.4.0.jar import 订单数据-jtxw.xlsx
 ```
 
 ## 项目结构
@@ -185,7 +185,7 @@ evals/                  # 评测用例
 Java MCP stdio Server 位于：
 
 ```text
-adapters/mcp/family-consumption-mcp-java-server/
+adapters/mcp/family-repurchase-mcp-java-server/
 ```
 
 当前暴露：
@@ -197,7 +197,7 @@ adapters/mcp/family-consumption-mcp-java-server/
 它只做 MCP 协议适配和 HTTP 转发，不直接访问 SQLite。使用方式见：
 
 ```text
-adapters/mcp/family-consumption-mcp-java-server/README.md
+adapters/mcp/family-repurchase-mcp-java-server/README.md
 ```
 
 ## 数据口径

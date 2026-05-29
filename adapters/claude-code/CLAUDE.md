@@ -1,6 +1,6 @@
-# Family Consumption Agent Java Rules
+# Family Repurchase Agent Java Rules
 
-本项目是 Java / Spring Boot 版家庭消费分析 Agent Capability。
+本项目是 Java / Spring Boot 版家庭复购品价格决策 Agent Capability。
 
 规则：
 

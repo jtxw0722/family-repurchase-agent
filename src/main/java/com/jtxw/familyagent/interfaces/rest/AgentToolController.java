@@ -23,7 +23,7 @@ import java.util.Map;
  * @Date: 2026/05/13/10:28
  * @Description: REST Tool API 控制器，暴露导入、比价、报告和复核查询接口。
  */
-@Tag(name = "Agent Tool API", description = "家庭消费分析工具接口")
+@Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
 @RestController
 @RequestMapping("/api/tools")
 public class AgentToolController {
@@ -70,17 +70,17 @@ public class AgentToolController {
     }
 
     /**
-     * 生成指定月份的本地 Markdown 消费报告。
+     * 生成指定月份的本地 Markdown 复购品价格报告。
      *
      * <p>报告文件会写入本地 reports 目录，统计口径由应用服务和仓储层统一控制。</p>
      *
-     * @param request 月度报告请求
+     * @param request 价格报告请求
      * @return 报告生成结果，包括统计记录数、总金额和报告路径
      */
-    @Operation(summary = "生成月度报告", description = "根据指定月份生成 Markdown 消费分析报告。")
+    @Operation(summary = "生成复购品价格报告", description = "根据指定月份生成 Markdown 价格报告。")
     @PostMapping("/generate-report")
-    public MonthlyReportResult generateReport(@Valid @RequestBody GenerateReportRequest request) {
-        return reportApplicationService.generateMonthlyReport(request.month());
+    public PriceReportResult generateReport(@Valid @RequestBody GenerateReportRequest request) {
+        return reportApplicationService.generatePriceReport(request.month());
     }
 
     /**
@@ -97,7 +97,7 @@ public class AgentToolController {
     /**
      * 应用人工复核结果。
      *
-     * <p>该接口会更新复核项状态，并同步更新关联消费记录的统计决策。</p>
+     * <p>该接口会更新复核项状态，并同步更新关联购买记录的统计决策。</p>
      *
      * @param id      复核项 ID
      * @param request 复核动作请求
@@ -230,7 +230,7 @@ public class AgentToolController {
         }
     }
 
-    @Schema(description = "月度报告生成请求")
+    @Schema(description = "复购品价格报告生成请求")
     public static class GenerateReportRequest {
         /**
          * 报告月份，格式为 yyyy-MM

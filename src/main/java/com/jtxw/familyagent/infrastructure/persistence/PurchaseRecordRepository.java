@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/15:34
- * @Description: 消费记录仓储，负责订单明细的写入和价格统计查询。
+ * @Description: 购买记录仓储，负责订单明细的写入和价格统计查询。
  */
 @Repository
 public class PurchaseRecordRepository {
@@ -24,9 +24,9 @@ public class PurchaseRecordRepository {
     }
 
     /**
-     * 保存标准化后的消费记录。
+     * 保存标准化后的购买记录。
      *
-     * @param record 消费记录
+     * @param record 购买记录
      * @return 新增记录 ID
      */
     public long save(PurchaseRecord record) {
@@ -52,7 +52,7 @@ public class PurchaseRecordRepository {
      * <p>该查询使用订单时间、平台、归属人、归一化商品名、SKU、数量、单位、
      * 当前统计金额和币种做精确匹配，不按来源文件或导入批次区分。</p>
      *
-     * @param record 待检查的消费记录
+     * @param record 待检查的购买记录
      * @return 是否已存在相同订单
      */
     public boolean existsDuplicate(PurchaseRecord record) {
@@ -119,9 +119,9 @@ public class PurchaseRecordRepository {
     }
 
     /**
-     * 更新消费记录的统计决策。
+     * 更新购买记录的统计决策。
      *
-     * @param id       消费记录 ID
+     * @param id       购买记录 ID
      * @param decision 统计决策，通常为 include 或 exclude
      * @return 更新记录数
      */
@@ -130,12 +130,12 @@ public class PurchaseRecordRepository {
     }
 
     /**
-     * 更新消费记录的统计决策和去重状态。
+     * 更新购买记录的统计决策和去重状态。
      *
      * <p>用于处理疑似重复订单的人工复核结果：确认纳入时恢复为 unique，
      * 确认排除时保持 duplicate。</p>
      *
-     * @param id           消费记录 ID
+     * @param id           购买记录 ID
      * @param decision     统计决策
      * @param duplicate    是否为重复订单
      * @param dedupeStatus 去重状态
@@ -150,13 +150,13 @@ public class PurchaseRecordRepository {
     }
 
     /**
-     * 查询指定月份内纳入正式统计的消费记录。
+     * 查询指定月份内纳入正式统计的购买记录。
      *
      * <p>默认只返回 decision = include、is_duplicate = 0、dedupe_status = unique，
      * 且统计金额大于 0 的记录。</p>
      *
      * @param month 月份，格式为 yyyy-MM
-     * @return 月度有效消费记录列表
+     * @return 月度有效购买记录列表
      */
     public List<PurchaseRecord> listIncludedByMonth(String month) {
         return jdbcTemplate.query("""

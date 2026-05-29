@@ -73,7 +73,7 @@ public class OrderImportMapper {
     }
 
     private RawPurchaseRecord readChineseOrderExportRecord(Map<String, String> values, Path file, String ownerOverride) {
-        // 交易关闭不代表实际消费，导入阶段直接跳过，避免进入价格统计和月度报告
+        // 交易关闭不代表有效购买，导入阶段直接跳过，避免进入价格统计和价格报告
         if (!"交易成功".equals(get(values, "订单状态"))) {
             return null;
         }

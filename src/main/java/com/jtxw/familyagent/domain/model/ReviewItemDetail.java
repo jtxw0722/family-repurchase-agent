@@ -15,9 +15,9 @@ public class ReviewItemDetail {
     @Schema(description = "复核项 ID", example = "359")
     private final Long id;
     /**
-     * 关联消费记录 ID
+     * 关联购买记录 ID
      */
-    @Schema(description = "关联消费记录 ID", example = "1427")
+    @Schema(description = "关联购买记录 ID", example = "1427")
     private final Long recordId;
     /**
      * 复核原因编码
@@ -90,14 +90,14 @@ public class ReviewItemDetail {
     @Schema(description = "商品规格或 SKU", example = "12kg", nullable = true)
     private final String sku;
     /**
-     * 一级消费分类
+     * 一级商品分类
      */
-    @Schema(description = "一级消费分类", example = "宠物用品", nullable = true)
+    @Schema(description = "一级商品分类", example = "宠物用品", nullable = true)
     private final String category;
     /**
-     * 二级消费分类
+     * 二级商品分类
      */
-    @Schema(description = "二级消费分类", example = "猫砂", nullable = true)
+    @Schema(description = "二级商品分类", example = "猫砂", nullable = true)
     private final String subCategory;
     /**
      * 商品数量
@@ -165,9 +165,9 @@ public class ReviewItemDetail {
     @Schema(description = "来源文件路径", example = "订单数据.csv", nullable = true)
     private final String sourceFile;
     /**
-     * 消费记录创建时间
+     * 购买记录创建时间
      */
-    @Schema(description = "消费记录创建时间", nullable = true)
+    @Schema(description = "购买记录创建时间", nullable = true)
     private final String recordCreatedAt;
 
     public ReviewItemDetail(Long id,

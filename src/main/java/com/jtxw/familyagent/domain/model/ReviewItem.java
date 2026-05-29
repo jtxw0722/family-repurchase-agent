@@ -3,7 +3,7 @@ package com.jtxw.familyagent.domain.model;
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/01:32
- * @Description: 待复核事项实体，记录异常消费记录的复核原因和处理状态。
+ * @Description: 待复核事项实体，记录异常购买记录的复核原因和处理状态。
  */
 public class ReviewItem {
     /**
@@ -11,7 +11,7 @@ public class ReviewItem {
      */
     private final Long id;
     /**
-     * 关联的消费记录 ID
+     * 关联的购买记录 ID
      */
     private final Long recordId;
     /**

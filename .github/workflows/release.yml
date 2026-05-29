@@ -27,7 +27,7 @@ jobs:
       - name: Build package
         run: |
           mvn package
-          mvn -f adapters/mcp/family-consumption-mcp-java-server/pom.xml package
+          mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
 
       - name: Create GitHub release
         env:
@@ -35,7 +35,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           gh release create "$TAG_NAME" \
-            target/family-consumption-agent-*.jar \
-            adapters/mcp/family-consumption-mcp-java-server/target/family-consumption-mcp-java-server-*.jar \
+            target/family-repurchase-agent-*.jar \
+            adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-*.jar \
             --title "$TAG_NAME" \
             --generate-notes

@@ -27,11 +27,11 @@ public class RawPurchaseRecord {
      */
     private final String sku;
     /**
-     * 一级消费分类
+     * 一级商品分类
      */
     private final String category;
     /**
-     * 二级消费分类
+     * 二级商品分类
      */
     private final String subCategory;
     /**

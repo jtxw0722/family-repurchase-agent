@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/16:27
- * @Description: CSV 订单导入器，负责读取本地订单文件并转换为原始消费记录。
+ * @Description: CSV 订单导入器，负责读取本地订单文件并转换为原始订单记录。
  */
 @Component
 public class CsvPurchaseImporter {

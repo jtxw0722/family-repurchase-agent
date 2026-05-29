@@ -112,10 +112,10 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
             System.out.println("请提供月份，例如：report --month 2026-05");
             return;
         }
-        MonthlyReportResult result = reportApplicationService.generateMonthlyReport(month);
+        PriceReportResult result = reportApplicationService.generatePriceReport(month);
         System.out.println("报告已生成：" + result.reportPath());
         System.out.println("统计记录数：" + result.recordCount() + " 条");
-        System.out.printf("总支出：%.2f 元%n", result.totalAmount());
+        System.out.printf("统计金额合计：%.2f 元%n", result.totalAmount());
         System.out.println("待复核记录：" + result.pendingReviewCount() + " 条");
     }
 
@@ -154,7 +154,7 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
     }
 
     private void printHelp() {
-        System.out.println("Family Consumption Agent");
+        System.out.println("Family Repurchase Agent");
         System.out.println("用法：");
         System.out.println("  init");
         System.out.println("  import <csv-or-xlsx-file> [--owner=<归属人>]");

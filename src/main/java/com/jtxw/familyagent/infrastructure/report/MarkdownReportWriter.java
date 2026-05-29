@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 /**
  * @Author: jtxw
  * @Date: 2026/05/11/17:12
- * @Description: Markdown 报告写入器，负责生成本地月度消费分析报告。
+ * @Description: Markdown 报告写入器，负责生成本地月度价格报告。
  */
 @Component
 public class MarkdownReportWriter {
@@ -29,10 +29,10 @@ public class MarkdownReportWriter {
     }
 
     /**
-     * 将月度消费统计写入本地 Markdown 报告文件。
+     * 将月度复购品价格统计写入本地 Markdown 报告文件。
      *
      * @param month              报告月份，格式为 yyyy-MM
-     * @param records            已按正式统计口径筛选出的消费记录
+     * @param records            已按正式统计口径筛选出的购买记录
      * @param pendingReviewCount 当前待复核记录数
      * @return 报告文件路径
      */
@@ -50,10 +50,10 @@ public class MarkdownReportWriter {
                     .count();
 
             StringBuilder sb = new StringBuilder();
-            sb.append("# ").append(month).append(" 家庭消费报告\n\n");
+            sb.append("# ").append(month).append(" 家庭复购品价格报告\n\n");
             sb.append("## 概览\n\n");
             sb.append("- 统计记录数：").append(records.size()).append(" 条\n");
-            sb.append("- 总支出：").append(String.format("%.2f", total)).append(" 元\n");
+            sb.append("- 统计金额合计：").append(String.format("%.2f", total)).append(" 元\n");
             sb.append("- 平均单笔：").append(String.format("%.2f", average)).append(" 元\n");
             sb.append("- 待复核记录：").append(pendingReviewCount).append(" 条\n");
             if (adjustedCount > 0) {
@@ -64,7 +64,7 @@ public class MarkdownReportWriter {
             sb.append("## 分类汇总\n\n");
             appendAmountTable(sb, "分类", categorySum, total);
 
-            sb.append("## 成员汇总\n\n");
+            sb.append("## 样本归属汇总\n\n");
             appendAmountTable(sb, "成员", ownerSum, total);
 
             sb.append("## 金额来源\n\n");
@@ -73,7 +73,7 @@ public class MarkdownReportWriter {
                 sb.append("\n> 存在购物金、礼品卡或组合支付折算记录，建议结合待复核列表确认金额口径。\n");
             }
 
-            sb.append("\n## Top 消费项\n\n");
+            sb.append("\n## Top 复购品\n\n");
             appendTopRecords(sb, records);
 
             sb.append("## 复核提醒\n\n");
@@ -81,7 +81,7 @@ public class MarkdownReportWriter {
                 sb.append("当前没有待复核记录。\n\n");
             } else {
                 sb.append("当前还有 ").append(pendingReviewCount)
-                        .append(" 条待复核记录，建议优先处理后再查看最终月度统计。\n\n");
+                        .append(" 条待复核记录，建议优先处理后再查看最终价格统计。\n\n");
             }
 
             sb.append("## 明细\n\n");

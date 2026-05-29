@@ -11,9 +11,9 @@
     </parent>
 
     <groupId>com.jtxw</groupId>
-    <artifactId>family-consumption-agent</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
-    <name>family-consumption-agent</name>
+    <artifactId>family-repurchase-agent</artifactId>
+    <version>0.4.0</version>
+    <name>family-repurchase-agent</name>
     <description>Local-first household consumption analysis Agent Capability</description>
 
     <properties>

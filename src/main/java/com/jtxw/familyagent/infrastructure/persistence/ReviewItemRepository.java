@@ -28,7 +28,7 @@ public class ReviewItemRepository {
     /**
      * 创建待人工复核项。
      *
-     * @param recordId      关联消费记录 ID
+     * @param recordId      关联购买记录 ID
      * @param reasonCode    复核原因编码
      * @param reasonMessage 复核原因说明
      */

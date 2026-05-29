@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @Author: jtxw
  * @Date: 2026/05/27/18:57
- * @Description: Markdown 月度报告写入器测试，覆盖增强后的报告结构。
+ * @Description: Markdown 复购品价格报告写入器测试，覆盖增强后的报告结构。
  */
 class MarkdownReportWriterTest {
     @Test
@@ -31,9 +31,9 @@ class MarkdownReportWriterTest {
 
         assertThat(content)
                 .contains("## 概览")
-                .contains("## 成员汇总")
+                .contains("## 样本归属汇总")
                 .contains("## 金额来源")
-                .contains("## Top 消费项")
+                .contains("## Top 复购品")
                 .contains("## 复核提醒")
                 .contains("商品金额折算")
                 .contains("存在购物金、礼品卡或组合支付折算记录");

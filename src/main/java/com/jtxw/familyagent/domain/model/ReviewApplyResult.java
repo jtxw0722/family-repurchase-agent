@@ -15,9 +15,9 @@ public class ReviewApplyResult {
     @Schema(description = "被处理的复核项 ID", example = "3")
     private final Long reviewId;
     /**
-     * 复核项关联的消费记录 ID
+     * 复核项关联的购买记录 ID
      */
-    @Schema(description = "复核项关联的消费记录 ID", example = "15")
+    @Schema(description = "复核项关联的购买记录 ID", example = "15")
     private final Long recordId;
     /**
      * 本次人工复核动作，取值 include 或 exclude
@@ -25,9 +25,9 @@ public class ReviewApplyResult {
     @Schema(description = "本次人工复核动作", example = "include", allowableValues = {"include", "exclude"})
     private final String action;
     /**
-     * 应用到消费记录上的统计决策
+     * 应用到购买记录上的统计决策
      */
-    @Schema(description = "应用到消费记录上的统计决策", example = "include", allowableValues = {"include", "exclude"})
+    @Schema(description = "应用到购买记录上的统计决策", example = "include", allowableValues = {"include", "exclude"})
     private final String decision;
     /**
      * 复核项处理后的状态

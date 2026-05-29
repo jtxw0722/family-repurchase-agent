@@ -43,7 +43,7 @@ public class ReviewApplicationService {
     }
 
     /**
-     * 应用人工复核结果并同步更新消费记录统计决策。
+     * 应用人工复核结果并同步更新购买记录统计决策。
      *
      * <p>目前支持 include 和 exclude 两种动作。复核项只能处理一次，
      * 成功处理后状态会变为 resolved。</p>

@@ -16,11 +16,11 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfig {
 
     @Bean
-    public OpenAPI familyConsumptionOpenAPI() {
+    public OpenAPI familyRepurchaseOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Family Consumption Agent API")
-                        .version("0.3.0")
-                        .description("本地优先家庭消费分析项目的 REST Tool API。"));
+                        .title("Family Repurchase Agent API")
+                        .version("0.4.0")
+                        .description("本地优先家庭复购品价格决策 Agent的 REST Tool API。"));
     }
 }
