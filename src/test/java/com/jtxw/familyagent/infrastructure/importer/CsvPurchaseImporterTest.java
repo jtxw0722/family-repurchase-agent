@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
+import com.jtxw.familyagent.domain.policy.ProductSpecParser;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -31,7 +32,39 @@ class CsvPurchaseImporterTest {
         assertThat(records.get(0).owner()).isEqualTo("JTXW");
         assertThat(records.get(0).productName()).isEqualTo("混合猫砂 12kg");
         assertThat(records.get(0).quantity()).isEqualTo(12D);
+        assertThat(records.get(0).unit()).isEqualTo("kg");
         assertThat(records.get(0).totalAmount()).isEqualTo(89D);
+    }
+
+    @Test
+    void shouldParseWeightSpecFromSkuBeforeProductName() throws Exception {
+        Path file = testFile("spec.csv");
+        Files.writeString(file, """
+                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+                2026-05-01,taobao,jtxw,名创优品钠基矿猫砂5kg*8包,【除臭加倍】升级款自然原味10斤*8包,宠物用品,猫砂,1,件,119.3,CNY
+                """, StandardCharsets.UTF_8);
+
+        RawPurchaseRecord record = importer().importFile(file).get(0);
+
+        assertThat(record.quantity()).isEqualTo(40D);
+        assertThat(record.unit()).isEqualTo("kg");
+        assertThat(record.totalAmount()).isEqualTo(119.3D);
+    }
+
+    @Test
+    void shouldFlagMultiDeliverySpecForReview() throws Exception {
+        Path file = testFile("spec-review.csv");
+        Files.writeString(file, """
+                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+                2026-05-01,taobao,jtxw,猫砂次卡,2.5kg*4包*6次,宠物用品,猫砂,1,件,119.3,CNY
+                """, StandardCharsets.UTF_8);
+
+        RawPurchaseRecord record = importer().importFile(file).get(0);
+
+        assertThat(record.quantity()).isEqualTo(60D);
+        assertThat(record.unit()).isEqualTo("kg");
+        assertThat(record.specReviewRequired()).isTrue();
+        assertThat(record.specReviewReasonCode()).isEqualTo("SPEC_MULTIPACK_TIMES");
     }
 
     @Test
@@ -43,7 +76,7 @@ class CsvPurchaseImporterTest {
                 2,2026-01-23 02:35:45,交易关闭,百亿补贴品牌优选,已关闭订单,https://item.taobao.com/item.htm?id=2,100g,1,￥76.96,￥76.96,￥0.00
                 """, StandardCharsets.UTF_8);
 
-        List<RawPurchaseRecord> records = importer().importFile(file);
+        List<RawPurchaseRecord> records = importer().importFile(file, "chinese");
 
         assertThat(records).hasSize(1);
         RawPurchaseRecord record = records.get(0);
@@ -101,7 +134,7 @@ class CsvPurchaseImporterTest {
     }
 
     private CsvPurchaseImporter importer() {
-        return new CsvPurchaseImporter(new OrderImportMapper());
+        return new CsvPurchaseImporter(new OrderImportMapper(new ProductSpecParser()));
     }
 
     private Path testFile(String name) throws Exception {

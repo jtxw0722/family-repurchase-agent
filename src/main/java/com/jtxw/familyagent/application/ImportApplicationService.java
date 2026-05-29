@@ -142,6 +142,9 @@ public class ImportApplicationService {
                 // 金额折算会影响单价和价格统计，必须保留人工确认入口
                 reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
                 reviewCount++;
+            } else if (raw.specReviewRequired()) {
+                reviewItemRepository.create(recordId, raw.specReviewReasonCode(), raw.specReviewReasonMessage());
+                reviewCount++;
             } else if (totalAmount != null && totalAmount == 0D) {
                 if (!isTrustedZeroPayment(raw)) {
                     // 无明确赠品或试用标识的 0 元记录仍需人工确认，避免售后补发、组合支付等场景误入库

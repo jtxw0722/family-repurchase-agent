@@ -62,6 +62,9 @@ public class RawPurchaseRecord {
      * 交易币种
      */
     private final String currency;
+    private final boolean specReviewRequired;
+    private final String specReviewReasonCode;
+    private final String specReviewReasonMessage;
 
     public RawPurchaseRecord(String orderTime,
                              String platform,
@@ -92,6 +95,27 @@ public class RawPurchaseRecord {
                              Double paidAmount,
                              Double shippingFee,
                              String currency) {
+        this(orderTime, platform, owner, productName, sku, category, subCategory, quantity, unit,
+                totalAmount, productAmount, paidAmount, shippingFee, currency, false, null, null);
+    }
+
+    public RawPurchaseRecord(String orderTime,
+                             String platform,
+                             String owner,
+                             String productName,
+                             String sku,
+                             String category,
+                             String subCategory,
+                             Double quantity,
+                             String unit,
+                             Double totalAmount,
+                             Double productAmount,
+                             Double paidAmount,
+                             Double shippingFee,
+                             String currency,
+                             boolean specReviewRequired,
+                             String specReviewReasonCode,
+                             String specReviewReasonMessage) {
         this.orderTime = orderTime;
         this.platform = platform;
         this.owner = owner;
@@ -106,6 +130,9 @@ public class RawPurchaseRecord {
         this.paidAmount = paidAmount;
         this.shippingFee = shippingFee;
         this.currency = currency;
+        this.specReviewRequired = specReviewRequired;
+        this.specReviewReasonCode = specReviewReasonCode;
+        this.specReviewReasonMessage = specReviewReasonMessage;
     }
 
     public String orderTime() {
@@ -164,6 +191,18 @@ public class RawPurchaseRecord {
         return currency;
     }
 
+    public boolean specReviewRequired() {
+        return specReviewRequired;
+    }
+
+    public String specReviewReasonCode() {
+        return specReviewReasonCode;
+    }
+
+    public String specReviewReasonMessage() {
+        return specReviewReasonMessage;
+    }
+
     public String getOrderTime() {
         return orderTime;
     }
@@ -218,5 +257,17 @@ public class RawPurchaseRecord {
 
     public String getCurrency() {
         return currency;
+    }
+
+    public boolean isSpecReviewRequired() {
+        return specReviewRequired;
+    }
+
+    public String getSpecReviewReasonCode() {
+        return specReviewReasonCode;
+    }
+
+    public String getSpecReviewReasonMessage() {
+        return specReviewReasonMessage;
     }
 }

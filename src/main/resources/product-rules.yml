@@ -1,0 +1,63 @@
+rules:
+  - id: cat_litter
+    normalizedName: 猫砂
+    category: 宠物用品
+    standardUnit: kg
+    unitFamily: weight
+    priority: 100
+    includeKeywords:
+      - 猫砂
+      - 猫沙
+      - 豆腐砂
+      - 膨润土
+      - 矿砂
+      - 混合砂
+      - 植物砂
+    excludeKeywords:
+      - 猫砂盆
+      - 猫厕所
+      - 猫屎盆
+      - 猫砂铲
+      - 防带砂
+
+  - id: cat_food
+    normalizedName: 猫粮
+    category: 宠物用品
+    standardUnit: kg
+    unitFamily: weight
+    priority: 90
+    includeKeywords:
+      - 猫粮
+      - 幼猫粮
+      - 成猫粮
+      - 全价猫粮
+    excludeKeywords:
+      - 猫粮勺
+      - 储粮桶
+
+  - id: tissue
+    normalizedName: 纸巾
+    category: 日用品
+    standardUnit: 包
+    unitFamily: count
+    priority: 80
+    includeKeywords:
+      - 纸巾
+      - 抽纸
+      - 卷纸
+      - 湿巾
+    excludeKeywords:
+      - 纸巾盒
+      - 收纳盒
+
+  - id: laundry_detergent
+    normalizedName: 洗衣液
+    category: 日用品
+    standardUnit: L
+    unitFamily: volume
+    priority: 80
+    includeKeywords:
+      - 洗衣液
+    excludeKeywords:
+      - 洗衣液瓶
+      - 分装瓶

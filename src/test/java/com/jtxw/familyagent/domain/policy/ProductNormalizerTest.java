@@ -13,6 +13,25 @@ class ProductNormalizerTest {
     @Test
     void shouldNormalizeCatLitter() {
         ProductNormalizer normalizer = new ProductNormalizer();
-        assertThat(normalizer.normalize("某品牌混合猫砂 12kg")).isEqualTo("猫砂");
+
+        assertThat(normalizer.normalize("名创优品钠基矿猫砂5kg*8包")).isEqualTo("猫砂");
+    }
+
+    @Test
+    void shouldNotNormalizeCatLitterAccessoriesAsCatLitter() {
+        ProductNormalizer normalizer = new ProductNormalizer();
+
+        assertThat(normalizer.normalize("猫砂盆全封闭抽屉顶入式")).isNotEqualTo("猫砂");
+        assertThat(normalizer.normalize("猫砂铲")).isNotEqualTo("猫砂");
+        assertThat(normalizer.normalize("猫厕所超大号")).isNotEqualTo("猫砂");
+    }
+
+    @Test
+    void shouldNormalizeConfiguredRepurchaseProducts() {
+        ProductNormalizer normalizer = new ProductNormalizer();
+
+        assertThat(normalizer.normalize("全价猫粮 10kg")).isEqualTo("猫粮");
+        assertThat(normalizer.normalize("原生木浆抽纸 24包")).isEqualTo("纸巾");
+        assertThat(normalizer.normalize("除菌洗衣液 3L")).isEqualTo("洗衣液");
     }
 }

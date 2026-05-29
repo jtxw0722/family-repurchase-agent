@@ -1,6 +1,11 @@
 package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
+import com.jtxw.familyagent.domain.policy.ProductRuleMatchResult;
+import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
+import com.jtxw.familyagent.domain.policy.ProductSpecParser;
+import com.jtxw.familyagent.domain.policy.ProductSpecParser.ProductSpecParseResult;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -15,12 +20,23 @@ import java.util.Set;
  */
 @Component
 public class OrderImportMapper {
-    /**
-     * 根据表头识别导入模板。
-     *
-     * @param headers 文件表头集合
-     * @return 导入模板类型
-     */
+    private final ProductSpecParser productSpecParser;
+    private final ProductRuleMatcher productRuleMatcher;
+
+    public OrderImportMapper() {
+        this(new ProductSpecParser(), new ProductRuleMatcher());
+    }
+
+    public OrderImportMapper(ProductSpecParser productSpecParser) {
+        this(productSpecParser, new ProductRuleMatcher());
+    }
+
+    @Autowired
+    public OrderImportMapper(ProductSpecParser productSpecParser, ProductRuleMatcher productRuleMatcher) {
+        this.productSpecParser = productSpecParser;
+        this.productRuleMatcher = productRuleMatcher;
+    }
+
     public ImportSchema detectSchema(Set<String> headers) {
         if (hasHeaders(headers, "order_time", "product_name", "quantity", "total_amount")) {
             return ImportSchema.STANDARD;
@@ -57,7 +73,7 @@ public class OrderImportMapper {
     }
 
     private RawPurchaseRecord readStandardRecord(Map<String, String> values, Path file, String ownerOverride) {
-        return new RawPurchaseRecord(
+        return buildRecord(
                 get(values, "order_time"),
                 get(values, "platform"),
                 resolveOwner(get(values, "owner"), file, ownerOverride),
@@ -68,6 +84,9 @@ public class OrderImportMapper {
                 parseDouble(get(values, "quantity")),
                 get(values, "unit"),
                 parseDouble(get(values, "total_amount")),
+                parseDouble(get(values, "product_amount")),
+                parseDouble(get(values, "paid_amount")),
+                parseDouble(get(values, "shipping_fee")),
                 getOrDefault(values, "currency", "CNY")
         );
     }
@@ -78,9 +97,7 @@ public class OrderImportMapper {
             return null;
         }
         Double paidAmount = parseDouble(get(values, "实付金额"));
-        Double productAmount = parseDouble(get(values, "商品金额"));
-        Double shippingFee = parseDouble(get(values, "运费"));
-        return new RawPurchaseRecord(
+        return buildRecord(
                 get(values, "订单提交时间"),
                 inferPlatform(get(values, "商品链接")),
                 resolveOwner("", file, ownerOverride),
@@ -91,10 +108,36 @@ public class OrderImportMapper {
                 parseDouble(get(values, "商品数量")),
                 "件",
                 paidAmount,
-                productAmount,
+                parseDouble(get(values, "商品金额")),
                 paidAmount,
-                shippingFee,
+                parseDouble(get(values, "运费")),
                 "CNY"
+        );
+    }
+
+    private RawPurchaseRecord buildRecord(String orderTime,
+                                          String platform,
+                                          String owner,
+                                          String productName,
+                                          String sku,
+                                          String category,
+                                          String subCategory,
+                                          Double quantity,
+                                          String unit,
+                                          Double totalAmount,
+                                          Double productAmount,
+                                          Double paidAmount,
+                                          Double shippingFee,
+                                          String currency) {
+        ProductRuleMatchResult ruleMatch = productRuleMatcher.match(productName);
+        ProductSpecParseResult spec = productSpecParser.parse(sku, productName, ruleMatch);
+        Double resolvedQuantity = spec.parsed() ? spec.quantity() : quantity;
+        String resolvedUnit = spec.parsed() ? spec.unit() : unit;
+        return new RawPurchaseRecord(
+                orderTime, platform, owner, productName, sku, category, subCategory, resolvedQuantity, resolvedUnit,
+                totalAmount, productAmount == null ? totalAmount : productAmount, paidAmount == null ? totalAmount : paidAmount,
+                shippingFee, currency, spec.reviewRequired(), spec.reviewRequired() ? "SPEC_MULTIPACK_TIMES" : null,
+                spec.reviewRequired() ? "规格包含多次/次卡乘数，已按总重量折算，请人工确认是否为多次发货权益。" : null
         );
     }
 
@@ -144,7 +187,11 @@ public class OrderImportMapper {
         String normalized = text.trim()
                 .replace("￥", "")
                 .replace("¥", "")
+                .replace("元", "")
                 .replace(",", "");
+        if (normalized.isBlank()) {
+            return null;
+        }
         return Double.parseDouble(normalized);
     }
 
