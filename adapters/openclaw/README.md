@@ -1,5 +1,6 @@
 # OpenClaw MCP Integration
 
+OpenClaw 侧的 MCP 配置方式取决于实际版本。可以参考 `adapters/openclaw/mcp-server.example.json`，将 Family Repurchase MCP Server 配置为 stdio MCP server。
 OpenClaw 可以作为 MCP Host 连接 Family Repurchase Agent，并通过 MCP tools 使用本地复购品价格决策能力。
 
 标准调用链路：
@@ -58,13 +59,38 @@ $env:FAMILY_AGENT_API_BASE_URL = "http://localhost:8080"
 $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "examples;data/imports;imports"
 ```
 
-## OpenClaw 侧配置
+## 添加到 OpenClaw
 
-OpenClaw 侧的 MCP 配置方式取决于实际 OpenClaw 版本。
 
-请按当前 OpenClaw 版本的 MCP Host 配置方式，将上面的 MCP Server 启动命令配置为 stdio MCP server。
+推荐使用本目录下的 PowerShell 脚本注册 MCP Server：
 
-本项目只提供 Family Repurchase MCP Server 的启动方式和环境变量说明，不假设具体 OpenClaw 版本的配置字段。
+```powershell
+powershell -ExecutionPolicy Bypass -File .\adapters\openclaw\openclaw-set-mcp.ps1 -Show
+```
+
+脚本会生成当前项目可用的 MCP server definition，并调用：
+```powershell
+openclaw mcp set family-repurchase-agent <json>
+```
+
+注册完成后，可以查看配置：
+
+```powershell
+openclaw mcp list
+openclaw mcp show family-repurchase-agent
+```
+如果需要手动注册，可以参考：
+
+```powershell
+$json = Get-Content -Raw .\adapters\openclaw\mcp-server.local.json |
+ConvertFrom-Json |
+ConvertTo-Json -Depth 20 -Compress
+
+$jsonEscaped = $json -replace '"', '\"'
+
+openclaw mcp set family-repurchase-agent $jsonEscaped
+```
+其中 mcp-server.local.json 可以从 mcp-server.example.json 复制后修改得到。注意：mcp-server.example.json 中的 <PROJECT_ROOT> 是占位符，不能直接用于真实注册。
 
 ## 调试说明
 

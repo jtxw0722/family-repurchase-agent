@@ -207,6 +207,19 @@ evals/                  # 评测用例
 
 ---
 
+### Agent Host 示例
+
+#### Claude Code
+![Claude Code MCP Demo](/assets/screenshots/claude-code-mcp-compare-price.png)
+
+#### CodeX
+![CodeX MCP Demo](/assets/screenshots/codex-mcp-compare-price.png)
+
+#### OpenClaw
+![OpenClaw MCP Demo](/assets/screenshots/openclaw-mcp-compare-price.png)
+
+---
+
 ## 隐私与安全
 
 Family Repurchase Agent 默认本地运行。

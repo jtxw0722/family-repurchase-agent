@@ -47,3 +47,8 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+.mcp.json
+.claude/
+.codex/
+mcp-server.json

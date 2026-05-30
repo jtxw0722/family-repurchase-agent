@@ -1,0 +1,12 @@
+{
+  "command": "java",
+  "args": [
+    "-jar",
+    "<PROJECT_ROOT>\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
+  ],
+  "env": {
+    "FAMILY_AGENT_API_BASE_URL": "http://localhost:8080",
+    "FAMILY_AGENT_PROJECT_ROOT": "<PROJECT_ROOT>",
+    "FAMILY_AGENT_IMPORT_ALLOWED_DIRS": "<PROJECT_ROOT>\\examples;<PROJECT_ROOT>\\data\\imports;<PROJECT_ROOT>\\imports"
+  }
+}
