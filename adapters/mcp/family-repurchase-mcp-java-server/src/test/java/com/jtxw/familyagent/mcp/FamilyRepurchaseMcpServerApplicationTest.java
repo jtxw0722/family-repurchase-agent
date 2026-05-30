@@ -121,4 +121,32 @@ class FamilyRepurchaseMcpServerApplicationTest {
             return Map.of("message", "ok");
         }
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void comparePriceShouldReturnStructuredContentWhenOutputSchemaExists() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new FakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        McpSchema.CallToolResult result = application.comparePriceTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("compare_price")
+                        .arguments(Map.of(
+                                "productName", "膨润土猫砂",
+                                "price", 10.3,
+                                "quantity", 5,
+                                "unit", "kg"
+                        ))
+                        .build()
+        );
+
+        assertThat(result.isError()).isFalse();
+        assertThat(result.structuredContent()).isInstanceOf(Map.class);
+
+        Map<String, Object> structuredContent = (Map<String, Object>) result.structuredContent();
+        assertThat(structuredContent).containsEntry("message", "ok");
+    }
 }

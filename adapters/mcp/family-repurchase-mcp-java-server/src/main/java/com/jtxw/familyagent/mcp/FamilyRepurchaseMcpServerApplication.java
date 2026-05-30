@@ -217,6 +217,7 @@ public class FamilyRepurchaseMcpServerApplication {
     private McpSchema.CallToolResult toolSuccess(Map<String, Object> data) {
         return McpSchema.CallToolResult.builder()
                 .addTextContent(toJson(data))
+                .structuredContent(data)
                 .isError(false)
                 .build();
     }
