@@ -42,8 +42,6 @@ logs/
 node_modules/
 coverage/
 .npm-cache/
-adapters/openclaw/family-repurchase-openclaw-plugin/dist/
-/adapters/openclaw.zip
 
 # Temp
 *.tmp

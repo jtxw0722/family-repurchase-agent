@@ -1,20 +1,24 @@
 # Family Repurchase MCP Java Server
 
-This module is the Java MCP stdio adapter for Family Repurchase Agent.
+这是 Family Repurchase Agent 的统一 MCP Tool Server。
 
-它只做协议适配、参数校验、文件路径防护和 HTTP 转发，不直接访问 SQLite，也不直接调用主项目的 Repository 或 Domain Service。
+Claude Code、Codex、OpenClaw 等 Agent Host 都应通过它调用项目能力。
+
+调用链路：
 
 ```text
-Claude Desktop / Cursor
-  -> MCP stdio
-  -> Java MCP Server
-  -> Spring Boot REST Tool API
-  -> Application Service / Domain / SQLite
+Claude Code / Codex / OpenClaw
+        ↓
+Family Repurchase MCP Server
+        ↓
+Spring Boot REST Tool API
+        ↓
+Application Service / Domain / SQLite
 ```
 
-## Tools
+MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发，不直接访问 SQLite、Repository 或 Domain Service。
 
-当前暴露 3 个工具：
+## MCP Tools
 
 | Tool | 说明 |
 |---|---|
@@ -93,49 +97,17 @@ Windows：
 $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "examples;data/imports;imports"
 ```
 
-如果在 Claude Desktop 中配置，建议使用绝对路径，避免不同启动目录导致相对路径解析不一致。
+在 Agent Host 中配置时建议使用绝对路径，避免不同启动目录导致相对路径解析不一致。
 
-## Claude Desktop 配置示例
+## Agent Host 配置
 
-Windows 示例：
+Claude Code、Codex、OpenClaw 等 Host 的 MCP 配置方式取决于各自版本。项目侧提供 stdio MCP Server 命令：
 
-```json
-{
-  "mcpServers": {
-    "family-repurchase-agent": {
-      "command": "java",
-      "args": [
-        "-jar",
-        "D:\\project\\family-repurchase-agent\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
-      ],
-      "env": {
-        "FAMILY_AGENT_API_BASE_URL": "http://localhost:8080",
-        "FAMILY_AGENT_IMPORT_ALLOWED_DIRS": "D:\\project\\family-repurchase-agent\\examples;D:\\project\\family-repurchase-agent\\data\\imports;D:\\project\\family-repurchase-agent\\imports"
-      }
-    }
-  }
-}
+```bash
+java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar
 ```
 
-macOS / Linux 示例：
-
-```json
-{
-  "mcpServers": {
-    "family-repurchase-agent": {
-      "command": "java",
-      "args": [
-        "-jar",
-        "/path/to/family-repurchase-agent/adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar"
-      ],
-      "env": {
-        "FAMILY_AGENT_API_BASE_URL": "http://localhost:8080",
-        "FAMILY_AGENT_IMPORT_ALLOWED_DIRS": "/path/to/family-repurchase-agent/examples:/path/to/family-repurchase-agent/data/imports:/path/to/family-repurchase-agent/imports"
-      }
-    }
-  }
-}
-```
+请按对应 Host 的 MCP 配置方式，将该命令配置为 stdio MCP server。
 
 ## 本地 smoke test
 
@@ -155,10 +127,38 @@ powershell -ExecutionPolicy Bypass -File .\smoke-test.ps1
 - stdout 只输出 JSON-RPC 消息
 - `compare_price` 参数缺失时返回 MCP tool error，不会让 server 崩溃
 
+## MCP Inspector
+
+MCP Inspector 仅用于本地调试 MCP Server，不是最终 Agent Host。
+
+从项目根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\inspect-mcp.ps1
+```
+
+如果当前位于 MCP 子模块目录，也可以执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ..\..\..\scripts\inspect-mcp.ps1
+```
+
+脚本默认会完成以下配置：
+
+- 将 `FAMILY_AGENT_API_BASE_URL` 设置为 `http://localhost:8080`
+- 将 `FAMILY_AGENT_IMPORT_ALLOWED_DIRS` 设置为 `examples`、`data/imports` 和 `imports`
+- 自动在 `target/` 目录下定位 MCP Server jar
+- 启动 MCP Inspector：
+
+```powershell
+npx -y "@modelcontextprotocol/inspector" java -jar <mcp-jar>
+```
+
+该脚本不会自动启动 Spring Boot 后端。使用前请先确保后端服务已经运行。
+
 ## 验证命令
 
 ```bash
 mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml test
 mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
 ```
-

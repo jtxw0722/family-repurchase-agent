@@ -55,11 +55,11 @@ public class FamilyRepurchaseMcpServerApplication {
         McpSyncServer server = McpServer.sync(transportProvider)
                 .serverInfo(SERVER_NAME, SERVER_VERSION)
                 .instructions("""
-                        This server exposes local family consumption analysis tools.
-                        All price calculation and purchase history decisions are delegated to the local Spring Boot backend.
-                        Do not use these tools to access e-commerce websites, cookies, or external accounts.
-                        The import_file tool only accepts files under configured safe import directories.
-                        """)
+                该 MCP Server 暴露本地家庭复购品价格决策工具。
+                价格计算、历史价格对比和购买记录判断均由本地 Spring Boot 后端完成。
+                禁止使用这些工具访问电商网站、Cookie、浏览器会话或外部账号。
+                import_file 工具只接受配置的安全导入目录下的文件。
+                """)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
                 .validateToolInputs(false)
                 .tools(application.importFileTool(), application.comparePriceTool(), application.generateReportTool())
@@ -217,7 +217,6 @@ public class FamilyRepurchaseMcpServerApplication {
     private McpSchema.CallToolResult toolSuccess(Map<String, Object> data) {
         return McpSchema.CallToolResult.builder()
                 .addTextContent(toJson(data))
-                .structuredContent(data)
                 .isError(false)
                 .build();
     }
