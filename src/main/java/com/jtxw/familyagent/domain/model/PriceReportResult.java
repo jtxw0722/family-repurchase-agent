@@ -34,13 +34,28 @@ public class PriceReportResult {
      */
     @Schema(description = "生成的 Markdown 报告文件路径", example = "reports/2026-05.md")
     private final String reportPath;
+    /**
+     * 报告生成结果说明
+     */
+    @Schema(description = "报告生成结果说明", example = "报告生成成功")
+    private final String message;
 
     public PriceReportResult(String month, int recordCount, double totalAmount, int pendingReviewCount, String reportPath) {
+        this(month, recordCount, totalAmount, pendingReviewCount, reportPath, "报告生成成功。");
+    }
+
+    public PriceReportResult(String month,
+                             int recordCount,
+                             double totalAmount,
+                             int pendingReviewCount,
+                             String reportPath,
+                             String message) {
         this.month = month;
         this.recordCount = recordCount;
         this.totalAmount = totalAmount;
         this.pendingReviewCount = pendingReviewCount;
         this.reportPath = reportPath;
+        this.message = message;
     }
 
     public String month() {
@@ -63,6 +78,10 @@ public class PriceReportResult {
         return reportPath;
     }
 
+    public String message() {
+        return message;
+    }
+
     public String getMonth() {
         return month;
     }
@@ -81,5 +100,9 @@ public class PriceReportResult {
 
     public String getReportPath() {
         return reportPath;
+    }
+
+    public String getMessage() {
+        return message;
     }
 }

@@ -59,6 +59,9 @@ public class MarkdownReportWriter {
             if (adjustedCount > 0) {
                 sb.append("- 金额折算记录：").append(adjustedCount).append(" 条\n");
             }
+            if (records.isEmpty()) {
+                sb.append("\n> 本月没有纳入统计口径的购买记录；当前报告仅保留空表和复核提醒，导入或复核记录后可重新生成。\n");
+            }
             sb.append("\n");
 
             sb.append("## 分类汇总\n\n");

@@ -39,6 +39,22 @@ class MarkdownReportWriterTest {
                 .contains("存在购物金、礼品卡或组合支付折算记录");
     }
 
+    @Test
+    void shouldWriteEmptyMonthlyReportWithNoRecordsHint() throws Exception {
+        Path reportsDir = Path.of("target", "markdown-empty-report-writer-test");
+        MarkdownReportWriter writer = new MarkdownReportWriter(reportsDir.toString());
+
+        String reportPath = writer.write("2026-06", List.of(), 0);
+
+        String content = Files.readString(Path.of(reportPath));
+        assertThat(content)
+                .contains("- 统计记录数：0 条")
+                .contains("- 统计金额合计：0.00 元")
+                .contains("本月没有纳入统计口径的购买记录")
+                .contains("| 暂无数据 | 0.00 | 0.00% |")
+                .contains("当前没有待复核记录。");
+    }
+
     private PurchaseRecord record(String orderTime,
                                   String owner,
                                   String category,

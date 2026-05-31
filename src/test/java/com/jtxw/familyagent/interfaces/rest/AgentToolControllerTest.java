@@ -70,6 +70,25 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.warnings[0]").exists());
     }
 
+    /**
+     * 验证非法报告月份会通过 REST Tool API 返回 400，而不是暴露底层文件路径异常。
+     */
+    @Test
+    void generateReportShouldReturnBadRequestForInvalidMonthFormat() throws Exception {
+        when(reportApplicationService.generatePriceReport("2026/05"))
+                .thenThrow(new IllegalArgumentException("报告月份格式错误，请使用 yyyy-MM，例如 2026-05。"));
+
+        mockMvc.perform(post("/api/tools/generate-report")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "month": "2026/05"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("报告月份格式错误，请使用 yyyy-MM，例如 2026-05。"));
+    }
+
     private PriceDecisionResult priceDecisionResult() {
         return new PriceDecisionResult(
                 "cat litter",

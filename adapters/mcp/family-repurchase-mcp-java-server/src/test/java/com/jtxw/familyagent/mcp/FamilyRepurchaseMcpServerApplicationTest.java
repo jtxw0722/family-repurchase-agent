@@ -111,6 +111,32 @@ class FamilyRepurchaseMcpServerApplicationTest {
         ));
     }
 
+    /**
+     * 验证 generate_report 的输出 schema 覆盖 REST 返回字段，避免 structuredContent 校验失败。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void generateReportOutputSchemaShouldMatchRestResponseFields() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new FakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        Map<String, Object> outputSchema = application.generateReportTool().tool().outputSchema();
+        Map<String, Object> properties = (Map<String, Object>) outputSchema.get("properties");
+
+        assertThat(outputSchema).containsEntry("additionalProperties", false);
+        assertThat(properties.keySet()).containsAll(Set.of(
+                "month",
+                "recordCount",
+                "totalAmount",
+                "pendingReviewCount",
+                "reportPath",
+                "message"
+        ));
+    }
+
     private static class FakeRestClient extends FamilyAgentRestClient {
         FakeRestClient() {
             super(URI.create("http://localhost:8080"), new ObjectMapper());

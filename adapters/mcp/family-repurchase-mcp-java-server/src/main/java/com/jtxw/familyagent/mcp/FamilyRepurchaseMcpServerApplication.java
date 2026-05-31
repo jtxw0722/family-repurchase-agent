@@ -33,8 +33,8 @@ public class FamilyRepurchaseMcpServerApplication {
     private final ImportFilePathValidator importFilePathValidator;
 
     public FamilyRepurchaseMcpServerApplication(ObjectMapper objectMapper,
-                                                 FamilyAgentRestClient restClient,
-                                                 ImportFilePathValidator importFilePathValidator) {
+                                                FamilyAgentRestClient restClient,
+                                                ImportFilePathValidator importFilePathValidator) {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.importFilePathValidator = importFilePathValidator;
@@ -55,11 +55,11 @@ public class FamilyRepurchaseMcpServerApplication {
         McpSyncServer server = McpServer.sync(transportProvider)
                 .serverInfo(SERVER_NAME, SERVER_VERSION)
                 .instructions("""
-                该 MCP Server 暴露本地家庭复购品价格决策工具。
-                价格计算、历史价格对比和购买记录判断均由本地 Spring Boot 后端完成。
-                禁止使用这些工具访问电商网站、Cookie、浏览器会话或外部账号。
-                import_file 工具只接受配置的安全导入目录下的文件。
-                """)
+                        该 MCP Server 暴露本地家庭复购品价格决策工具。
+                        价格计算、历史价格对比和购买记录判断均由本地 Spring Boot 后端完成。
+                        禁止使用这些工具访问电商网站、Cookie、浏览器会话或外部账号。
+                        import_file 工具只接受配置的安全导入目录下的文件。
+                        """)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
                 .validateToolInputs(false)
                 .tools(application.importFileTool(), application.comparePriceTool(), application.generateReportTool())
@@ -150,6 +150,13 @@ public class FamilyRepurchaseMcpServerApplication {
         );
     }
 
+    /**
+     * 定义生成价格报告的 MCP tool，并保持 outputSchema 与后端 REST 返回字段一致。
+     *
+     * <p>该 schema 需要包含 message，否则 MCP Host 会因 structuredContent 额外字段校验失败。</p>
+     *
+     * @return generate_report tool specification
+     */
     McpServerFeatures.SyncToolSpecification generateReportTool() {
         return new McpServerFeatures.SyncToolSpecification(
                 McpSchema.Tool.builder("generate_report")
@@ -162,8 +169,10 @@ public class FamilyRepurchaseMcpServerApplication {
                         ))
                         .outputSchema(objectSchema(properties(
                                 property("month", stringSchema("报告月份")),
-                                property("reportPath", stringSchema("本地 Markdown 报告路径")),
-                                property("markdown", stringSchema("报告 Markdown 内容")),
+                                property("recordCount", numberSchema("纳入报告的记录数")),
+                                property("totalAmount", numberSchema("纳入统计的金额合计")),
+                                property("pendingReviewCount", numberSchema("待复核记录数")),
+                                property("reportPath", stringSchema("生成的报告文件路径")),
                                 property("message", stringSchema("报告生成结果说明"))
                         )))
                         .build(),
@@ -282,9 +291,9 @@ public class FamilyRepurchaseMcpServerApplication {
     }
 
     private static McpSchema.ToolAnnotations toolAnnotations(String title,
-                                                            boolean readOnly,
-                                                            boolean destructive,
-                                                            boolean idempotent) {
+                                                             boolean readOnly,
+                                                             boolean destructive,
+                                                             boolean idempotent) {
         return McpSchema.ToolAnnotations.builder()
                 .title(title)
                 .readOnlyHint(readOnly)

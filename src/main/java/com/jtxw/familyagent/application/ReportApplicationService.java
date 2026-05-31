@@ -9,6 +9,7 @@ import com.jtxw.familyagent.infrastructure.report.MarkdownReportWriter;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * @Author: jtxw
@@ -17,6 +18,11 @@ import java.util.List;
  */
 @Service
 public class ReportApplicationService {
+    /**
+     * 报告月份只允许 yyyy-MM，避免非法分隔符被当作报告文件子目录。
+     */
+    private static final Pattern REPORT_MONTH_PATTERN = Pattern.compile("\\d{4}-(0[1-9]|1[0-2])");
+
     private final DatabaseInitializer databaseInitializer;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final ReviewItemRepository reviewItemRepository;
@@ -41,11 +47,33 @@ public class ReportApplicationService {
      * @return 价格报告生成结果
      */
     public PriceReportResult generatePriceReport(String month) {
+        String normalizedMonth = validateMonth(month);
         databaseInitializer.initialize();
-        List<PurchaseRecord> records = purchaseRecordRepository.listIncludedByMonth(month);
+        List<PurchaseRecord> records = purchaseRecordRepository.listIncludedByMonth(normalizedMonth);
         int pendingReviewCount = reviewItemRepository.countPending();
-        String reportPath = markdownReportWriter.write(month, records, pendingReviewCount);
+        String reportPath = markdownReportWriter.write(normalizedMonth, records, pendingReviewCount);
         double total = records.stream().mapToDouble(PurchaseRecord::totalAmount).sum();
-        return new PriceReportResult(month, records.size(), total, pendingReviewCount, reportPath);
+        String message = records.isEmpty()
+                ? "指定月份没有可统计的购买记录，已生成空报告。"
+                : "报告生成成功。";
+        return new PriceReportResult(normalizedMonth, records.size(), total, pendingReviewCount, reportPath, message);
+    }
+
+    /**
+     * 校验并返回可用于查询和报告文件名的月份字符串。
+     *
+     * @param month 用户传入的报告月份
+     * @return 去除首尾空白后的 yyyy-MM 月份
+     * @throws IllegalArgumentException 月份为空或格式不是 yyyy-MM 时抛出
+     */
+    private String validateMonth(String month) {
+        if (month == null || month.isBlank()) {
+            throw new IllegalArgumentException("报告月份不能为空，请使用 yyyy-MM，例如 2026-05。");
+        }
+        String normalizedMonth = month.trim();
+        if (!REPORT_MONTH_PATTERN.matcher(normalizedMonth).matches()) {
+            throw new IllegalArgumentException("报告月份格式错误，请使用 yyyy-MM，例如 2026-05。");
+        }
+        return normalizedMonth;
     }
 }
