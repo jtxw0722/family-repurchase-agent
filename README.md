@@ -182,6 +182,8 @@ MCP Inspector 仅用于本地调试 MCP Server，不是最终使用入口。
 
 ## 项目结构
 
+## 项目结构
+
 ```text
 src/main/java/com/jtxw/familyagent/
 ├── application/        # 应用服务
@@ -191,12 +193,18 @@ src/main/java/com/jtxw/familyagent/
 
 adapters/
 ├── mcp/                # Java MCP stdio Server
-├── openclaw/           # OpenClaw MCP 接入说明
-├── claude-code/        # Claude Code 通过 MCP 使用项目工具
-└── codex/              # Codex 通过 MCP 使用项目工具
+├── openclaw/           # OpenClaw MCP 接入说明、示例配置和注册脚本
+├── claude-code/        # Claude Code MCP 接入说明
+└── codex/              # Codex MCP 接入说明和 Skill
 
+docs/
+└── tool_contract.md    # MCP tools 契约说明
+
+scripts/
+└── inspect-mcp.ps1     # MCP Inspector 本地调试脚本
+
+assets/screenshots/     # Agent Host 调用 MCP tools 的示例截图
 examples/               # 合成示例数据
-evals/                  # 评测用例
 ```
 
 适配器文档：
@@ -204,6 +212,7 @@ evals/                  # 评测用例
 - [Agent Host Integration](adapters/README.md)
 - [MCP Java Server](adapters/mcp/family-repurchase-mcp-java-server/README.md)
 - [OpenClaw MCP Integration](adapters/openclaw/README.md)
+- [Tool Contract](docs/tool_contract.md)
 
 ---
 
@@ -231,6 +240,15 @@ Family Repurchase Agent 默认本地运行。
 - 不自动下单
 - 不上传真实订单数据到云端
 - `examples/` 只使用合成示例数据
+
+---
+
+## 设计取舍
+
+- Local-first：购买记录默认保存在本机，避免上传家庭消费数据。
+- SQLite：项目面向单人 / 单家庭使用，SQLite 足以支撑本地历史样本查询。
+- 独立 MCP Server：MCP 只做协议适配和转发，业务规则保留在 Spring Boot 后端。
+- 工具计算优先：LLM 负责理解意图和解释结果，价格判断由后端基于历史样本计算。
 
 ---
 
