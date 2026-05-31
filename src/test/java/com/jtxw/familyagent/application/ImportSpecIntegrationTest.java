@@ -2,12 +2,7 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
-import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
-import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
-import com.jtxw.familyagent.domain.policy.PriceDecisionPolicy;
-import com.jtxw.familyagent.domain.policy.ProductNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductSpecParser;
-import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
+import com.jtxw.familyagent.domain.policy.*;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
@@ -34,6 +29,11 @@ import static org.assertj.core.api.Assertions.offset;
  * @Description: 导入规格解析和价格比较命中的集成测试。
  */
 class ImportSpecIntegrationTest {
+
+    private PriceDecisionPolicy newPriceDecisionPolicy() {
+        return new PriceDecisionPolicy(new PriceDecisionThresholds(0.92D, 1.12D));
+    }
+
     @Test
     void shouldImportCatLitterAsKgPriceSampleAndMatchComparePrice() throws Exception {
         Fixture fixture = fixture("cat-litter-spec.sqlite");
@@ -93,7 +93,7 @@ class ImportSpecIntegrationTest {
                 databaseInitializer,
                 productNormalizer,
                 purchaseRecordRepository,
-                new PriceDecisionPolicy()
+                newPriceDecisionPolicy()
         );
         return new Fixture(importService, priceService, purchaseRecordRepository, dir);
     }

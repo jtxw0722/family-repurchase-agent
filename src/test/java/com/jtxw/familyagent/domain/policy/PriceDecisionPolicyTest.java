@@ -14,9 +14,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @Description: Price decision policy unit tests
  */
 class PriceDecisionPolicyTest {
+
+    private PriceDecisionPolicy newPolicy() {
+        return new PriceDecisionPolicy(new PriceDecisionThresholds(0.92D, 1.12D));
+    }
+
+    private PriceDecisionPolicy newPolicy(double goodPriceMedianFactor, double expensivePriceMedianFactor) {
+        return new PriceDecisionPolicy(new PriceDecisionThresholds(goodPriceMedianFactor, expensivePriceMedianFactor));
+    }
+
     @Test
     void shouldReturnNormalPriceWithEvidence() {
-        PriceDecisionPolicy policy = new PriceDecisionPolicy();
+        PriceDecisionPolicy policy = newPolicy();
         PriceDecisionResult result = policy.decide("cat litter", "cat litter", 89, 12, "kg", List.of(
                 record(1L, "2026-02-10", "cat litter 10kg", 68, 10, 6.8),
                 record(2L, "2026-03-12", "mixed cat litter 5kg", 40.75, 5, 8.15),
@@ -36,7 +45,7 @@ class PriceDecisionPolicyTest {
 
     @Test
     void shouldReturnInsufficientData() {
-        PriceDecisionPolicy policy = new PriceDecisionPolicy();
+        PriceDecisionPolicy policy = newPolicy();
         PriceDecisionResult result = policy.decide("cat litter", "cat litter", 89, 12, "kg", List.of());
 
         assertThat(result.decision()).isEqualTo("insufficient_data");
@@ -47,7 +56,7 @@ class PriceDecisionPolicyTest {
 
     @Test
     void shouldWarnWhenAverageIsMuchHigherThanMedian() {
-        PriceDecisionPolicy policy = new PriceDecisionPolicy();
+        PriceDecisionPolicy policy = newPolicy();
         PriceDecisionResult result = policy.decide("cat litter", "cat litter", 89, 12, "kg", List.of(
                 record(1L, "2026-02-10", "cat litter 10kg", 68, 10, 6.8),
                 record(2L, "2026-03-12", "mixed cat litter 5kg", 79.5, 5, 15.9),
@@ -62,7 +71,7 @@ class PriceDecisionPolicyTest {
 
     @Test
     void shouldExcludeHistoryRecordsWithDifferentUnit() {
-        PriceDecisionPolicy policy = new PriceDecisionPolicy();
+        PriceDecisionPolicy policy = newPolicy();
         PriceDecisionResult result = policy.decide("cat litter", "cat litter", 89, 12, "kg", List.of(
                 record(1L, "2026-02-10", "cat litter 10kg", 68, 10, 6.8, "kg"),
                 record(2L, "2026-03-12", "mixed cat litter 5kg", 79.5, 5, 15.9, "kg"),
@@ -103,5 +112,57 @@ class PriceDecisionPolicyTest {
                 "", "pet supplies", "cat litter", quantity, unit, totalAmount, totalAmount,
                 totalAmount, 0D, "paid_amount", unitPrice, "CNY", "include",
                 false, "unique", "test.csv", "2026-05-11T00:00:00");
+    }
+
+    @Test
+    void shouldUseCustomThresholds() {
+        List<PurchaseRecord> history = List.of(
+                record(1L, "2026-01-01", "cat litter low sample", 8, 1, 8),
+                record(2L, "2026-01-02", "cat litter median sample", 10, 1, 10),
+                record(3L, "2026-01-03", "cat litter high sample", 12, 1, 12)
+        );
+
+        PriceDecisionPolicy defaultPolicy = newPolicy(0.92D, 1.12D);
+        PriceDecisionPolicy stricterPolicy = newPolicy(0.86D, 1.21D);
+
+        PriceDecisionResult defaultGoodResult = defaultPolicy.decide(
+                "cat litter",
+                "cat litter",
+                9.0,
+                1,
+                "kg",
+                history
+        );
+        PriceDecisionResult stricterNormalResult = stricterPolicy.decide(
+                "cat litter",
+                "cat litter",
+                9.0,
+                1,
+                "kg",
+                history
+        );
+
+        assertThat(defaultGoodResult.decision()).isEqualTo("good_price");
+        assertThat(stricterNormalResult.decision()).isEqualTo("normal_price");
+
+        PriceDecisionResult defaultExpensiveResult = defaultPolicy.decide(
+                "cat litter",
+                "cat litter",
+                11.5,
+                1,
+                "kg",
+                history
+        );
+        PriceDecisionResult stricterExpensiveResult = stricterPolicy.decide(
+                "cat litter",
+                "cat litter",
+                11.5,
+                1,
+                "kg",
+                history
+        );
+
+        assertThat(defaultExpensiveResult.decision()).isEqualTo("expensive");
+        assertThat(stricterExpensiveResult.decision()).isEqualTo("normal_price");
     }
 }

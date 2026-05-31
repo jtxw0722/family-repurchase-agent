@@ -249,6 +249,7 @@ Family Repurchase Agent 默认本地运行。
 - SQLite：项目面向单人 / 单家庭使用，SQLite 足以支撑本地历史样本查询。
 - 独立 MCP Server：MCP 只做协议适配和转发，业务规则保留在 Spring Boot 后端。
 - 工具计算优先：LLM 负责理解意图和解释结果，价格判断由后端基于历史样本计算。
+- 价格判断阈值当前采用可配置的启发式 MVP 规则：当前单价低于历史最低价，或低于历史中位价一定比例时判断为好价；明显高于历史中位价时判断为偏贵。具体阈值和工具返回契约见 [Tool Contract](docs/tool_contract.md)。
 
 ---
 

@@ -323,6 +323,20 @@ compare_price
 | `expensive`         | 偏贵   | 当前单位价格明显高于历史中位数          |
 | `insufficient_data` | 数据不足 | 没有足够历史样本形成可靠判断           |
 
+当前价格判断阈值为 MVP 阶段的启发式规则，后续可根据真实样本分布和用户反馈调整。默认配置如下：
+
+- `goodPriceMedianFactor = 0.92`：当前单位价格低于或等于历史中位数的 92%，即比历史中位数低约 8% 或更多时，可判断为 `good_price`
+- `expensivePriceMedianFactor = 1.12`：当前单位价格高于或等于历史中位数的 112%，即比历史中位数高约 12% 或更多时，可判断为 `expensive`
+
+未配置时使用默认值；如需调整，可通过 `application.yml` 配置覆盖，例如：
+
+```yaml
+family-agent:
+  price-decision:
+    good-price-median-factor: 0.86
+    expensive-price-median-factor: 1.21
+```
+
 当前 `confidence`：
 
 | confidence | 说明                     |

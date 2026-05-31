@@ -14,6 +14,11 @@ family-agent:
     - ./data/inbox
   reports-dir: ./reports
 
+# 价格判断阈值为可选配置，未配置时使用默认值
+#  price-decision:
+#    good-price-median-factor: 0.92
+#    expensive-price-median-factor: 1.12
+
 springdoc:
   api-docs:
     path: /v3/api-docs

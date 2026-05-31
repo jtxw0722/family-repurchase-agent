@@ -4,12 +4,7 @@ import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /**
  * @Author: jtxw
@@ -18,6 +13,13 @@ import java.util.Map;
  */
 @Component
 public class PriceDecisionPolicy {
+
+    private final PriceDecisionThresholds thresholds;
+
+    public PriceDecisionPolicy(PriceDecisionThresholds thresholds) {
+        this.thresholds = thresholds;
+    }
+
     /**
      * 根据当前价格和历史价格记录判断价格状态。
      *
@@ -118,10 +120,10 @@ public class PriceDecisionPolicy {
         if (currentUnitPrice <= baseline.historicalMin()) {
             code = "good_price";
             text = "好价";
-        } else if (currentUnitPrice <= baseline.historicalMedian() * 0.92) {
+        } else if (currentUnitPrice <= baseline.historicalMedian() * thresholds.goodPriceMedianFactor()) {
             code = "good_price";
             text = "好价";
-        } else if (currentUnitPrice >= baseline.historicalMedian() * 1.12) {
+        } else if (currentUnitPrice >= baseline.historicalMedian() * thresholds.expensivePriceMedianFactor()) {
             code = "expensive";
             text = "偏贵";
         } else {
