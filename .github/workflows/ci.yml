@@ -12,20 +12,31 @@ on:
 
 jobs:
   test:
-    name: Maven Test
+    name: Maven and MCP Test
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
           cache: maven
 
-      - name: Run tests
+      - name: Test main project
         run: mvn test
 
+      - name: Test MCP server
+        run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml test
+
+      - name: Package MCP server
+        run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
+
+      - name: Smoke test MCP server
+        shell: pwsh
+        run: ./scripts/smoke-test-mcp.ps1
