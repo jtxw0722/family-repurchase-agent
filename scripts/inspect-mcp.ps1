@@ -34,4 +34,5 @@ Write-Host "Allowed import dirs: $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS"
 Write-Host "MCP jar: $($mcpJar.FullName)"
 Write-Host "Spring Boot backend is not started by this script."
 
-& npx -y "@modelcontextprotocol/inspector" java -jar $mcpJar.FullName
+$mcpJarForInspector = $mcpJar.FullName.Replace('\', '/')
+& npx -y "@modelcontextprotocol/inspector" java -jar $mcpJarForInspector
