@@ -1,10 +1,10 @@
 package com.jtxw.familyagent.infrastructure.importer;
 
+import com.jtxw.familyagent.domain.policy.ProductSpecParseResult;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.ProductRuleMatchResult;
 import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
 import com.jtxw.familyagent.domain.policy.ProductSpecParser;
-import com.jtxw.familyagent.domain.policy.ProductSpecParser.ProductSpecParseResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 

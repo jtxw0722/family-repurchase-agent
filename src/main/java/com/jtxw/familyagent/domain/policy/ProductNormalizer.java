@@ -28,7 +28,23 @@ public class ProductNormalizer {
      * @return 归一化商品名称
      */
     public String normalize(String productName) {
-        return match(productName).normalizedName();
+        return normalizeProduct(productName).normalizedName();
+    }
+
+    /**
+     * 返回结构化商品归一化结果，供规格解析分发和后续导入链路使用。
+     *
+     * @param productName 原始商品名称
+     * @return 商品归一化结果
+     */
+    public ProductNormalizationResult normalizeProduct(String productName) {
+        ProductRuleMatchResult matchResult = match(productName);
+        return new ProductNormalizationResult(
+                matchResult.normalizedName(),
+                matchResult.unitFamily(),
+                matchResult.standardUnit(),
+                false
+        );
     }
 
     /**

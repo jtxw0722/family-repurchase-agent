@@ -34,4 +34,16 @@ class ProductNormalizerTest {
         assertThat(normalizer.normalize("原生木浆抽纸 24包")).isEqualTo("纸巾");
         assertThat(normalizer.normalize("除菌洗衣液 3L")).isEqualTo("洗衣液");
     }
+
+    @Test
+    void shouldReturnStructuredNormalizationResultForTissue() {
+        ProductNormalizer normalizer = new ProductNormalizer();
+
+        ProductNormalizationResult result = normalizer.normalizeProduct("维达超韧抽纸 3层130抽×24包（195×133mm）");
+
+        assertThat(result.normalizedName()).isEqualTo("纸巾");
+        assertThat(result.preferredUnitFamily()).isEqualTo(UnitFamily.DRAW_COUNT);
+        assertThat(result.standardUnit()).isEqualTo("抽");
+        assertThat(result.reviewRequired()).isFalse();
+    }
 }

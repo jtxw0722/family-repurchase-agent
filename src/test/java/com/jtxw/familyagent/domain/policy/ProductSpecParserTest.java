@@ -1,6 +1,5 @@
 package com.jtxw.familyagent.domain.policy;
 
-import com.jtxw.familyagent.domain.policy.ProductSpecParser.ProductSpecParseResult;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +47,75 @@ class ProductSpecParserTest {
         ProductRuleMatchResult tissue = matcher.match("抽纸10斤*8包");
 
         assertThat(parser.parse("10斤*8包", "名创优品钠基矿猫砂5kg*8包", catLitter).quantity()).isEqualTo(40D);
-        assertThat(parser.parse("10斤*8包", "抽纸10斤*8包", tissue).parsed()).isFalse();
+        ProductSpecParseResult tissueResult = parser.parse("10斤*8包", "抽纸10斤*8包", tissue);
+        assertThat(tissueResult.parsed()).isFalse();
+        assertThat(tissueResult.reviewRequired()).isTrue();
+    }
+
+    @Test
+    void shouldParseTissueDrawCountSpecs() {
+        ProductSpecParseResult result = parser.parse("", "维达超韧抽纸 3层130抽×24包（195×133mm）");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(3120D);
+        assertThat(result.unit()).isEqualTo("抽");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
+    void shouldNotParseDimensionsAsDrawCountSpecs() {
+        ProductSpecParseResult result = parser.parse("", "维达超韧抽纸 3层4包（195×133mm）");
+
+        assertThat(result.parsed()).isFalse();
+        assertThat(result.reviewRequired()).isTrue();
+    }
+
+    @Test
+    void shouldRequireReviewWhenDrawCountSpecMissesDrawsPerPack() {
+        ProductSpecParseResult result = parser.parse("", "维达超韧抽纸 24包");
+
+        assertThat(result.parsed()).isFalse();
+        assertThat(result.reviewRequired()).isTrue();
+    }
+
+    @Test
+    void shouldParseLiterMultipacks() {
+        ProductSpecParseResult result = parser.parse("", "洗衣液 2L*3瓶");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(6D);
+        assertThat(result.unit()).isEqualTo("L");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
+    void shouldConvertMilliliterMultipacksToLiter() {
+        ProductSpecParseResult result = parser.parse("", "洗衣液 500ml*4瓶");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(2D);
+        assertThat(result.unit()).isEqualTo("L");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
+    void shouldConvertSingleMilliliterSpecToLiter() {
+        ProductSpecParseResult result = parser.parse("", "洗衣液 750ml");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(0.75D);
+        assertThat(result.unit()).isEqualTo("L");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
+    void shouldPreferSkuForVolumeSpecs() {
+        ProductSpecParseResult result = parser.parse("500ml*4瓶", "洗衣液 2L*3瓶");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(2D);
+        assertThat(result.unit()).isEqualTo("L");
+        assertThat(result.reviewRequired()).isFalse();
     }
 
     private void assertSpec(String text, double quantity, boolean reviewRequired) {

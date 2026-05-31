@@ -38,17 +38,18 @@ rules:
   - id: tissue
     normalizedName: 纸巾
     category: 日用品
-    standardUnit: 包
-    unitFamily: count
+    standardUnit: 抽
+    unitFamily: draw_count
     priority: 80
     includeKeywords:
       - 纸巾
       - 抽纸
-      - 卷纸
-      - 湿巾
+      - 面巾纸
     excludeKeywords:
       - 纸巾盒
       - 收纳盒
+      - 湿巾
+      - 卷纸
 
   - id: laundry_detergent
     normalizedName: 洗衣液

@@ -34,4 +34,23 @@ class ProductRuleMatcherTest {
         assertThat(matcher.match("原生木浆抽纸 24包").normalizedName()).isEqualTo("纸巾");
         assertThat(matcher.match("除菌洗衣液 3L").normalizedName()).isEqualTo("洗衣液");
     }
+
+    @Test
+    void shouldMatchTissueAsDrawCountRule() {
+        ProductRuleMatchResult result = matcher.match("维达超韧抽纸 3层130抽×24包（195×133mm）");
+
+        assertThat(result.matched()).isTrue();
+        assertThat(result.normalizedName()).isEqualTo("纸巾");
+        assertThat(result.standardUnit()).isEqualTo("抽");
+        assertThat(result.unitFamily()).isEqualTo(UnitFamily.DRAW_COUNT);
+    }
+
+    @Test
+    void shouldMatchTissueAsVolumeRule() {
+        ProductRuleMatchResult result = matcher.match("除菌洗衣液 2L*3瓶");
+
+        assertThat(result.normalizedName()).isEqualTo("洗衣液");
+        assertThat(result.standardUnit()).isEqualTo("L");
+        assertThat(result.unitFamily()).isEqualTo(UnitFamily.VOLUME);
+    }
 }
