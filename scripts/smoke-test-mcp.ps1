@@ -122,12 +122,72 @@ try {
         throw "tools/list response did not include result"
     }
 
-    $toolNames = @($toolsResponse.result.tools | ForEach-Object { $_.name })
-    foreach ($expectedTool in @("import_file", "compare_price", "generate_report")) {
+    $tools = @($toolsResponse.result.tools)
+    $toolNames = @($tools | ForEach-Object { $_.name })
+
+    foreach ($expectedTool in @("import_file", "compare_price", "get_price_baseline", "generate_report")) {
         if ($toolNames -notcontains $expectedTool) {
             throw "tools/list missing tool: $expectedTool"
         }
     }
+
+    function Find-Tool {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$Name
+        )
+
+        $tool = $tools | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+        if ($null -eq $tool) {
+            throw "tools/list missing tool: $Name"
+        }
+        return $tool
+    }
+
+    function Assert-OutputSchemaProperties {
+        param(
+            [Parameter(Mandatory = $true)]
+            [object]$Tool,
+
+            [Parameter(Mandatory = $true)]
+            [string[]]$Properties
+        )
+
+        if ($null -eq $Tool.outputSchema) {
+            throw "tool '$($Tool.name)' missing outputSchema"
+        }
+
+        if ($null -eq $Tool.outputSchema.properties) {
+            throw "tool '$($Tool.name)' outputSchema missing properties"
+        }
+
+        $actualProperties = @($Tool.outputSchema.properties.PSObject.Properties.Name)
+        foreach ($property in $Properties) {
+            if ($actualProperties -notcontains $property) {
+                throw "tool '$($Tool.name)' outputSchema missing property: $property"
+            }
+        }
+    }
+
+    $generateReportTool = Find-Tool -Name "generate_report"
+    Assert-OutputSchemaProperties -Tool $generateReportTool -Properties @(
+        "month",
+        "recordCount",
+        "totalAmount",
+        "pendingReviewCount",
+        "reportPath"
+    )
+
+    $getPriceBaselineTool = Find-Tool -Name "get_price_baseline"
+    Assert-OutputSchemaProperties -Tool $getPriceBaselineTool -Properties @(
+        "productName",
+        "normalizedName",
+        "baseline",
+        "evidence",
+        "warnings"
+    )
+
+    Write-Host "MCP smoke test passed. Tools: $($toolNames -join ', ')"
 
     Write-Host "MCP smoke test passed. Tools: $($toolNames -join ', ')"
 } finally {

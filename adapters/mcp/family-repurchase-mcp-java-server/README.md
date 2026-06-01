@@ -20,13 +20,28 @@ MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发
 
 ## MCP Tools
 
-| Tool | 说明 |
-|---|---|
-| `import_file` | 导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录 |
-| `compare_price` | 比较当前商品单位价格与本地历史价格，返回价格判断结果 |
-| `generate_report` | 根据指定月份生成 Markdown 价格报告 |
+| Tool                 | 说明                                  | 典型场景                            |
+| -------------------- | ----------------------------------- | ------------------------------- |
+| `import_file`        | 导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录 | “导入 examples/sample_orders.csv” |
+| `compare_price`      | 比较当前商品单位价格与本地历史价格，返回价格判断结果          | “猫砂 10.3 元 5kg 值得买吗？”           |
+| `get_price_baseline` | 查询某个复购品的本地历史价格基准线                   | “查一下猫砂历史最低价 / 中位价 / 平均价”        |
+| `generate_report`    | 根据指定月份生成 Markdown 价格报告              | “生成 2026-05 的复购品报告”             |
 
-`generate_report` 会通过后端生成本地 Markdown 报告文件，因此不是 read-only tool。
+工具选择建议：
+
+| 用户意图                        | 推荐 Tool              |
+| --------------------------- | -------------------- |
+| 导入订单文件                      | `import_file`        |
+| 判断当前价格是否值得买                 | `compare_price`      |
+| 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `get_price_baseline` |
+| 生成月度报告                      | `generate_report`    |
+
+`compare_price` 和 `get_price_baseline` 的区别：
+
+* `compare_price` 用于“我现在看到一个价格，是否值得买”，需要提供当前价格、数量和单位。
+* `get_price_baseline` 用于“我想查这个商品历史最低价 / 中位价 / 平均价”，不需要提供当前价格。
+* `generate_report` 会通过后端生成本地 Markdown 报告文件，因此不是 read-only tool。
+
 
 ## 构建
 
@@ -109,6 +124,31 @@ java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchas
 
 请按对应 Host 的 MCP 配置方式，将该命令配置为 stdio MCP server。
 
+常见测试提示词：
+
+```text
+调用 Family Repurchase Agent MCP tools，查询猫砂历史最低价和历史平均价。
+```
+
+预期调用：
+```text
+get_price_baseline
+```
+
+判断当前价格是否值得买时，可以使用：
+```text
+调用 Family Repurchase Agent MCP tools，判断猫砂 10.3 元 5kg 是否值得买。
+```
+
+预期调用：
+```text
+compare_price
+```
+
+这段能减少 Agent Host 把“查历史最低价”误路由到 `generate_report` 的概率。
+
+---
+
 ## 本地 smoke test
 
 smoke test 不依赖 Spring Boot 后端，只验证 MCP stdio 协议层和工具列表。
@@ -116,8 +156,7 @@ smoke test 不依赖 Spring Boot 后端，只验证 MCP stdio 协议层和工具
 PowerShell：
 
 ```powershell
-cd adapters/mcp/family-repurchase-mcp-java-server
-powershell -ExecutionPolicy Bypass -File .\smoke-test.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test-mcp.ps1
 ```
 
 期望结果：
@@ -156,9 +195,28 @@ npx -y "@modelcontextprotocol/inspector" java -jar <mcp-jar>
 
 该脚本不会自动启动 Spring Boot 后端。使用前请先确保后端服务已经运行。
 
+如果只验证 `tools/list`，可以使用 smoke test；如果需要实际调用 `compare_price`、`get_price_baseline`、`generate_report`，则必须先启动 Spring Boot 后端。
+
 ## 验证命令
 
+从项目根目录执行：
+
 ```bash
+mvn test
 mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml test
 mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
 ```
+
+PowerShell smoke test：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test-mcp.ps1
+```
+
+如果需要使用 MCP Inspector 或 Agent Host 实际调用业务工具，请先启动 Spring Boot 后端：
+
+```bash
+mvn package
+java -jar target/family-repurchase-agent-0.4.0.jar
+```
+

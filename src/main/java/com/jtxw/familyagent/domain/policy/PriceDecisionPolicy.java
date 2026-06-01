@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.domain.policy;
 
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,79 @@ public class PriceDecisionPolicy {
 
     public PriceDecisionPolicy(PriceDecisionThresholds thresholds) {
         this.thresholds = thresholds;
+    }
+
+    public PriceBaselineResult baseline(String productName,
+                                        String normalizedName,
+                                        String unit,
+                                        List<PurchaseRecord> history) {
+        String baselineUnit = normalizeUnit(unit);
+
+        List<PurchaseRecord> candidateRecords = history == null ? List.of() : history.stream()
+                .filter(record -> record.unitPrice() != null)
+                .toList();
+
+        List<PurchaseRecord> records = candidateRecords.stream()
+                .filter(record -> sameUnit(record.unit(), baselineUnit))
+                .toList();
+
+        int excludedRecordCount = candidateRecords.size() - records.size();
+        List<String> excludedReasons = buildExcludedReasons(excludedRecordCount, baselineUnit);
+
+        if (records.isEmpty()) {
+            PriceDecisionResult.Baseline baseline = new PriceDecisionResult.Baseline(
+                    0, baselineUnit, null, null, null, null
+            );
+            PriceDecisionResult.Evidence evidence = new PriceDecisionResult.Evidence(
+                    "local_purchase_history",
+                    List.of(),
+                    excludedRecordCount,
+                    excludedReasons,
+                    List.of()
+            );
+            return new PriceBaselineResult(
+                    productName,
+                    normalizedName,
+                    baseline,
+                    evidence,
+                    List.of("历史记录不足，无法形成可靠价格基准线。")
+            );
+        }
+
+        List<PurchaseRecord> sortedByPrice = records.stream()
+                .sorted(Comparator.comparing(PurchaseRecord::unitPrice))
+                .toList();
+
+        PurchaseRecord minRecord = sortedByPrice.get(0);
+        PurchaseRecord medianRecord = sortedByPrice.get((sortedByPrice.size() - 1) / 2);
+        PurchaseRecord latestRecord = records.stream()
+                .max(Comparator.comparing(record -> safeText(record.orderTime())))
+                .orElse(medianRecord);
+
+        double min = minRecord.unitPrice();
+        double median = median(sortedByPrice);
+        double average = records.stream().mapToDouble(PurchaseRecord::unitPrice).average().orElse(0D);
+
+        PriceDecisionResult.Baseline baseline = new PriceDecisionResult.Baseline(
+                records.size(),
+                baselineUnit,
+                min,
+                median,
+                average,
+                dateRange(records)
+        );
+
+        List<String> warnings = buildWarnings(records.size(), average, median, excludedRecordCount, baselineUnit);
+
+        PriceDecisionResult.Evidence evidence = new PriceDecisionResult.Evidence(
+                "local_purchase_history",
+                sourceRecords(minRecord, medianRecord, latestRecord, baselineUnit),
+                excludedRecordCount,
+                excludedReasons,
+                outlierRecords(records, median, average, baselineUnit)
+        );
+
+        return new PriceBaselineResult(productName, normalizedName, baseline, evidence, warnings);
     }
 
     /**

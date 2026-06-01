@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.policy.*;
@@ -58,6 +59,38 @@ class ImportSpecIntegrationTest {
         assertThat(result.baseline().sampleSize()).isGreaterThan(0);
         assertThat(result.evidence().excludedReasons())
                 .noneMatch(reason -> reason.contains("单位不一致") && reason.contains("13"));
+    }
+
+    @Test
+    void shouldImportTissueDrawCountAndQueryPriceBaseline() throws Exception {
+        Fixture fixture = fixture("tissue-baseline.sqlite");
+        Path file = fixture.file("tissue-orders.csv");
+        Files.writeString(file, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2026-04-01,taobao,jtxw,维达超韧抽纸 3层130抽×24包（195×133mm）,3层130抽×24包,日用品,纸巾,1,件,39,CNY
+            2026-05-01,taobao,jtxw,某品牌原生木浆抽纸 100抽*20包,100抽*20包,日用品,纸巾,1,件,30,CNY
+            """, StandardCharsets.UTF_8);
+
+        fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listPriceHistoryRecords("纸巾");
+        assertThat(records).hasSize(2);
+        assertThat(records)
+                .extracting(PurchaseRecord::unit)
+                .containsOnly("抽");
+
+        PriceBaselineResult result = fixture.priceService.getPriceBaseline("纸巾", null);
+
+        assertThat(result.productName()).isEqualTo("纸巾");
+        assertThat(result.normalizedName()).isEqualTo("纸巾");
+        assertThat(result.baseline().unit()).isEqualTo("抽");
+        assertThat(result.baseline().sampleSize()).isEqualTo(2);
+        assertThat(result.baseline().historicalMin()).isNotNull();
+        assertThat(result.baseline().historicalMedian()).isNotNull();
+        assertThat(result.evidence().source()).isEqualTo("local_purchase_history");
+        assertThat(result.evidence().sourceRecords())
+                .extracting(PriceDecisionResult.SourceRecord::role)
+                .contains("historical_min", "median_sample", "latest");
     }
 
     private Fixture fixture(String dbName) throws Exception {

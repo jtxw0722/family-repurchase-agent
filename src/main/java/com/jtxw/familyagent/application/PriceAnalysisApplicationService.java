@@ -1,8 +1,10 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.policy.PriceDecisionPolicy;
+import com.jtxw.familyagent.domain.policy.ProductNormalizationResult;
 import com.jtxw.familyagent.domain.policy.ProductNormalizer;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
@@ -30,6 +32,26 @@ public class PriceAnalysisApplicationService {
         this.productNormalizer = productNormalizer;
         this.purchaseRecordRepository = purchaseRecordRepository;
         this.priceDecisionPolicy = priceDecisionPolicy;
+    }
+
+    public PriceBaselineResult getPriceBaseline(String productName, String unit) {
+        if (productName == null || productName.isBlank()) {
+            throw new IllegalArgumentException("productName must be a non-empty string");
+        }
+        ProductNormalizationResult normalization = productNormalizer.normalizeProduct(productName);
+        String baselineUnit = resolveBaselineUnit(unit, normalization.standardUnit());
+        List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalization.normalizedName());
+        return priceDecisionPolicy.baseline(productName, normalization.normalizedName(), baselineUnit, history);
+    }
+
+    private String resolveBaselineUnit(String requestedUnit, String standardUnit) {
+        if (requestedUnit != null && !requestedUnit.isBlank()) {
+            return requestedUnit.trim();
+        }
+        if (standardUnit != null && !standardUnit.isBlank()) {
+            return standardUnit.trim();
+        }
+        throw new IllegalArgumentException("unit must be provided when product standard unit is unknown");
     }
 
     /**

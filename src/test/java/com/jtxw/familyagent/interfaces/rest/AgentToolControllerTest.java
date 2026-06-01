@@ -4,6 +4,7 @@ import com.jtxw.familyagent.application.ImportApplicationService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -87,6 +87,46 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("报告月份格式错误，请使用 yyyy-MM，例如 2026-05。"));
+    }
+
+    @Test
+    void getPriceBaselineShouldReturnBaselineEvidenceAndWarnings() throws Exception {
+        when(priceAnalysisApplicationService.getPriceBaseline(eq("纸巾"), isNull()))
+                .thenReturn(priceBaselineResult());
+
+        mockMvc.perform(post("/api/tools/get-price-baseline")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾"
+                            }
+                            """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productName").value("纸巾"))
+                .andExpect(jsonPath("$.normalizedName").value("纸巾"))
+                .andExpect(jsonPath("$.baseline.sampleSize").value(2))
+                .andExpect(jsonPath("$.baseline.unit").value("抽"))
+                .andExpect(jsonPath("$.baseline.historicalMin").value(0.0125))
+                .andExpect(jsonPath("$.baseline.historicalMedian").value(0.01375))
+                .andExpect(jsonPath("$.baseline.dateRange.from").value("2026-04-01"))
+                .andExpect(jsonPath("$.evidence.source").value("local_purchase_history"))
+                .andExpect(jsonPath("$.evidence.sourceRecords[0].role").value("historical_min"))
+                .andExpect(jsonPath("$.warnings").isArray());
+    }
+
+    private PriceBaselineResult priceBaselineResult() {
+        return new PriceBaselineResult(
+                "纸巾",
+                "纸巾",
+                new PriceDecisionResult.Baseline(2, "抽", 0.0125, 0.01375, 0.01375,
+                        new PriceDecisionResult.DateRange("2026-04-01", "2026-05-01")),
+                new PriceDecisionResult.Evidence("local_purchase_history", List.of(
+                        new PriceDecisionResult.SourceRecord(201L, "historical_min", "2026-04-01",
+                                "维达超韧抽纸 3层130抽×24包", 39.0, 3120.0, "抽",
+                                0.0125, "抽", 3120.0, "抽")
+                ), 0, List.of(), List.of()),
+                List.of()
+        );
     }
 
     private PriceDecisionResult priceDecisionResult() {

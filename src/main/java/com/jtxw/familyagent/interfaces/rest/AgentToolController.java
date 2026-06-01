@@ -58,6 +58,17 @@ public class AgentToolController {
     }
 
     /**
+     * 查询商品历史价格基准线。
+     *
+     * @param request 历史价格基准线查询请求
+     * @return 历史价格基准线，包括历史最低价、中位价、平均价、样本数量和证据
+     */
+    @Operation(summary = "查询历史价格基准线", description = "查询指定复购品的本地历史价格基准线，包括历史最低价、中位价、平均价、样本数量和证据。")
+    @PostMapping("/get-price-baseline")
+    public PriceBaselineResult getPriceBaseline(@Valid @RequestBody GetPriceBaselineRequest request) {
+        return priceAnalysisApplicationService.getPriceBaseline(request.productName(), request.unit());
+    }
+    /**
      * 比较当前商品价格与历史价格，返回价格判断结果。
      *
      * @param request 当前价格比较请求
@@ -219,6 +230,49 @@ public class AgentToolController {
 
         public void setQuantity(double quantity) {
             this.quantity = quantity;
+        }
+
+        public String getUnit() {
+            return unit;
+        }
+
+        public void setUnit(String unit) {
+            this.unit = unit;
+        }
+    }
+
+    @Schema(description = "历史价格基准线查询请求")
+    public static class GetPriceBaselineRequest {
+        /**
+         * 原始商品名称
+         */
+        @Schema(description = "原始商品名称，会在服务端进行本地规则归一化", example = "纸巾", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank
+        private String productName;
+
+        /**
+         * 可选统计单位
+         */
+        @Schema(description = "可选统计单位，例如 kg、抽、L；为空时使用商品规则中的标准单位", example = "抽")
+        private String unit;
+
+        public GetPriceBaselineRequest() {
+        }
+
+        public String productName() {
+            return productName;
+        }
+
+        public String unit() {
+            return unit;
+        }
+
+        public String getProductName() {
+            return productName;
+        }
+
+        public void setProductName(String productName) {
+            this.productName = productName;
         }
 
         public String getUnit() {

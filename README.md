@@ -22,6 +22,7 @@
 - 商品名称归一化
 - 规格解析与单位价格计算
 - 当前价格与本地历史价格对比
+- 历史价格基准线查询
 - 重复记录检测
 - 异常样本人工复核
 - Markdown 复购品价格报告
@@ -64,12 +65,14 @@ REST Tool API 仍作为后端内部工具入口保留：
 
 - `/api/tools/import-file`
 - `/api/tools/compare-price`
+- `/api/tools/get-price-baseline`
 - `/api/tools/generate-report`
 
 MCP tools：
 
 - `import_file`
 - `compare_price`
+- `get_price_baseline`
 - `generate_report`
 
 ---
@@ -132,6 +135,14 @@ curl -X POST "http://localhost:8080/api/tools/compare-price" `
   -d "{\"productName\":\"猫砂\",\"price\":89,\"quantity\":12,\"unit\":\"kg\"}"
 ```
 
+### 查询历史价格基准线
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/get-price-baseline" `
+  -H "Content-Type: application/json" `
+  -d "{\"productName\":\"纸巾\",\"unit\":\"抽\"}"
+```
+
 ### 生成报告
 
 ```powershell
@@ -160,9 +171,26 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude
 
 当前 MCP tools：
 
-- `import_file`
-- `compare_price`
-- `generate_report`
+| Tool | 作用 | 典型问题 |
+|---|---|---|
+| `import_file` | 导入本地 CSV / Excel 订单文件 | “导入 examples/sample_orders.csv” |
+| `compare_price` | 基于当前价格和历史样本判断是否值得买 | “猫砂 10.3 元 5kg 值得买吗？” |
+| `get_price_baseline` | 查询某个复购品的历史价格基准线 | “查一下猫砂历史最低价 / 平均价” |
+| `generate_report` | 生成指定月份的本地 Markdown 价格报告 | “生成 2026-05 的复购品报告” |
+
+工具选择建议：
+
+| 用户意图 | 推荐 MCP tool |
+|---|---|
+| 导入订单文件 | `import_file` |
+| 判断当前价格是否值得买 | `compare_price` |
+| 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `get_price_baseline` |
+| 生成月度报告 | `generate_report` |
+
+`compare_price` 和 `get_price_baseline` 的区别：
+
+- `compare_price` 用于“我现在看到一个价格，是否值得买”，需要提供当前价格、数量和单位。
+- `get_price_baseline` 用于“我想查这个商品历史最低价 / 中位价 / 平均价”，不需要提供当前价格。
 
 调用链路：
 
@@ -179,8 +207,6 @@ Application Service / Domain / SQLite
 MCP Inspector 仅用于本地调试 MCP Server，不是最终使用入口。
 
 ---
-
-## 项目结构
 
 ## 项目结构
 
@@ -261,10 +287,10 @@ Family Repurchase Agent 默认本地运行。
   - dry-run `PurchaseCandidate`
   - 用户确认后写入正式样本库
 - `v0.6`: `compare_current_price`
-  - 更强的单位换算模型
-  - 历史最低价 / 中位价 / 平均价
-  - warning 模型
-  - 可解释购买建议
+    - 更强的单位换算模型
+    - 更细粒度的历史价格趋势分析
+    - warning 模型
+    - 可解释购买建议
 - `v0.7`: `import_price_samples` / `generate_price_report`
   - 批量价格样本导入
   - 样本质量摘要

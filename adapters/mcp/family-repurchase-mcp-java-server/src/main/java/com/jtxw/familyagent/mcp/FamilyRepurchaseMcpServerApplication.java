@@ -62,7 +62,12 @@ public class FamilyRepurchaseMcpServerApplication {
                         """)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
                 .validateToolInputs(false)
-                .tools(application.importFileTool(), application.comparePriceTool(), application.generateReportTool())
+                .tools(
+                        application.importFileTool(),
+                        application.comparePriceTool(),
+                        application.getPriceBaselineTool(),
+                        application.generateReportTool()
+                )
                 .build();
         inputStream.awaitEndOfInput();
         waitForPendingMessages();
@@ -93,6 +98,53 @@ public class FamilyRepurchaseMcpServerApplication {
                 this::handleImportFile
         );
     }
+
+    McpServerFeatures.SyncToolSpecification getPriceBaselineTool() {
+        String title = "Get Price Baseline";
+        return new McpServerFeatures.SyncToolSpecification(
+                McpSchema.Tool.builder("get_price_baseline")
+                        .title(title)
+                        .description("""
+                            查询某个复购品的本地历史价格基准线，包括历史最低价、中位价、平均价、样本数量和 evidence。
+                            适用于用户询问“历史最低价”“最低多少钱”“历史中位价”“价格基准线”等场景。
+                            该工具不需要当前价格；如果未提供 unit，会由后端根据商品归一化规则推断标准单位。
+                            """)
+                        .annotations(toolAnnotations(title, true, false, true))
+                        .inputSchema(objectSchema(
+                                properties(
+                                        property("productName", stringSchema("商品名称，例如 纸巾、猫砂、洗衣液")),
+                                        property("unit", stringSchema("可选。统计单位，例如 kg、抽、L；为空时由商品规则推断标准单位。"))
+                                ),
+                                List.of("productName")
+                        ))
+                        .outputSchema(objectSchema(properties(
+                                property("productName", stringSchema("原始商品名称")),
+                                property("normalizedName", stringSchema("标准化商品名称")),
+                                property("baseline", objectSchema(properties(
+                                        property("sampleSize", numberSchema("历史样本数量")),
+                                        property("unit", stringSchema("历史统计统一单位")),
+                                        property("historicalMin", nullableNumberSchema("历史最低单位价格")),
+                                        property("historicalMedian", nullableNumberSchema("历史中位数单位价格")),
+                                        property("historicalAverage", nullableNumberSchema("历史平均单位价格")),
+                                        property("dateRange", nullableObjectSchema(properties(
+                                                property("from", stringSchema("历史样本最早购买日期")),
+                                                property("to", stringSchema("历史样本最晚购买日期"))
+                                        )))
+                                ))),
+                                property("evidence", objectSchema(properties(
+                                        property("source", stringSchema("证据来源")),
+                                        property("sourceRecords", arraySchema(sourceRecordOutputSchema())),
+                                        property("excludedRecordCount", numberSchema("被排除记录数量")),
+                                        property("excludedReasons", arraySchema(stringSchema("排除原因"))),
+                                        property("outliers", arraySchema(sourceRecordOutputSchema()))
+                                ))),
+                                property("warnings", arraySchema(stringSchema("风险提示")))
+                        )))
+                        .build(),
+                this::handleGetPriceBaseline
+        );
+    }
+
 
     McpServerFeatures.SyncToolSpecification comparePriceTool() {
         return new McpServerFeatures.SyncToolSpecification(
@@ -207,6 +259,25 @@ public class FamilyRepurchaseMcpServerApplication {
             body.put("quantity", requirePositiveNumber(args, "quantity"));
             body.put("unit", requireString(args, "unit"));
             return toolSuccess(restClient.postJson("/api/tools/compare-price", body));
+        } catch (Exception e) {
+            return toolError(e);
+        }
+    }
+
+    private McpSchema.CallToolResult handleGetPriceBaseline(McpSyncServerExchange exchange,
+                                                            McpSchema.CallToolRequest request) {
+        try {
+            Map<String, Object> args = arguments(request);
+            Map<String, Object> body = new LinkedHashMap<>();
+
+            body.put("productName", requireString(args, "productName"));
+
+            String unit = optionalString(args, "unit");
+            if (unit != null) {
+                body.put("unit", unit);
+            }
+
+            return toolSuccess(restClient.postJson("/api/tools/get-price-baseline", body));
         } catch (Exception e) {
             return toolError(e);
         }

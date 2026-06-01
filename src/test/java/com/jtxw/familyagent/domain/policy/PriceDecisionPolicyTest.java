@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.domain.policy;
 
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.data.Offset.offset;
 
 /**
  * @Author: jtxw
@@ -92,6 +94,55 @@ class PriceDecisionPolicyTest {
                 .containsOnly("kg");
     }
 
+    @Test
+    void shouldReturnPriceBaselineWithEvidence() {
+        PriceDecisionPolicy policy = newPolicy();
+
+        PriceBaselineResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
+                record(1L, "2026-02-10", "猫砂 10kg", 68, 10, 6.8),
+                record(2L, "2026-03-12", "混合猫砂 5kg", 40.75, 5, 8.15),
+                record(3L, "2026-05-12", "猫砂 8kg", 64, 8, 8.0)
+        ));
+
+        assertThat(result.productName()).isEqualTo("猫砂");
+        assertThat(result.normalizedName()).isEqualTo("猫砂");
+
+        assertThat(result.baseline().sampleSize()).isEqualTo(3);
+        assertThat(result.baseline().unit()).isEqualTo("kg");
+        assertThat(result.baseline().historicalMin()).isEqualTo(6.8);
+        assertThat(result.baseline().historicalMedian()).isEqualTo(8.0);
+        assertThat(result.baseline().historicalAverage())
+                .isCloseTo(7.65D, offset(0.00001D));
+        assertThat(result.baseline().dateRange().from()).isEqualTo("2026-02-10");
+        assertThat(result.baseline().dateRange().to()).isEqualTo("2026-05-12");
+
+        assertThat(result.evidence().source()).isEqualTo("local_purchase_history");
+        assertThat(result.evidence().sourceRecords())
+                .extracting(PriceDecisionResult.SourceRecord::role)
+                .contains("historical_min", "median_sample", "latest");
+        assertThat(result.warnings()).isEmpty();
+    }
+
+    @Test
+    void shouldExcludeDifferentUnitsWhenBuildingPriceBaseline() {
+        PriceDecisionPolicy policy = newPolicy();
+
+        PriceBaselineResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
+                record(1L, "2026-02-10", "猫砂 10kg", 68, 10, 6.8, "kg"),
+                record(2L, "2026-03-12", "混合猫砂 5kg", 79.5, 5, 15.9, "kg"),
+                record(3L, "2026-04-10", "猫砂 500g", 20, 500, 0.04, "g")
+        ));
+
+        assertThat(result.productName()).isEqualTo("猫砂");
+        assertThat(result.normalizedName()).isEqualTo("猫砂");
+        assertThat(result.baseline().sampleSize()).isEqualTo(2);
+        assertThat(result.baseline().unit()).isEqualTo("kg");
+        assertThat(result.evidence().excludedRecordCount()).isEqualTo(1);
+        assertThat(result.evidence().excludedReasons()).anyMatch(reason -> reason.contains("单位不一致"));
+        assertThat(result.warnings()).anyMatch(warning -> warning.contains("单位不是 kg"));
+    }
+
+
     private PurchaseRecord record(Long id,
                                   String orderTime,
                                   String productName,
@@ -108,8 +159,8 @@ class PriceDecisionPolicyTest {
                                   double quantity,
                                   double unitPrice,
                                   String unit) {
-        return new PurchaseRecord(id, 1L, orderTime, "manual", "JTXW", productName, "cat litter",
-                "", "pet supplies", "cat litter", quantity, unit, totalAmount, totalAmount,
+        return new PurchaseRecord(id, 1L, orderTime, "manual", "JTXW", productName, "猫砂",
+                "", "宠物用品", "猫砂", quantity, unit, totalAmount, totalAmount,
                 totalAmount, 0D, "paid_amount", unitPrice, "CNY", "include",
                 false, "unique", "test.csv", "2026-05-11T00:00:00");
     }
