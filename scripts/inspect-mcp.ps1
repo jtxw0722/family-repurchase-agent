@@ -1,5 +1,5 @@
 param(
-    [string]$ApiBaseUrl = "http://localhost:8080",
+    [string]$ApiBaseUrl = "http://127.0.0.1:8080",
     [string[]]$ImportAllowedDirs = @("examples", "data/imports", "imports")
 )
 
@@ -13,7 +13,7 @@ $mcpJar = Get-ChildItem -Path $mcpTarget -Filter "family-repurchase-mcp-java-ser
     Select-Object -First 1
 
 if ($null -eq $mcpJar) {
-    Write-Error "MCP jar not found. Run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package"
+    Write-Error "MCP jar not found. Run: mvn -pl adapters/mcp/family-repurchase-mcp-java-server -am package"
     exit 1
 }
 
@@ -33,6 +33,7 @@ Write-Host "Backend URL: $env:FAMILY_AGENT_API_BASE_URL"
 Write-Host "Allowed import dirs: $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS"
 Write-Host "MCP jar: $($mcpJar.FullName)"
 Write-Host "Spring Boot backend is not started by this script."
+Write-Host ""
 
 $mcpJarForInspector = $mcpJar.FullName.Replace('\', '/')
-& npx -y "@modelcontextprotocol/inspector" java -jar $mcpJarForInspector
+& npx -y "@modelcontextprotocol/inspector" -- java -jar $mcpJarForInspector
