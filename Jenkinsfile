@@ -1,6 +1,14 @@
 pipeline {
     agent any
 
+    parameters {
+        string(
+            name: 'MCP_RUNTIME_DIR',
+            defaultValue: 'D:\\mcp-runtime\\family-repurchase-agent',
+            description: 'Local runtime directory for published MCP Server jar. Used by local Agent Host such as Claude Code.'
+        )
+    }
+
     options {
         disableConcurrentBuilds()
         skipDefaultCheckout(true)
@@ -25,7 +33,7 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build Backend') {
             steps {
                 bat encoding: 'UTF-8', script: '''
                 @echo off
@@ -39,7 +47,58 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Build MCP Server') {
+            steps {
+                bat encoding: 'UTF-8', script: '''
+                @echo off
+                chcp 65001 >NUL
+                set MAVEN_OPTS=-Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -Duser.language=en -Duser.country=US
+
+                mvn -f adapters\\mcp\\family-repurchase-mcp-java-server\\pom.xml clean package -DskipTests
+                if errorlevel 1 exit /b %errorlevel%
+                '''
+            }
+        }
+
+
+        stage('Publish MCP Server Locally') {
+            steps {
+                bat encoding: 'UTF-8', script: '''
+                @echo off
+                chcp 65001 >NUL
+                setlocal EnableExtensions
+
+                set "MCP_SOURCE_JAR=adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
+                set "MCP_RUNTIME_JAR=%MCP_RUNTIME_DIR%\\family-repurchase-mcp-java-server.jar"
+
+                echo ===== Publish MCP Server locally =====
+                echo MCP_RUNTIME_DIR=%MCP_RUNTIME_DIR%
+                echo MCP_RUNTIME_JAR=%MCP_RUNTIME_JAR%
+
+                if "%MCP_RUNTIME_DIR%"=="" (
+                    echo MCP_RUNTIME_DIR is empty.
+                    exit /b 1
+                )
+
+                if not exist "%MCP_SOURCE_JAR%" (
+                    echo MCP_SOURCE_JAR not found: %MCP_SOURCE_JAR%
+                    exit /b 1
+                )
+
+                if not exist "%MCP_RUNTIME_DIR%" (
+                    mkdir "%MCP_RUNTIME_DIR%"
+                    if errorlevel 1 exit /b %errorlevel%
+                )
+
+                copy /Y "%MCP_SOURCE_JAR%" "%MCP_RUNTIME_JAR%"
+                if errorlevel 1 exit /b %errorlevel%
+
+                echo MCP Server published to %MCP_RUNTIME_JAR%
+                '''
+            }
+        }
+
+        stage('Deploy Backend') {
             steps {
                 withCredentials([
                     string(credentialsId: 'family-repurchase-server-host', variable: 'DEPLOY_HOST'),

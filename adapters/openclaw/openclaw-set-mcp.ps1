@@ -1,6 +1,6 @@
 param(
     [string]$ServerName = "family-repurchase-agent",
-    [string]$ApiBaseUrl = "http://localhost:8080",
+    [string]$ApiBaseUrl = "http://127.0.0.1:8080",
     [string]$JavaCommand = "java",
     [string]$McpJar = "",
     [switch]$Show

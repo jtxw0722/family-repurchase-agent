@@ -75,19 +75,19 @@ java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchas
 默认后端地址：
 
 ```text
-http://localhost:8080
+http://127.0.0.1:8080
 ```
 
 可以通过环境变量覆盖：
 
 ```bash
-FAMILY_AGENT_API_BASE_URL=http://localhost:8080
+FAMILY_AGENT_API_BASE_URL=http://127.0.0.1:8080
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:FAMILY_AGENT_API_BASE_URL = "http://localhost:8080"
+$env:FAMILY_AGENT_API_BASE_URL = "http://127.0.0.1:8080"
 ```
 
 ## 文件导入安全目录
@@ -184,7 +184,7 @@ powershell -ExecutionPolicy Bypass -File ..\..\..\scripts\inspect-mcp.ps1
 
 脚本默认会完成以下配置：
 
-- 将 `FAMILY_AGENT_API_BASE_URL` 设置为 `http://localhost:8080`
+- 将 `FAMILY_AGENT_API_BASE_URL` 设置为 `http://127.0.0.1:8080`
 - 将 `FAMILY_AGENT_IMPORT_ALLOWED_DIRS` 设置为 `examples`、`data/imports` 和 `imports`
 - 自动在 `target/` 目录下定位 MCP Server jar
 - 启动 MCP Inspector：

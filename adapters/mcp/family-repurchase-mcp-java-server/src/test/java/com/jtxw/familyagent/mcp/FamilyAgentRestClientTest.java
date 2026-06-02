@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FamilyAgentRestClientTest {
-    private final FamilyAgentRestClient client = new FamilyAgentRestClient(URI.create("http://localhost:8080"), new ObjectMapper());
+    private final FamilyAgentRestClient client = new FamilyAgentRestClient(URI.create("http://127.0.0.1:8080"), new ObjectMapper());
 
     @Test
     void shouldParseJsonResponseBody() {
@@ -48,7 +48,7 @@ class FamilyAgentRestClientTest {
         server.start();
 
         try {
-            URI baseUri = URI.create("http://localhost:" + server.getAddress().getPort());
+            URI baseUri = URI.create("http://127.0.0.1:" + server.getAddress().getPort());
             FamilyAgentRestClient restClient = new FamilyAgentRestClient(baseUri, new ObjectMapper());
 
             Map<String, Object> result = restClient.postJson("/api/tools/compare-price", Map.of("productName", "猫砂"));

@@ -13,7 +13,7 @@ import java.util.Map;
  * @Description: MCP Server 运行配置，负责读取后端地址和导入白名单目录
  */
 public class AppConfig {
-    static final String DEFAULT_API_BASE_URL = "http://localhost:8080";
+    static final String DEFAULT_API_BASE_URL = "http://127.0.0.1:8080";
     static final List<String> DEFAULT_IMPORT_DIRS = List.of("examples", "data/imports", "imports");
 
     private final URI apiBaseUri;

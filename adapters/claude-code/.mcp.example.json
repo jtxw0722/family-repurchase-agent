@@ -7,7 +7,7 @@
         "<PROJECT_ROOT>/adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar"
       ],
       "env": {
-        "FAMILY_AGENT_API_BASE_URL": "${FAMILY_AGENT_API_BASE_URL:-http://localhost:8080}",
+        "FAMILY_AGENT_API_BASE_URL": "${FAMILY_AGENT_API_BASE_URL:-http://127.0.0.1:8080}",
         "FAMILY_AGENT_PROJECT_ROOT": "${FAMILY_REPURCHASE_AGENT_ROOT:-.}",
         "FAMILY_AGENT_IMPORT_ALLOWED_DIRS": "${FAMILY_AGENT_IMPORT_ALLOWED_DIRS:-examples;data/imports;imports}"
       }

@@ -76,7 +76,7 @@ java -jar target\family-repurchase-agent-0.4.0.jar
 
 | 变量名                                | 示例值                                                                          |
 | ---------------------------------- | ---------------------------------------------------------------------------- |
-| `FAMILY_AGENT_API_BASE_URL`        | `http://localhost:8080`                                                      |
+| `FAMILY_AGENT_API_BASE_URL`        | `http://127.0.0.1:8080`                                                      |
 | `FAMILY_AGENT_PROJECT_ROOT`        | `<PROJECT_ROOT>`                                                             |
 | `FAMILY_AGENT_IMPORT_ALLOWED_DIRS` | `<PROJECT_ROOT>\examples;<PROJECT_ROOT>\data\imports;<PROJECT_ROOT>\imports` |
 

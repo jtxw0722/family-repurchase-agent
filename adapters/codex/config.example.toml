@@ -2,12 +2,12 @@
 command = "java"
 args = [
     "-jar",
-    "D:\\project\\family-repurchase-agent\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
+    "<PROJECT_ROOT>\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
 ]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 
 [mcp_servers.family-repurchase-agent.env]
-FAMILY_AGENT_API_BASE_URL = "http://localhost:8080"
-FAMILY_AGENT_PROJECT_ROOT = "D:\\project\\family-repurchase-agent"
-FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "D:\\project\\family-repurchase-agent\\examples;D:\\project\\family-repurchase-agent\\data\\imports;D:\\project\\family-repurchase-agent\\imports"
+FAMILY_AGENT_API_BASE_URL = "http://127.0.0.1:8080"
+FAMILY_AGENT_PROJECT_ROOT = "<PROJECT_ROOT>"
+FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "<PROJECT_ROOT>\\examples;<PROJECT_ROOT>\\data\\imports;<PROJECT_ROOT>\\imports"

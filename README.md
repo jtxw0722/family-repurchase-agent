@@ -46,6 +46,22 @@
 | Agent 集成 | Java MCP stdio Server / Claude Code / Codex / OpenClaw MCP Host |
 
 ---
+## 工程化与部署
+
+项目支持本地 Jenkins CI/CD 流水线，用于自动化构建、验证和部署。
+
+当前 Pipeline 覆盖：
+
+* 构建 Spring Boot 后端 jar
+* 构建 Java MCP stdio Server
+* 执行 MCP smoke test，验证 `initialize`、`tools/list` 和工具契约
+* 将 Spring Boot jar 上传到轻量云服务器
+* 通过 systemd 重启后端服务
+* 可选将 MCP Server jar 发布到本机 runtime 目录，供 Claude Code / Codex / OpenClaw 等 Agent Host 使用
+
+部署方案采用本地 Jenkins + 远程轻量服务器的方式：Jenkins 运行在 Windows 本地 PC，负责构建和发布；云服务器只运行 Spring Boot 后端，服务监听 `127.0.0.1:8080`，通过 SSH Tunnel 提供本地安全访问。
+
+---
 
 ## 架构
 
@@ -276,25 +292,6 @@ Family Repurchase Agent 默认本地运行。
 - 独立 MCP Server：MCP 只做协议适配和转发，业务规则保留在 Spring Boot 后端。
 - 工具计算优先：LLM 负责理解意图和解释结果，价格判断由后端基于历史样本计算。
 - 价格判断阈值当前采用可配置的启发式 MVP 规则：当前单价低于历史最低价，或低于历史中位价一定比例时判断为好价；明显高于历史中位价时判断为偏贵。具体阈值和工具返回契约见 [Tool Contract](docs/tool_contract.md)。
-
----
-
-## Roadmap
-
-- `v0.5`: `record_price_sample`
-  - 自然语言输入
-  - 槽位提取
-  - dry-run `PurchaseCandidate`
-  - 用户确认后写入正式样本库
-- `v0.6`: `compare_current_price`
-    - 更强的单位换算模型
-    - 更细粒度的历史价格趋势分析
-    - warning 模型
-    - 可解释购买建议
-- `v0.7`: `import_price_samples` / `generate_price_report`
-  - 批量价格样本导入
-  - 样本质量摘要
-  - 面向价格决策的报告模板
 
 ---
 

@@ -48,14 +48,14 @@ java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchas
 ## 环境变量
 
 ```text
-FAMILY_AGENT_API_BASE_URL=http://localhost:8080
+FAMILY_AGENT_API_BASE_URL=http://127.0.0.1:8080
 FAMILY_AGENT_IMPORT_ALLOWED_DIRS=<允许导入的目录>
 ```
 
 Windows 示例：
 
 ```powershell
-$env:FAMILY_AGENT_API_BASE_URL = "http://localhost:8080"
+$env:FAMILY_AGENT_API_BASE_URL = "http://127.0.0.1:8080"
 $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "examples;data/imports;imports"
 ```
 

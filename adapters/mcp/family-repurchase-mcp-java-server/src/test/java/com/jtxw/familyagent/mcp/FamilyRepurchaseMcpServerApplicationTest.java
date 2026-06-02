@@ -139,7 +139,7 @@ class FamilyRepurchaseMcpServerApplicationTest {
 
     private static class FakeRestClient extends FamilyAgentRestClient {
         FakeRestClient() {
-            super(URI.create("http://localhost:8080"), new ObjectMapper());
+            super(URI.create("http://127.0.0.1:8080"), new ObjectMapper());
         }
 
         @Override
