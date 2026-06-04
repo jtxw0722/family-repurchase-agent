@@ -297,4 +297,8 @@ Family Repurchase Agent 默认本地运行。
 
 ## License
 
-MIT
+This project is licensed under the Apache License 2.0.
+
+This repository is intended for learning, portfolio demonstration, and technical discussion.
+Demo data is synthetic or anonymized. Do not commit real personal consumption records,
+real order exports, credentials, tokens, SSH keys, or production configuration files.
