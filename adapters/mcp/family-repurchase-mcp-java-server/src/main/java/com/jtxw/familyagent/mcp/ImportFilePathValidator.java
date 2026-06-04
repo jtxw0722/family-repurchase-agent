@@ -30,29 +30,29 @@ public class ImportFilePathValidator {
         Path normalizedPath = Path.of(originalPath).toAbsolutePath().normalize();
 
         if (!Files.exists(normalizedPath)) {
-            throw new ToolExecutionException("filePath does not exist: " + filePath);
+            throw new ToolExecutionException("filePath 指向的文件不存在：" + filePath);
         }
 
         Path realPath;
         try {
             realPath = normalizedPath.toRealPath();
         } catch (IOException e) {
-            throw new ToolExecutionException("failed to resolve filePath: " + filePath, e);
+            throw new ToolExecutionException("无法解析 filePath：" + filePath, e);
         }
 
         boolean allowed = allowedDirs.stream()
                 .map(this::toRealAllowedDir)
                 .anyMatch(realPath::startsWith);
         if (!allowed) {
-            throw new ToolExecutionException("filePath is outside allowed import directories. Allowed directories: " + allowedDirs);
+            throw new ToolExecutionException("filePath 不在允许的导入目录内。允许目录：" + allowedDirs);
         }
         if (!Files.isRegularFile(realPath)) {
-            throw new ToolExecutionException("filePath must be a file: " + filePath);
+            throw new ToolExecutionException("filePath 必须指向普通文件：" + filePath);
         }
 
         String lower = realPath.toString().toLowerCase(Locale.ROOT);
         if (!lower.endsWith(".csv") && !lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
-            throw new ToolExecutionException("filePath must be a CSV or Excel file");
+            throw new ToolExecutionException("filePath 仅支持 CSV 或 Excel 文件");
         }
         return new SafeImportFile(originalPath, realPath);
     }
@@ -70,7 +70,7 @@ public class ImportFilePathValidator {
 
     private void requireText(String value, String name) {
         if (value == null || value.isBlank()) {
-            throw new ToolExecutionException(name + " must be a non-empty string");
+            throw new ToolExecutionException(name + " 不能为空，必须是非空字符串");
         }
     }
 

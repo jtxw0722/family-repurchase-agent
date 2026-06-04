@@ -284,7 +284,8 @@ try {
         "recordCount",
         "totalAmount",
         "pendingReviewCount",
-        "reportPath"
+        "reportPath",
+        "message"
     )
 
     $getPriceBaselineTool = Find-Tool -Name "get_price_baseline"

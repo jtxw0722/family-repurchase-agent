@@ -56,7 +56,7 @@ public class ProductRuleProperties {
             }
             return loadedRules;
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to load " + DEFAULT_RULES_FILE, e);
+            throw new IllegalStateException("加载 " + DEFAULT_RULES_FILE + " 失败", e);
         }
     }
 

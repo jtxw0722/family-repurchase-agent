@@ -46,7 +46,7 @@ public class FamilyAgentRestClient {
         try {
             requestBody = objectMapper.writeValueAsString(body);
         } catch (JsonProcessingException e) {
-            throw new ToolExecutionException("Failed to serialize REST request body", e);
+            throw new ToolExecutionException("序列化 REST 请求体失败", e);
         }
 
         HttpRequest request = HttpRequest.newBuilder(apiBaseUri.resolve(path))
@@ -62,7 +62,7 @@ public class FamilyAgentRestClient {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new ToolExecutionException("Failed to connect to Family Repurchase Agent backend at " + apiBaseUri + ": " + e.getMessage(), e);
+            throw new ToolExecutionException("无法连接 Family Repurchase Agent backend：" + apiBaseUri + "，原因：" + e.getMessage(), e);
         }
 
         Map<String, Object> data = parseResponseBody(response.body());
@@ -70,7 +70,7 @@ public class FamilyAgentRestClient {
             Object error = data.get("error");
             Object message = data.get("message");
             Object raw = data.get("raw");
-            throw new ToolExecutionException(String.valueOf(error != null ? error : message != null ? message : raw != null ? raw : "REST API request failed: HTTP " + response.statusCode()));
+            throw new ToolExecutionException(String.valueOf(error != null ? error : message != null ? message : raw != null ? raw : "REST API 请求失败：HTTP " + response.statusCode()));
         }
         return data;
     }

@@ -33,7 +33,7 @@ class ImportFilePathValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(privateFile.toString()))
                 .isInstanceOf(ToolExecutionException.class)
-                .hasMessageContaining("outside allowed import directories");
+                .hasMessageContaining("不在允许的导入目录内");
     }
 
     @Test
@@ -45,7 +45,7 @@ class ImportFilePathValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(importFile.toString()))
                 .isInstanceOf(ToolExecutionException.class)
-                .hasMessageContaining("CSV or Excel");
+                .hasMessageContaining("仅支持 CSV 或 Excel 文件");
     }
 
     @Test
@@ -66,7 +66,7 @@ class ImportFilePathValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(symlink.toString()))
                 .isInstanceOf(ToolExecutionException.class)
-                .hasMessageContaining("outside allowed import directories");
+                .hasMessageContaining("不在允许的导入目录内");
     }
 
     private Path createWorkspaceTempDir() throws IOException {

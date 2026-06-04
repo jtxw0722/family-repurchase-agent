@@ -13,10 +13,10 @@ public record PriceDecisionThresholds(
 ) {
     public PriceDecisionThresholds {
         if (goodPriceMedianFactor <= 0 || goodPriceMedianFactor >= 1) {
-            throw new IllegalArgumentException("goodPriceMedianFactor must be greater than 0 and less than 1");
+            throw new IllegalArgumentException("goodPriceMedianFactor 必须大于 0 且小于 1");
         }
         if (expensivePriceMedianFactor <= 1) {
-            throw new IllegalArgumentException("expensivePriceMedianFactor must be greater than 1");
+            throw new IllegalArgumentException("expensivePriceMedianFactor 必须大于 1");
         }
     }
 }

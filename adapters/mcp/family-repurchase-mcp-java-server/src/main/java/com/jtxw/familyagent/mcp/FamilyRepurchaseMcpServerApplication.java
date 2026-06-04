@@ -303,7 +303,7 @@ public class FamilyRepurchaseMcpServerApplication {
     }
 
     private McpSchema.CallToolResult toolError(Exception e) {
-        String message = e.getMessage() == null || e.getMessage().isBlank() ? "Tool execution failed" : e.getMessage();
+        String message = e.getMessage() == null || e.getMessage().isBlank() ? "工具执行失败" : e.getMessage();
         return McpSchema.CallToolResult.builder()
                 .addTextContent(message)
                 .isError(true)
@@ -319,7 +319,7 @@ public class FamilyRepurchaseMcpServerApplication {
         if (value instanceof String text && !text.isBlank()) {
             return text.trim();
         }
-        throw new ToolExecutionException(name + " must be a non-empty string");
+        throw new ToolExecutionException(name + " 不能为空，必须是非空字符串");
     }
 
     private String optionalString(Map<String, Object> args, String name) {
@@ -330,7 +330,7 @@ public class FamilyRepurchaseMcpServerApplication {
         if (value instanceof String text && !text.isBlank()) {
             return text.trim();
         }
-        throw new ToolExecutionException(name + " must be a non-empty string when provided");
+        throw new ToolExecutionException(name + " 提供时必须是非空字符串");
     }
 
     private BigDecimal requirePositiveNumber(Map<String, Object> args, String name) {
@@ -342,13 +342,13 @@ public class FamilyRepurchaseMcpServerApplication {
             try {
                 number = new BigDecimal(text.trim());
             } catch (NumberFormatException e) {
-                throw new ToolExecutionException(name + " must be a positive number");
+                throw new ToolExecutionException(name + " 必须是正数");
             }
         } else {
-            throw new ToolExecutionException(name + " must be a positive number");
+            throw new ToolExecutionException(name + " 必须是正数");
         }
         if (number.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ToolExecutionException(name + " must be a positive number");
+            throw new ToolExecutionException(name + " 必须是正数");
         }
         return number;
     }

@@ -28,7 +28,7 @@ class FamilyRepurchaseMcpServerApplicationTest {
         );
 
         assertThat(result.isError()).isTrue();
-        assertThat(result.content().get(0)).extracting("text").isEqualTo("price must be a positive number");
+        assertThat(result.content().get(0)).extracting("text").isEqualTo("price 必须是正数");
     }
 
     @Test

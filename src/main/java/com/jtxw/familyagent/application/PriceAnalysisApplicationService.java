@@ -36,7 +36,7 @@ public class PriceAnalysisApplicationService {
 
     public PriceBaselineResult getPriceBaseline(String productName, String unit) {
         if (productName == null || productName.isBlank()) {
-            throw new IllegalArgumentException("productName must be a non-empty string");
+            throw new IllegalArgumentException("productName 不能为空，必须是非空字符串");
         }
         ProductNormalizationResult normalization = productNormalizer.normalizeProduct(productName);
         String baselineUnit = resolveBaselineUnit(unit, normalization.standardUnit());
@@ -51,7 +51,7 @@ public class PriceAnalysisApplicationService {
         if (standardUnit != null && !standardUnit.isBlank()) {
             return standardUnit.trim();
         }
-        throw new IllegalArgumentException("unit must be provided when product standard unit is unknown");
+        throw new IllegalArgumentException("无法确定商品标准单位，请传入 unit，或在商品规则中配置 standardUnit");
     }
 
     /**
