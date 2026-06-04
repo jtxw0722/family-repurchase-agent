@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -137,6 +139,85 @@ class FamilyRepurchaseMcpServerApplicationTest {
         ));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void recordPurchaseSchemaShouldMatchBackendFields() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new FakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        Map<String, Object> inputSchema = application.recordPurchaseTool().tool().inputSchema();
+        Map<String, Object> inputProperties = (Map<String, Object>) inputSchema.get("properties");
+        assertThat(inputProperties.keySet()).containsAll(Set.of("dryRun", "records"));
+        assertThat(inputSchema.get("required")).isEqualTo(List.of("dryRun", "records"));
+
+        Map<String, Object> records = (Map<String, Object>) inputProperties.get("records");
+        Map<String, Object> recordItem = (Map<String, Object>) records.get("items");
+        Map<String, Object> recordProperties = (Map<String, Object>) recordItem.get("properties");
+        assertThat(recordProperties.keySet()).containsAll(Set.of(
+                "productName", "price", "quantity", "unit", "platform", "purchaseDate",
+                "owner", "shopName", "sku", "note", "sourceText"
+        ));
+        assertThat(recordItem.get("required")).isEqualTo(List.of("productName", "price", "quantity", "unit"));
+
+        Map<String, Object> outputSchema = application.recordPurchaseTool().tool().outputSchema();
+        Map<String, Object> outputProperties = (Map<String, Object>) outputSchema.get("properties");
+        assertThat(outputProperties.keySet()).containsAll(Set.of("dryRun", "savedCount", "reviewCount", "records"));
+        Map<String, Object> outputRecords = (Map<String, Object>) outputProperties.get("records");
+        Map<String, Object> outputRecordItem = (Map<String, Object>) outputRecords.get("items");
+        Map<String, Object> outputRecordProperties = (Map<String, Object>) outputRecordItem.get("properties");
+        assertThat(outputRecordProperties.keySet()).containsAll(Set.of(
+                "recordId", "productName", "normalizedName", "price", "quantity", "unit",
+                "unitPrice", "decision", "reviewRequired", "reviewReasons"
+        ));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recordPurchaseShouldForwardToBackendRecordEndpoint() {
+        CaptureRestClient restClient = new CaptureRestClient();
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                restClient,
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        McpSchema.CallToolResult result = application.recordPurchaseTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("record_purchase")
+                        .arguments(Map.of(
+                                "dryRun", false,
+                                "records", List.of(recordPurchaseArgs())
+                        ))
+                        .build()
+        );
+
+        assertThat(result.isError()).isFalse();
+        assertThat(restClient.path).isEqualTo("/api/tools/record-purchase");
+        assertThat(restClient.body).containsEntry("dryRun", false);
+        List<Map<String, Object>> records = (List<Map<String, Object>>) restClient.body.get("records");
+        assertThat(records.get(0)).containsEntry("productName", "猫砂");
+        assertThat(records.get(0)).containsEntry("unit", "kg");
+    }
+
+    private Map<String, Object> recordPurchaseArgs() {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("productName", "猫砂");
+        record.put("price", 109.9);
+        record.put("quantity", 24);
+        record.put("unit", "kg");
+        record.put("platform", "JD");
+        record.put("purchaseDate", "2026-06-04");
+        record.put("owner", "jtxw");
+        record.put("shopName", "京东自营");
+        record.put("sku", "6kg*4包");
+        record.put("note", "手动录入");
+        record.put("sourceText", "昨天在京东买了猫砂");
+        return record;
+    }
+
     private static class FakeRestClient extends FamilyAgentRestClient {
         FakeRestClient() {
             super(URI.create("http://127.0.0.1:8080"), new ObjectMapper());
@@ -145,6 +226,22 @@ class FamilyRepurchaseMcpServerApplicationTest {
         @Override
         public Map<String, Object> postJson(String path, Map<String, Object> body) {
             return Map.of("message", "ok");
+        }
+    }
+
+    private static class CaptureRestClient extends FamilyAgentRestClient {
+        String path;
+        Map<String, Object> body;
+
+        CaptureRestClient() {
+            super(URI.create("http://127.0.0.1:8080"), new ObjectMapper());
+        }
+
+        @Override
+        public Map<String, Object> postJson(String path, Map<String, Object> body) {
+            this.path = path;
+            this.body = body;
+            return Map.of("dryRun", false, "savedCount", 1, "reviewCount", 0, "records", List.of());
         }
     }
 

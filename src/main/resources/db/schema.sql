@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS purchase_records (
     is_duplicate INTEGER DEFAULT 0,
     dedupe_status TEXT DEFAULT 'unique',
     source_file TEXT,
+    shop_name TEXT,
+    note TEXT,
+    source_text TEXT,
     created_at TEXT NOT NULL
 );
 

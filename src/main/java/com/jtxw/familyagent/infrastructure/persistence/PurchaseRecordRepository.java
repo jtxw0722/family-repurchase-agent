@@ -39,8 +39,8 @@ public class PurchaseRecordRepository {
                     batch_id, order_time, platform, owner, product_name, normalized_name, sku,
                     category, sub_category, quantity, unit, total_amount, product_amount, paid_amount,
                     shipping_fee, amount_source, unit_price, currency, decision, is_duplicate,
-                    dedupe_status, source_file, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    dedupe_status, source_file, shop_name, note, source_text, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
@@ -67,7 +67,10 @@ public class PurchaseRecordRepository {
             ps.setObject(20, record.duplicate() ? 1 : 0);
             ps.setObject(21, record.dedupeStatus());
             ps.setObject(22, record.sourceFile());
-            ps.setObject(23, ClockUtils.nowText());
+            ps.setObject(23, record.shopName());
+            ps.setObject(24, record.note());
+            ps.setObject(25, record.sourceText());
+            ps.setObject(26, ClockUtils.nowText());
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
@@ -92,7 +95,7 @@ public class PurchaseRecordRepository {
                 SELECT COUNT(*) FROM purchase_records
                 WHERE COALESCE(order_time, '') = COALESCE(?, '')
                   AND COALESCE(platform, '') = COALESCE(?, '')
-                  AND COALESCE(owner, '') = COALESCE(?, '')
+                  AND lower(COALESCE(owner, '')) = lower(COALESCE(?, ''))
                   AND COALESCE(normalized_name, '') = COALESCE(?, '')
                   AND COALESCE(sku, '') = COALESCE(?, '')
                   AND (quantity = ? OR (quantity IS NULL AND ? IS NULL))
@@ -211,7 +214,8 @@ public class PurchaseRecordRepository {
                 nullableDouble(rs, "paid_amount"), nullableDouble(rs, "shipping_fee"),
                 rs.getString("amount_source"), nullableDouble(rs, "unit_price"), rs.getString("currency"),
                 rs.getString("decision"), rs.getInt("is_duplicate") == 1, rs.getString("dedupe_status"),
-                rs.getString("source_file"), rs.getString("created_at")
+                rs.getString("source_file"), rs.getString("shop_name"), rs.getString("note"),
+                rs.getString("source_text"), rs.getString("created_at")
         );
     }
 

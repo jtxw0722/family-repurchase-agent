@@ -2,6 +2,7 @@ package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.policy.ProductSpecParseResult;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
+import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
 import com.jtxw.familyagent.domain.policy.ProductRuleMatchResult;
 import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
 import com.jtxw.familyagent.domain.policy.ProductSpecParser;
@@ -22,19 +23,23 @@ import java.util.Set;
 public class OrderImportMapper {
     private final ProductSpecParser productSpecParser;
     private final ProductRuleMatcher productRuleMatcher;
+    private final OwnerNormalizer ownerNormalizer;
 
     public OrderImportMapper() {
-        this(new ProductSpecParser(), new ProductRuleMatcher());
+        this(new ProductSpecParser(), new ProductRuleMatcher(), new OwnerNormalizer());
     }
 
     public OrderImportMapper(ProductSpecParser productSpecParser) {
-        this(productSpecParser, new ProductRuleMatcher());
+        this(productSpecParser, new ProductRuleMatcher(), new OwnerNormalizer());
     }
 
     @Autowired
-    public OrderImportMapper(ProductSpecParser productSpecParser, ProductRuleMatcher productRuleMatcher) {
+    public OrderImportMapper(ProductSpecParser productSpecParser,
+                             ProductRuleMatcher productRuleMatcher,
+                             OwnerNormalizer ownerNormalizer) {
         this.productSpecParser = productSpecParser;
         this.productRuleMatcher = productRuleMatcher;
+        this.ownerNormalizer = ownerNormalizer;
     }
 
     public ImportSchema detectSchema(Set<String> headers) {
@@ -165,8 +170,7 @@ public class OrderImportMapper {
     }
 
     private String normalizeOwner(String owner) {
-        // owner 是后续统计和重复判断维度，统一大小写避免 jtxw 与 JTXW 被拆成两个人
-        return owner.trim().toUpperCase(Locale.ROOT);
+        return ownerNormalizer.normalize(owner);
     }
 
     private String extractOwnerFromFilename(Path file) {

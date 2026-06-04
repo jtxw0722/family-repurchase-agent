@@ -12,11 +12,16 @@ import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -134,6 +139,29 @@ class ImportSpecIntegrationTest {
                 .doesNotContain("洗衣凝珠 暂无");
     }
 
+    @Test
+    void shouldNormalizeOwnerAndKeepDateTimeWhenImportingCsvAndXlsx() throws Exception {
+        Fixture fixture = fixture("owner-time-import.sqlite");
+        Path csv = fixture.file("owner-time.csv");
+        Files.writeString(csv, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2019-11-11 00:12:11,taobao,JTXW,混合猫砂 12kg,12kg,宠物用品,猫砂,12,kg,89,CNY
+            """, StandardCharsets.UTF_8);
+        Path xlsx = fixture.file("owner-time.xlsx");
+        writeStandardWorkbook(xlsx, "2019-11-12 01:02:03", "LJ", "混合猫砂 24kg", "24kg", 24D, 139D);
+
+        fixture.importService.importFile(csv, null);
+        fixture.importService.importFile(xlsx, null);
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂");
+        assertThat(records)
+                .extracting(PurchaseRecord::owner)
+                .contains("jtxw", "lj");
+        assertThat(records)
+                .extracting(PurchaseRecord::orderTime)
+                .contains("2019-11-11 00:12:11", "2019-11-12 01:02:03");
+    }
+
     private void assertCompareHitsLaundryBeadsHistory(PriceDecisionResult result) {
         assertThat(result.normalizedName()).isEqualTo("洗衣凝珠");
         assertThat(result.baseline().unit()).isEqualTo("颗");
@@ -169,6 +197,8 @@ class ImportSpecIntegrationTest {
                 new ExcelPurchaseImporter(orderImportMapper),
                 new DuplicateDetectionPolicy(),
                 new PaymentAdjustmentPolicy(),
+                new OwnerNormalizer(),
+                new PurchaseTimeNormalizer(),
                 productNameNormalizer,
                 new QuantityUnitParser(),
                 new UnitPriceCalculator(),
@@ -183,6 +213,39 @@ class ImportSpecIntegrationTest {
                 newPriceDecisionPolicy()
         );
         return new Fixture(importService, priceService, purchaseRecordRepository, reviewItemRepository, dir);
+    }
+
+    private void writeStandardWorkbook(Path file,
+                                       String orderTime,
+                                       String owner,
+                                       String productName,
+                                       String sku,
+                                       double quantity,
+                                       double totalAmount) throws Exception {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("orders");
+            Row header = sheet.createRow(0);
+            String[] headers = {"order_time", "platform", "owner", "product_name", "sku", "category",
+                    "sub_category", "quantity", "unit", "total_amount", "currency"};
+            for (int i = 0; i < headers.length; i++) {
+                header.createCell(i).setCellValue(headers[i]);
+            }
+            Row row = sheet.createRow(1);
+            row.createCell(0).setCellValue(orderTime);
+            row.createCell(1).setCellValue("taobao");
+            row.createCell(2).setCellValue(owner);
+            row.createCell(3).setCellValue(productName);
+            row.createCell(4).setCellValue(sku);
+            row.createCell(5).setCellValue("宠物用品");
+            row.createCell(6).setCellValue("猫砂");
+            row.createCell(7).setCellValue(quantity);
+            row.createCell(8).setCellValue("kg");
+            row.createCell(9).setCellValue(totalAmount);
+            row.createCell(10).setCellValue("CNY");
+            try (OutputStream outputStream = Files.newOutputStream(file)) {
+                workbook.write(outputStream);
+            }
+        }
     }
 
     private static List<NormalizationRule> testRules() {

@@ -6,8 +6,10 @@ import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
 import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
+import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
+import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
@@ -36,6 +38,8 @@ public class ImportApplicationService {
     private final ExcelPurchaseImporter excelPurchaseImporter;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
     private final PaymentAdjustmentPolicy paymentAdjustmentPolicy;
+    private final OwnerNormalizer ownerNormalizer;
+    private final PurchaseTimeNormalizer purchaseTimeNormalizer;
     private final ProductNameNormalizer productNameNormalizer;
     private final QuantityUnitParser quantityUnitParser;
     private final UnitPriceCalculator unitPriceCalculator;
@@ -48,6 +52,8 @@ public class ImportApplicationService {
                                     ExcelPurchaseImporter excelPurchaseImporter,
                                     DuplicateDetectionPolicy duplicateDetectionPolicy,
                                     PaymentAdjustmentPolicy paymentAdjustmentPolicy,
+                                    OwnerNormalizer ownerNormalizer,
+                                    PurchaseTimeNormalizer purchaseTimeNormalizer,
                                     ProductNameNormalizer productNameNormalizer,
                                     QuantityUnitParser quantityUnitParser,
                                     UnitPriceCalculator unitPriceCalculator,
@@ -59,6 +65,8 @@ public class ImportApplicationService {
         this.excelPurchaseImporter = excelPurchaseImporter;
         this.duplicateDetectionPolicy = duplicateDetectionPolicy;
         this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
+        this.ownerNormalizer = ownerNormalizer;
+        this.purchaseTimeNormalizer = purchaseTimeNormalizer;
         this.productNameNormalizer = productNameNormalizer;
         this.quantityUnitParser = quantityUnitParser;
         this.unitPriceCalculator = unitPriceCalculator;
@@ -111,6 +119,8 @@ public class ImportApplicationService {
         // 重复统计
         int duplicateCount = 0;
         for (RawPurchaseRecord raw : rawRecords) {
+            String normalizedOrderTime = purchaseTimeNormalizer.normalizeImportedOrderTime(raw.orderTime());
+            String normalizedOwner = ownerNormalizer.normalize(raw.owner());
             // 后端导入链路内完成商品归一化，MCP Server 只负责把 import_file 请求转发到这里。
             ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(raw.productName(), raw.sku());
             String normalizedName = nameResult.normalizedName();
@@ -138,7 +148,7 @@ public class ImportApplicationService {
             boolean normalizationReviewRequired = nameResult.needReview() || quantityResult.needReview();
             // 候选记录先按正常订单构造，用于生成去重指纹和查询历史重复
             PurchaseRecord candidate = new PurchaseRecord(
-                    null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
+                    null, batchId, normalizedOrderTime, raw.platform(), normalizedOwner, raw.productName(), normalizedName,
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), "include", false, "unique", file.toString(), ClockUtils.nowText()
@@ -148,7 +158,7 @@ public class ImportApplicationService {
                     purchaseRecordRepository.existsDuplicate(candidate));
             // 疑似重复订单默认排除统计，后续可通过人工复核恢复纳入
             PurchaseRecord record = new PurchaseRecord(
-                    null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
+                    null, batchId, normalizedOrderTime, raw.platform(), normalizedOwner, raw.productName(), normalizedName,
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), duplicate || normalizationReviewRequired ? "exclude" : "include", duplicate,

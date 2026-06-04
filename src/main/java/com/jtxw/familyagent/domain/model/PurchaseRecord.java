@@ -99,6 +99,18 @@ public class PurchaseRecord {
      */
     private final String sourceFile;
     /**
+     * record_purchase 录入时的店铺名称
+     */
+    private final String shopName;
+    /**
+     * record_purchase 录入时的人工备注
+     */
+    private final String note;
+    /**
+     * record_purchase 录入前的原始自然语言文本
+     */
+    private final String sourceText;
+    /**
      * 记录创建时间
      */
     private final String createdAt;
@@ -152,6 +164,38 @@ public class PurchaseRecord {
                           String dedupeStatus,
                           String sourceFile,
                           String createdAt) {
+        this(id, batchId, orderTime, platform, owner, productName, normalizedName, sku, category, subCategory,
+                quantity, unit, totalAmount, productAmount, paidAmount, shippingFee, amountSource, unitPrice, currency,
+                decision, duplicate, dedupeStatus, sourceFile, null, null, null, createdAt);
+    }
+
+    public PurchaseRecord(Long id,
+                          Long batchId,
+                          String orderTime,
+                          String platform,
+                          String owner,
+                          String productName,
+                          String normalizedName,
+                          String sku,
+                          String category,
+                          String subCategory,
+                          Double quantity,
+                          String unit,
+                          Double totalAmount,
+                          Double productAmount,
+                          Double paidAmount,
+                          Double shippingFee,
+                          String amountSource,
+                          Double unitPrice,
+                          String currency,
+                          String decision,
+                          boolean duplicate,
+                          String dedupeStatus,
+                          String sourceFile,
+                          String shopName,
+                          String note,
+                          String sourceText,
+                          String createdAt) {
         this.id = id;
         this.batchId = batchId;
         this.orderTime = orderTime;
@@ -175,6 +219,9 @@ public class PurchaseRecord {
         this.duplicate = duplicate;
         this.dedupeStatus = dedupeStatus;
         this.sourceFile = sourceFile;
+        this.shopName = shopName;
+        this.note = note;
+        this.sourceText = sourceText;
         this.createdAt = createdAt;
     }
 
@@ -268,6 +315,18 @@ public class PurchaseRecord {
 
     public String sourceFile() {
         return sourceFile;
+    }
+
+    public String shopName() {
+        return shopName;
+    }
+
+    public String note() {
+        return note;
+    }
+
+    public String sourceText() {
+        return sourceText;
     }
 
     public String createdAt() {
@@ -364,6 +423,18 @@ public class PurchaseRecord {
 
     public String getSourceFile() {
         return sourceFile;
+    }
+
+    public String getShopName() {
+        return shopName;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public String getSourceText() {
+        return sourceText;
     }
 
     public String getCreatedAt() {

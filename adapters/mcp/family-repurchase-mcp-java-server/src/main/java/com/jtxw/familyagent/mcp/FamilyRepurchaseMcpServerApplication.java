@@ -64,6 +64,7 @@ public class FamilyRepurchaseMcpServerApplication {
                 .validateToolInputs(false)
                 .tools(
                         application.importFileTool(),
+                        application.recordPurchaseTool(),
                         application.comparePriceTool(),
                         application.getPriceBaselineTool(),
                         application.generateReportTool()
@@ -96,6 +97,34 @@ public class FamilyRepurchaseMcpServerApplication {
                         )))
                         .build(),
                 this::handleImportFile
+        );
+    }
+
+    McpServerFeatures.SyncToolSpecification recordPurchaseTool() {
+        String title = "Record Purchase";
+        return new McpServerFeatures.SyncToolSpecification(
+                McpSchema.Tool.builder("record_purchase")
+                        .title(title)
+                        .description("""
+                                录入手动或自然语言抽取后的结构化购买记录。
+                                Claude 负责把自然语言整理为字段；业务校验、归一化、去重、入库和复核均由 Spring Boot 后端完成。
+                                """)
+                        .annotations(toolAnnotations(title, false, false, false))
+                        .inputSchema(objectSchema(
+                                properties(
+                                        property("dryRun", booleanSchema("是否只预览不写入数据库")),
+                                        property("records", arraySchema(recordPurchaseInputSchema()))
+                                ),
+                                List.of("dryRun", "records")
+                        ))
+                        .outputSchema(objectSchema(properties(
+                                property("dryRun", booleanSchema("是否只预览不写入数据库")),
+                                property("savedCount", numberSchema("实际写入 purchase_records 的记录数")),
+                                property("reviewCount", numberSchema("生成的复核项数量")),
+                                property("records", arraySchema(recordPurchaseOutputSchema()))
+                        )))
+                        .build(),
+                this::handleRecordPurchase
         );
     }
 
@@ -264,6 +293,18 @@ public class FamilyRepurchaseMcpServerApplication {
         }
     }
 
+    private McpSchema.CallToolResult handleRecordPurchase(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        try {
+            Map<String, Object> args = arguments(request);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("dryRun", requireBoolean(args, "dryRun"));
+            body.put("records", requireRecordList(args, "records"));
+            return toolSuccess(restClient.postJson("/api/tools/record-purchase", body));
+        } catch (Exception e) {
+            return toolError(e);
+        }
+    }
+
     private McpSchema.CallToolResult handleGetPriceBaseline(McpSyncServerExchange exchange,
                                                             McpSchema.CallToolRequest request) {
         try {
@@ -353,6 +394,22 @@ public class FamilyRepurchaseMcpServerApplication {
         return number;
     }
 
+    private boolean requireBoolean(Map<String, Object> args, String name) {
+        Object value = args.get(name);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        throw new ToolExecutionException(name + " 必须是 boolean");
+    }
+
+    private List<?> requireRecordList(Map<String, Object> args, String name) {
+        Object value = args.get(name);
+        if (value instanceof List<?> list && !list.isEmpty()) {
+            return list;
+        }
+        throw new ToolExecutionException(name + " 必填且不能为空数组");
+    }
+
     private String toJson(Map<String, Object> data) {
         try {
             return objectMapper.writeValueAsString(data);
@@ -435,6 +492,37 @@ public class FamilyRepurchaseMcpServerApplication {
                 property("unitPriceUnit", nullableStringSchema("单位价格口径单位")),
                 property("originalQuantity", nullableNumberSchema("原始记录数量")),
                 property("originalUnit", nullableStringSchema("原始记录单位"))
+        ));
+    }
+
+    private static Map<String, Object> recordPurchaseInputSchema() {
+        return objectSchema(properties(
+                property("productName", stringSchema("商品名称")),
+                property("price", numberSchema("购买总价")),
+                property("quantity", numberSchema("购买数量")),
+                property("unit", stringSchema("数量单位")),
+                property("platform", stringSchema("购买平台，可选，缺省为 MANUAL")),
+                property("purchaseDate", stringSchema("购买日期 yyyy-MM-dd，可选")),
+                property("owner", stringSchema("订单所属人，可选，缺省为 jtxw")),
+                property("shopName", stringSchema("店铺名称，可选")),
+                property("sku", stringSchema("商品规格或 SKU，可选")),
+                property("note", stringSchema("备注，可选")),
+                property("sourceText", stringSchema("自然语言原文，可选"))
+        ), List.of("productName", "price", "quantity", "unit"));
+    }
+
+    private static Map<String, Object> recordPurchaseOutputSchema() {
+        return objectSchema(properties(
+                property("recordId", nullableNumberSchema("购买记录 ID；dryRun 时为空")),
+                property("productName", stringSchema("原始商品名称")),
+                property("normalizedName", stringSchema("标准化商品名称")),
+                property("price", numberSchema("购买总价")),
+                property("quantity", numberSchema("最终入库数量")),
+                property("unit", stringSchema("最终入库单位")),
+                property("unitPrice", numberSchema("单位价格")),
+                property("decision", stringSchema("统计决策，include 或 exclude")),
+                property("reviewRequired", booleanSchema("是否需要人工复核")),
+                property("reviewReasons", arraySchema(stringSchema("复核原因")))
         ));
     }
 

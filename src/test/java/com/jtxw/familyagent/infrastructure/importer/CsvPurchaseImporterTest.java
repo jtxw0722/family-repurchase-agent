@@ -29,7 +29,7 @@ class CsvPurchaseImporterTest {
         List<RawPurchaseRecord> records = importer().importFile(file);
 
         assertThat(records).hasSize(1);
-        assertThat(records.get(0).owner()).isEqualTo("JTXW");
+        assertThat(records.get(0).owner()).isEqualTo("jtxw");
         assertThat(records.get(0).productName()).isEqualTo("混合猫砂 12kg");
         assertThat(records.get(0).quantity()).isEqualTo(12D);
         assertThat(records.get(0).unit()).isEqualTo("kg");
@@ -82,7 +82,7 @@ class CsvPurchaseImporterTest {
         RawPurchaseRecord record = records.get(0);
         assertThat(record.orderTime()).isEqualTo("2026-01-23 02:32:45");
         assertThat(record.platform()).isEqualTo("taobao");
-        assertThat(record.owner()).isEqualTo("CHINESE");
+        assertThat(record.owner()).isEqualTo("chinese");
         assertThat(record.productName()).isEqualTo("乳铁蛋白粉");
         assertThat(record.sku()).isEqualTo("100g");
         assertThat(record.quantity()).isEqualTo(1D);
@@ -117,7 +117,7 @@ class CsvPurchaseImporterTest {
 
         List<RawPurchaseRecord> records = importer().importFile(file, "jtxw");
 
-        assertThat(records.get(0).owner()).isEqualTo("JTXW");
+        assertThat(records.get(0).owner()).isEqualTo("jtxw");
     }
 
     @Test
