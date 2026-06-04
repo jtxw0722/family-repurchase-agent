@@ -3,6 +3,7 @@ package com.jtxw.familyagent.application;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
+import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.domain.policy.*;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
@@ -93,6 +94,57 @@ class ImportSpecIntegrationTest {
                 .contains("historical_min", "median_sample", "latest");
     }
 
+    @Test
+    void shouldImportNeutralCountProductsAndUseSameNormalizationOnQuerySide() throws Exception {
+        Fixture fixture = fixture("neutral-count-products.sqlite");
+        Path file = fixture.file("neutral-count-orders.csv");
+        Files.writeString(file, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2026-05-02,taobao,jtxw,洗衣凝珠,12颗*3盒,日用品,洗衣用品,1,件,36.0,CNY
+            2026-05-03,taobao,jtxw,凝珠,10颗+2颗,日用品,洗衣用品,1,件,24.0,CNY
+            2026-05-04,taobao,jtxw,洗衣凝珠,暂无,日用品,洗衣用品,1,件,29.9,CNY
+            """, StandardCharsets.UTF_8);
+
+        fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> laundryBeads = fixture.purchaseRecordRepository.listPriceHistoryRecords("洗衣凝珠");
+        assertThat(laundryBeads).hasSize(2);
+        assertThat(laundryBeads)
+                .extracting(PurchaseRecord::unit)
+                .containsOnly("颗");
+        assertThat(laundryBeads)
+                .extracting(PurchaseRecord::quantity)
+                .containsExactly(36D, 12D);
+        assertThat(laundryBeads.get(0).unitPrice()).isCloseTo(1.0D, offset(0.000001D));
+        assertThat(laundryBeads.get(1).unitPrice()).isCloseTo(2.0D, offset(0.000001D));
+
+        List<ReviewItemDetail> reviewItems = fixture.reviewItemRepository.listPendingDetails();
+        assertThat(reviewItems).hasSize(1);
+        assertThat(reviewItems.get(0).normalizedName()).isEqualTo("洗衣凝珠");
+        assertThat(reviewItems.get(0).reasonCode()).isEqualTo("QUANTITY_UNIT_PARSE_REVIEW");
+
+        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice("凝珠", 18.0D, 18D, "颗"));
+        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice("洗衣珠", 18.0D, 18D, "颗"));
+
+        PriceBaselineResult baseline = fixture.priceService.getPriceBaseline("洗衣凝珠", "颗");
+        assertThat(baseline.normalizedName()).isEqualTo("洗衣凝珠");
+        assertThat(baseline.baseline().sampleSize()).isEqualTo(2);
+        assertThat(baseline.evidence().sourceRecords())
+                .extracting(PriceDecisionResult.SourceRecord::productName)
+                .doesNotContain("洗衣凝珠 暂无");
+    }
+
+    private void assertCompareHitsLaundryBeadsHistory(PriceDecisionResult result) {
+        assertThat(result.normalizedName()).isEqualTo("洗衣凝珠");
+        assertThat(result.baseline().unit()).isEqualTo("颗");
+        assertThat(result.baseline().sampleSize()).isEqualTo(2);
+        assertThat(result.evidence().sourceRecords())
+                .extracting(PriceDecisionResult.SourceRecord::productName)
+                .containsOnly("洗衣凝珠", "凝珠");
+        assertThat(result.evidence().excludedReasons())
+                .noneMatch(reason -> reason.contains("单位不一致"));
+    }
+
     private Fixture fixture(String dbName) throws Exception {
         Path dir = Path.of("target", "import-spec-integration-test");
         Files.createDirectories(dir);
@@ -110,13 +162,15 @@ class ImportSpecIntegrationTest {
         ProductSpecParser productSpecParser = new ProductSpecParser();
         OrderImportMapper orderImportMapper = new OrderImportMapper(productSpecParser);
         ProductNormalizer productNormalizer = new ProductNormalizer();
+        ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(productNormalizer, testRules());
         ImportApplicationService importService = new ImportApplicationService(
                 databaseInitializer,
                 new CsvPurchaseImporter(orderImportMapper),
                 new ExcelPurchaseImporter(orderImportMapper),
                 new DuplicateDetectionPolicy(),
                 new PaymentAdjustmentPolicy(),
-                productNormalizer,
+                productNameNormalizer,
+                new QuantityUnitParser(),
                 new UnitPriceCalculator(),
                 importBatchRepository,
                 purchaseRecordRepository,
@@ -124,16 +178,26 @@ class ImportSpecIntegrationTest {
         );
         PriceAnalysisApplicationService priceService = new PriceAnalysisApplicationService(
                 databaseInitializer,
-                productNormalizer,
+                productNameNormalizer,
                 purchaseRecordRepository,
                 newPriceDecisionPolicy()
         );
-        return new Fixture(importService, priceService, purchaseRecordRepository, dir);
+        return new Fixture(importService, priceService, purchaseRecordRepository, reviewItemRepository, dir);
+    }
+
+    private static List<NormalizationRule> testRules() {
+        return List.of(
+                new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
+                        List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100),
+                new NormalizationRule("test_laundry_supplies", "洗衣用品", "件",
+                        List.of("洗衣液", "洗衣用品"), 10)
+        );
     }
 
     private record Fixture(ImportApplicationService importService,
                            PriceAnalysisApplicationService priceService,
                            PurchaseRecordRepository purchaseRecordRepository,
+                           ReviewItemRepository reviewItemRepository,
                            Path dir) {
         Path file(String name) {
             return dir.resolve(name);

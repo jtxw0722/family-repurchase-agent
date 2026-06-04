@@ -4,10 +4,14 @@ import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -30,20 +34,47 @@ public class PurchaseRecordRepository {
      * @return 新增记录 ID
      */
     public long save(PurchaseRecord record) {
-        jdbcTemplate.update("""
-                        INSERT INTO purchase_records(
-                            batch_id, order_time, platform, owner, product_name, normalized_name, sku,
-                            category, sub_category, quantity, unit, total_amount, product_amount, paid_amount,
-                            shipping_fee, amount_source, unit_price, currency, decision, is_duplicate,
-                            dedupe_status, source_file, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                record.batchId(), record.orderTime(), record.platform(), record.owner(), record.productName(),
-                record.normalizedName(), record.sku(), record.category(), record.subCategory(), record.quantity(),
-                record.unit(), record.totalAmount(), record.productAmount(), record.paidAmount(), record.shippingFee(),
-                record.amountSource(), record.unitPrice(), record.currency(), record.decision(), record.duplicate() ? 1 : 0,
-                record.dedupeStatus(), record.sourceFile(), ClockUtils.nowText());
-        return jdbcTemplate.queryForObject("SELECT last_insert_rowid()", Long.class);
+        String sql = """
+                INSERT INTO purchase_records(
+                    batch_id, order_time, platform, owner, product_name, normalized_name, sku,
+                    category, sub_category, quantity, unit, total_amount, product_amount, paid_amount,
+                    shipping_fee, amount_source, unit_price, currency, decision, is_duplicate,
+                    dedupe_status, source_file, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setObject(1, record.batchId());
+            ps.setObject(2, record.orderTime());
+            ps.setObject(3, record.platform());
+            ps.setObject(4, record.owner());
+            ps.setObject(5, record.productName());
+            ps.setObject(6, record.normalizedName());
+            ps.setObject(7, record.sku());
+            ps.setObject(8, record.category());
+            ps.setObject(9, record.subCategory());
+            ps.setObject(10, record.quantity());
+            ps.setObject(11, record.unit());
+            ps.setObject(12, record.totalAmount());
+            ps.setObject(13, record.productAmount());
+            ps.setObject(14, record.paidAmount());
+            ps.setObject(15, record.shippingFee());
+            ps.setObject(16, record.amountSource());
+            ps.setObject(17, record.unitPrice());
+            ps.setObject(18, record.currency());
+            ps.setObject(19, record.decision());
+            ps.setObject(20, record.duplicate() ? 1 : 0);
+            ps.setObject(21, record.dedupeStatus());
+            ps.setObject(22, record.sourceFile());
+            ps.setObject(23, ClockUtils.nowText());
+            return ps;
+        }, keyHolder);
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("无法获取新建 purchase_records ID");
+        }
+        return key.longValue();
     }
 
     /**

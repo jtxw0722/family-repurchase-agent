@@ -6,7 +6,10 @@ import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
 import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
-import com.jtxw.familyagent.domain.policy.ProductNormalizer;
+import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
+import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
+import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
+import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
@@ -33,7 +36,8 @@ public class ImportApplicationService {
     private final ExcelPurchaseImporter excelPurchaseImporter;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
     private final PaymentAdjustmentPolicy paymentAdjustmentPolicy;
-    private final ProductNormalizer productNormalizer;
+    private final ProductNameNormalizer productNameNormalizer;
+    private final QuantityUnitParser quantityUnitParser;
     private final UnitPriceCalculator unitPriceCalculator;
     private final ImportBatchRepository importBatchRepository;
     private final PurchaseRecordRepository purchaseRecordRepository;
@@ -44,7 +48,8 @@ public class ImportApplicationService {
                                     ExcelPurchaseImporter excelPurchaseImporter,
                                     DuplicateDetectionPolicy duplicateDetectionPolicy,
                                     PaymentAdjustmentPolicy paymentAdjustmentPolicy,
-                                    ProductNormalizer productNormalizer,
+                                    ProductNameNormalizer productNameNormalizer,
+                                    QuantityUnitParser quantityUnitParser,
                                     UnitPriceCalculator unitPriceCalculator,
                                     ImportBatchRepository importBatchRepository,
                                     PurchaseRecordRepository purchaseRecordRepository,
@@ -54,7 +59,8 @@ public class ImportApplicationService {
         this.excelPurchaseImporter = excelPurchaseImporter;
         this.duplicateDetectionPolicy = duplicateDetectionPolicy;
         this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
-        this.productNormalizer = productNormalizer;
+        this.productNameNormalizer = productNameNormalizer;
+        this.quantityUnitParser = quantityUnitParser;
         this.unitPriceCalculator = unitPriceCalculator;
         this.importBatchRepository = importBatchRepository;
         this.purchaseRecordRepository = purchaseRecordRepository;
@@ -105,17 +111,35 @@ public class ImportApplicationService {
         // 重复统计
         int duplicateCount = 0;
         for (RawPurchaseRecord raw : rawRecords) {
-            String normalizedName = productNormalizer.normalize(raw.productName());
+            // 后端导入链路内完成商品归一化，MCP Server 只负责把 import_file 请求转发到这里。
+            ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(raw.productName(), raw.sku());
+            String normalizedName = nameResult.normalizedName();
             PaymentAdjustmentPolicy.PaymentAdjustmentResult amountResult = paymentAdjustmentPolicy.adjust(raw);
             Double totalAmount = amountResult.totalAmount();
-            Double unitPrice = null;
-            if (totalAmount != null && raw.quantity() != null && raw.quantity() > 0) {
-                unitPrice = unitPriceCalculator.calculate(totalAmount, raw.quantity());
+            // 规格解析使用归一化后的标准品类和目标单位；高置信结果会覆盖原始“件”等粗粒度单位。
+            QuantityUnitParseResult quantityResult = quantityUnitParser.parse(
+                    nameResult.normalizedName(),
+                    nameResult.targetUnit(),
+                    raw.productName(),
+                    raw.sku(),
+                    totalAmount,
+                    raw.quantity(),
+                    raw.unit()
+            );
+            Double resolvedQuantity = quantityResult.quantity() == null ? raw.quantity() : quantityResult.quantity();
+            String resolvedUnit = quantityResult.unit() == null || quantityResult.unit().isBlank()
+                    ? raw.unit()
+                    : quantityResult.unit();
+            Double unitPrice = quantityResult.unitPrice();
+            if (unitPrice == null && totalAmount != null && resolvedQuantity != null && resolvedQuantity > 0) {
+                unitPrice = unitPriceCalculator.calculate(totalAmount, resolvedQuantity);
             }
+            // 低置信规格仍保留购买记录，便于人工复核，但默认排除出正式价格基准线
+            boolean normalizationReviewRequired = nameResult.needReview() || quantityResult.needReview();
             // 候选记录先按正常订单构造，用于生成去重指纹和查询历史重复
             PurchaseRecord candidate = new PurchaseRecord(
                     null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
-                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), totalAmount,
+                    raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), "include", false, "unique", file.toString(), ClockUtils.nowText()
             );
@@ -125,9 +149,9 @@ public class ImportApplicationService {
             // 疑似重复订单默认排除统计，后续可通过人工复核恢复纳入
             PurchaseRecord record = new PurchaseRecord(
                     null, batchId, raw.orderTime(), raw.platform(), raw.owner(), raw.productName(), normalizedName,
-                    raw.sku(), raw.category(), raw.subCategory(), raw.quantity(), raw.unit(), totalAmount,
+                    raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
-                    unitPrice, raw.currency(), duplicate ? "exclude" : "include", duplicate,
+                    unitPrice, raw.currency(), duplicate || normalizationReviewRequired ? "exclude" : "include", duplicate,
                     duplicate ? "duplicate" : "unique", file.toString(), ClockUtils.nowText()
             );
             long recordId = purchaseRecordRepository.save(record);
@@ -138,7 +162,21 @@ public class ImportApplicationService {
                         "疑似重复订单，已默认排除统计；如确认不是重复购买，可人工复核为 include。");
                 reviewCount++;
                 duplicateCount++;
-            } else if (amountResult.reviewRequired()) {
+            }
+            if (nameResult.needReview()) {
+                reviewItemRepository.create(recordId, "PRODUCT_NAME_NORMALIZATION_REVIEW",
+                        "商品归一化置信度较低，matchedRule=" + nameResult.matchedRule()
+                                + "，confidence=" + nameResult.confidence());
+                reviewCount++;
+            }
+            if (quantityResult.needReview()) {
+                // 规格数量不明确时创建复核项，并因 decision=exclude 不进入 purchase_records 的正式统计查询。
+                reviewItemRepository.create(recordId, "QUANTITY_UNIT_PARSE_REVIEW",
+                        "规格数量解析置信度较低，evidence=" + quantityResult.parseEvidence()
+                                + "，confidence=" + quantityResult.confidence());
+                reviewCount++;
+            }
+            if (amountResult.reviewRequired()) {
                 // 金额折算会影响单价和价格统计，必须保留人工确认入口
                 reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
                 reviewCount++;

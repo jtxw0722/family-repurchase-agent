@@ -4,8 +4,8 @@ import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.policy.PriceDecisionPolicy;
-import com.jtxw.familyagent.domain.policy.ProductNormalizationResult;
-import com.jtxw.familyagent.domain.policy.ProductNormalizer;
+import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
+import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import org.springframework.stereotype.Service;
@@ -20,16 +20,16 @@ import java.util.List;
 @Service
 public class PriceAnalysisApplicationService {
     private final DatabaseInitializer databaseInitializer;
-    private final ProductNormalizer productNormalizer;
+    private final ProductNameNormalizer productNameNormalizer;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final PriceDecisionPolicy priceDecisionPolicy;
 
     public PriceAnalysisApplicationService(DatabaseInitializer databaseInitializer,
-                                           ProductNormalizer productNormalizer,
+                                           ProductNameNormalizer productNameNormalizer,
                                            PurchaseRecordRepository purchaseRecordRepository,
                                            PriceDecisionPolicy priceDecisionPolicy) {
         this.databaseInitializer = databaseInitializer;
-        this.productNormalizer = productNormalizer;
+        this.productNameNormalizer = productNameNormalizer;
         this.purchaseRecordRepository = purchaseRecordRepository;
         this.priceDecisionPolicy = priceDecisionPolicy;
     }
@@ -38,8 +38,9 @@ public class PriceAnalysisApplicationService {
         if (productName == null || productName.isBlank()) {
             throw new IllegalArgumentException("productName 不能为空，必须是非空字符串");
         }
-        ProductNormalizationResult normalization = productNormalizer.normalizeProduct(productName);
-        String baselineUnit = resolveBaselineUnit(unit, normalization.standardUnit());
+        databaseInitializer.initialize();
+        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(productName, "");
+        String baselineUnit = resolveBaselineUnit(unit, normalization.targetUnit());
         List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalization.normalizedName());
         return priceDecisionPolicy.baseline(productName, normalization.normalizedName(), baselineUnit, history);
     }
@@ -68,7 +69,8 @@ public class PriceAnalysisApplicationService {
      */
     public PriceDecisionResult comparePrice(String productName, double price, double quantity, String unit) {
         databaseInitializer.initialize();
-        String normalizedName = productNormalizer.normalize(productName);
+        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(productName, "");
+        String normalizedName = normalization.normalizedName();
         List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalizedName);
         return priceDecisionPolicy.decide(productName, normalizedName, price, quantity, unit, history);
     }
