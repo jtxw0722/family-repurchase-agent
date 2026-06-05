@@ -67,7 +67,24 @@ public record RecordPurchaseRequest(
             String note,
 
             @Schema(description = "Claude 抽取前的原始自然语言文本")
-            String sourceText
+            String sourceText,
+
+            @Schema(description = "是否确认接受偏离历史价格区间的样本", example = "false")
+            Boolean confirmOutOfRange
     ) {
+        public Record(String productName,
+                      Double price,
+                      Double quantity,
+                      String unit,
+                      String platform,
+                      String purchaseDate,
+                      String owner,
+                      String shopName,
+                      String sku,
+                      String note,
+                      String sourceText) {
+            this(productName, price, quantity, unit, platform, purchaseDate, owner,
+                    shopName, sku, note, sourceText, false);
+        }
     }
 }

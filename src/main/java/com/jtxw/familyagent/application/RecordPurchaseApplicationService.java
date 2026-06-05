@@ -17,6 +17,9 @@ import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -31,6 +34,11 @@ import java.util.Set;
 @Service
 public class RecordPurchaseApplicationService {
     private static final String SOURCE_PREFIX = "manual:record_purchase";
+    private static final DateTimeFormatter PURCHASE_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int OUT_OF_RANGE_SAMPLE_THRESHOLD = 3;
+    private static final double LOW_PRICE_FACTOR = 0.8D;
+    private static final double HIGH_PRICE_FACTOR = 1.2D;
 
     private final DatabaseInitializer databaseInitializer;
     private final ProductNameNormalizer productNameNormalizer;
@@ -162,6 +170,13 @@ public class RecordPurchaseApplicationService {
             reviewReasons.add(new ReviewReason("DUPLICATE_ORDER",
                     "疑似重复手动录入记录，已默认排除统计；如确认不是重复购买，可人工复核为 include。"));
         }
+        if (isFuturePurchaseTime(candidate.orderTime())) {
+            reviewReasons.add(new ReviewReason("FUTURE_PURCHASE_TIME",
+                    "购买时间晚于当前时间，疑似自然语言日期抽取错误，需要人工确认"));
+        }
+        if (reviewReasons.isEmpty() && !Boolean.TRUE.equals(input.confirmOutOfRange())) {
+            detectPriceOutOfBaselineRange(candidate, reviewReasons);
+        }
         String decision = reviewReasons.isEmpty() ? "include" : "exclude";
         PurchaseRecord record = new PurchaseRecord(
                 null, batchId, candidate.orderTime(), candidate.platform(), candidate.owner(), candidate.productName(),
@@ -173,6 +188,38 @@ public class RecordPurchaseApplicationService {
                 candidate.createdAt()
         );
         return new PreparedManualRecord(record, reviewReasons);
+    }
+
+    private boolean isFuturePurchaseTime(String orderTime) {
+        LocalDateTime purchaseTime = LocalDateTime.parse(orderTime, PURCHASE_TIME_FORMAT);
+        LocalDateTime todayEnd = LocalDate.now().atTime(23, 59, 59);
+        return purchaseTime.isAfter(todayEnd);
+    }
+
+    private void detectPriceOutOfBaselineRange(PurchaseRecord candidate, List<ReviewReason> reviewReasons) {
+        if (candidate.unitPrice() == null || candidate.unit() == null || candidate.unit().isBlank()) {
+            return;
+        }
+        PurchaseRecordRepository.PriceRangeStats stats = purchaseRecordRepository.priceRangeStats(
+                candidate.normalizedName(), candidate.unit());
+        if (stats == null
+                || stats.sampleSize() < OUT_OF_RANGE_SAMPLE_THRESHOLD
+                || stats.historicalMin() == null
+                || stats.historicalMax() == null) {
+            return;
+        }
+        double unitPrice = candidate.unitPrice();
+        if (unitPrice < stats.historicalMin() * LOW_PRICE_FACTOR) {
+            reviewReasons.add(new ReviewReason("PRICE_OUT_OF_BASELINE_RANGE",
+                    String.format(Locale.ROOT,
+                            "当前单价 %.6f 元/%s 明显低于历史最低 %.6f 元/%s，疑似价格、数量或单位抽取错误，需要用户确认。",
+                            unitPrice, candidate.unit(), stats.historicalMin(), candidate.unit())));
+        } else if (unitPrice > stats.historicalMax() * HIGH_PRICE_FACTOR) {
+            reviewReasons.add(new ReviewReason("PRICE_OUT_OF_BASELINE_RANGE",
+                    String.format(Locale.ROOT,
+                            "当前单价 %.6f 元/%s 明显高于历史最高 %.6f 元/%s，疑似规格、单位或商品归一化错误，需要用户确认。",
+                            unitPrice, candidate.unit(), stats.historicalMax(), candidate.unit())));
+        }
     }
 
     private void validate(RecordPurchaseRequest request) {

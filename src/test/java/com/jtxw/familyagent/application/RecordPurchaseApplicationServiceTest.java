@@ -21,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
+import java.time.LocalDate;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -135,6 +136,209 @@ class RecordPurchaseApplicationServiceTest {
     }
 
     @Test
+    void shouldExcludeAndCreateReviewWhenPurchaseDateIsFuture() throws Exception {
+        Fixture fixture = fixture("future-date.sqlite");
+        String futureDate = LocalDate.now().plusDays(1).toString();
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWith("JD", futureDate, "6kg*4包")));
+
+        assertThat(result.savedCount()).isEqualTo(1);
+        assertThat(result.reviewCount()).isEqualTo(1);
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons())
+                .contains("购买时间晚于当前时间，疑似自然语言日期抽取错误，需要人工确认");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("FUTURE_PURCHASE_TIME");
+    }
+
+    @Test
+    void dryRunShouldReportFuturePurchaseDateReviewWithoutWritingDatabase() throws Exception {
+        Fixture fixture = fixture("future-date-dry-run.sqlite");
+        String futureDate = LocalDate.now().plusDays(1).toString();
+
+        RecordPurchaseResult result = fixture.service.record(request(true,
+                catLitterRecordWith("JD", futureDate, "6kg*4包")));
+
+        assertThat(result.dryRun()).isTrue();
+        assertThat(result.savedCount()).isZero();
+        assertThat(result.reviewCount()).isEqualTo(1);
+        assertThat(result.records().get(0).recordId()).isNull();
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons())
+                .contains("购买时间晚于当前时间，疑似自然语言日期抽取错误，需要人工确认");
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).isEmpty();
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+    }
+
+    @Test
+    void shouldIncludeTodayAndPastPurchaseDates() throws Exception {
+        assertStoredDecision("today-date.sqlite", LocalDate.now().toString(), "include");
+        assertStoredDecision("past-date.sqlite", LocalDate.now().minusDays(1).toString(), "include");
+    }
+
+    @Test
+    void shouldNotBlockOutOfRangePriceWhenHistorySamplesAreInsufficient() throws Exception {
+        Fixture fixture = fixture("out-of-range-insufficient-history.sqlite");
+        seedCatLitterHistory(fixture, 2);
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("include");
+        assertThat(result.records().get(0).reviewRequired()).isFalse();
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+    }
+
+    @Test
+    void shouldExcludeAndReviewWhenUnitPriceIsLowerThanHistoricalRange() throws Exception {
+        Fixture fixture = fixture("out-of-range-low.sqlite");
+        seedCatLitterHistory(fixture, 3);
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons().get(0)).contains("明显低于历史最低");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("PRICE_OUT_OF_BASELINE_RANGE");
+    }
+
+    @Test
+    void shouldIgnoreDuplicateHistoryWhenCheckingPriceRange() throws Exception {
+        Fixture fixture = fixture("out-of-range-ignore-duplicate-history.sqlite");
+        seedCatLitterHistory(fixture, 3);
+        fixture.purchaseRecordRepository.save(new PurchaseRecord(
+                null, 1L, "2026-04-01 00:00:00", "jd", "jtxw", "猫砂", "猫砂",
+                "10kg", "", "", 10D, "kg", 10D, 10D, 10D, null,
+                "manual_record", 1D, "CNY", "include", true, "unique",
+                "test.csv", null, null, null, "2026-04-01 00:00:00"
+        ));
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons().get(0)).contains("历史最低 4.000000");
+    }
+
+    @Test
+    void shouldExcludeAndReviewWhenUnitPriceIsHigherThanHistoricalRange() throws Exception {
+        Fixture fixture = fixture("out-of-range-high.sqlite");
+        seedCatLitterHistory(fixture, 3);
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 80D, 10D, false)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons().get(0)).contains("明显高于历史最高");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("PRICE_OUT_OF_BASELINE_RANGE");
+    }
+
+    @Test
+    void dryRunShouldReportOutOfRangePriceWithoutWritingDatabase() throws Exception {
+        Fixture fixture = fixture("out-of-range-dry-run.sqlite");
+        seedCatLitterHistory(fixture, 3);
+
+        RecordPurchaseResult result = fixture.service.record(request(true,
+                catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
+
+        assertThat(result.dryRun()).isTrue();
+        assertThat(result.savedCount()).isZero();
+        assertThat(result.reviewCount()).isEqualTo(1);
+        assertThat(result.records().get(0).recordId()).isNull();
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons().get(0)).contains("明显低于历史最低");
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).hasSize(3);
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+    }
+
+    @Test
+    void shouldIncludeOutOfRangePriceWhenConfirmed() throws Exception {
+        Fixture fixture = fixture("out-of-range-confirmed.sqlite");
+        seedCatLitterHistory(fixture, 3);
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 30D, 10D, true)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("include");
+        assertThat(result.records().get(0).reviewRequired()).isFalse();
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).hasSize(4);
+    }
+
+    @Test
+    void confirmOutOfRangeShouldNotBypassFuturePurchaseTimeRisk() throws Exception {
+        Fixture fixture = fixture("confirm-does-not-bypass-future.sqlite");
+        String futureDate = LocalDate.now().plusDays(1).toString();
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice(futureDate, 30D, 10D, true)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("FUTURE_PURCHASE_TIME");
+    }
+
+    @Test
+    void confirmOutOfRangeShouldNotBypassDuplicateRisk() throws Exception {
+        Fixture fixture = fixture("confirm-does-not-bypass-duplicate.sqlite");
+        fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 55D, 10D, false)));
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 55D, 10D, true)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("DUPLICATE_ORDER");
+    }
+
+    @Test
+    void confirmOutOfRangeShouldNotBypassUnitMismatchRisk() throws Exception {
+        Fixture fixture = fixture("confirm-does-not-bypass-unit-mismatch.sqlite");
+        RecordPurchaseRequest.Record record = new RecordPurchaseRequest.Record(
+                "猫砂", 109.9D, 1D, "件", "JD", "2026-05-10",
+                "jtxw", null, "暂无", null, null, true
+        );
+
+        RecordPurchaseResult result = fixture.service.record(request(false, record));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("UNIT_MISMATCH_UNPARSED");
+    }
+
+    @Test
+    void shouldIncludePriceWithinHistoricalRange() throws Exception {
+        Fixture fixture = fixture("within-range.sqlite");
+        seedCatLitterHistory(fixture, 3);
+
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWithPrice("2026-05-10", 55D, 10D, false)));
+
+        assertThat(result.records().get(0).decision()).isEqualTo("include");
+        assertThat(result.records().get(0).reviewRequired()).isFalse();
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+    }
+
+    @Test
     void shouldNormalizeManualRecordPlatformValues() throws Exception {
         assertStoredPlatform("platform-null.sqlite", null, "manual");
         assertStoredPlatform("platform-blank.sqlite", "   ", "manual");
@@ -208,6 +412,16 @@ class RecordPurchaseApplicationServiceTest {
                 .isEqualTo(expectedOrderTime);
     }
 
+    private void assertStoredDecision(String dbName, String inputDate, String expectedDecision) throws Exception {
+        Fixture fixture = fixture(dbName);
+        RecordPurchaseResult result = fixture.service.record(request(false,
+                catLitterRecordWith("JD", inputDate, "6kg*4包")));
+
+        assertThat(result.records().get(0).decision()).isEqualTo(expectedDecision);
+        assertThat(result.records().get(0).reviewRequired()).isFalse();
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).hasSize(1);
+    }
+
     private RecordPurchaseRequest request(boolean dryRun, RecordPurchaseRequest.Record... records) {
         return new RecordPurchaseRequest(dryRun, List.of(records));
     }
@@ -226,6 +440,25 @@ class RecordPurchaseApplicationServiceTest {
                 owner, "京东自营", sku, "手动录入",
                 "昨天在京东买了猫砂，109.9 元，6kg*4 包，京东自营。"
         );
+    }
+
+    private RecordPurchaseRequest.Record catLitterRecordWithPrice(String purchaseDate,
+                                                                  double price,
+                                                                  double quantity,
+                                                                  boolean confirmOutOfRange) {
+        return new RecordPurchaseRequest.Record(
+                "猫砂", price, quantity, "kg", "JD", purchaseDate,
+                "jtxw", "京东自营", quantity + "kg", "手动录入",
+                "历史区间防御测试。", confirmOutOfRange
+        );
+    }
+
+    private void seedCatLitterHistory(Fixture fixture, int sampleCount) {
+        double[] prices = {40D, 50D, 60D};
+        for (int i = 0; i < sampleCount; i++) {
+            fixture.service.record(request(false,
+                    catLitterRecordWithPrice("2026-05-0" + (i + 1), prices[i], 10D, false)));
+        }
     }
 
     private Fixture fixture(String dbName) throws Exception {

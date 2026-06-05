@@ -153,6 +153,35 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 查询指定归一化商品和单位的有效历史单价区间。
+     *
+     * <p>用于手动录入时拦截明显偏离历史区间的自然语言抽取结果。</p>
+     *
+     * @param normalizedName 归一化商品名称
+     * @param unit           标准单位
+     * @return 历史样本数量、最低价和最高价
+     */
+    public PriceRangeStats priceRangeStats(String normalizedName, String unit) {
+        return jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) AS sample_size,
+                       MIN(unit_price) AS historical_min,
+                       MAX(unit_price) AS historical_max
+                FROM purchase_records
+                WHERE normalized_name = ?
+                  AND unit = ?
+                  AND decision = 'include'
+                  AND is_duplicate = 0
+                  AND dedupe_status = 'unique'
+                  AND unit_price IS NOT NULL
+                  AND total_amount > 0
+                """, (rs, rowNum) -> new PriceRangeStats(
+                rs.getInt("sample_size"),
+                nullableDouble(rs, "historical_min"),
+                nullableDouble(rs, "historical_max")
+        ), normalizedName, unit);
+    }
+
+    /**
      * 更新购买记录的统计决策。
      *
      * @param id       购买记录 ID
@@ -222,5 +251,8 @@ public class PurchaseRecordRepository {
     private Double nullableDouble(ResultSet rs, String columnName) throws SQLException {
         double value = rs.getDouble(columnName);
         return rs.wasNull() ? null : value;
+    }
+
+    public record PriceRangeStats(int sampleSize, Double historicalMin, Double historicalMax) {
     }
 }
