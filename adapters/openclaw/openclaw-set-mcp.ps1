@@ -12,18 +12,11 @@ $OpenClawDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Resolve-Path (Join-Path $OpenClawDir "..\..")
 
 if ([string]::IsNullOrWhiteSpace($McpJar)) {
-    $McpTargetDir = Join-Path $ProjectRoot "adapters\mcp\family-repurchase-mcp-java-server\target"
+    $McpJarPath = "adapters\mcp\family-repurchase-mcp-java-server\target\family-repurchase-mcp-java-server.jar"
 
-    $McpJarFile = Get-ChildItem -Path $McpTargetDir -Filter "family-repurchase-mcp-java-server-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notlike "original-*" } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-
-    if (-not $McpJarFile) {
-        throw "MCP Server jar not found. Please run: mvn -f adapters\mcp\family-repurchase-mcp-java-server\pom.xml package"
+    if (-not (Test-Path $McpJarPath)) {
+        throw "MCP Server runtime jar not found: $McpJarPath. Please publish the MCP jar to runtime directory first."
     }
-
-    $McpJarPath = $McpJarFile.FullName
 } else {
     $McpJarPath = (Resolve-Path $McpJar).Path
 }

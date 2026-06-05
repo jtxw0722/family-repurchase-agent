@@ -25,6 +25,7 @@ data/*.sqlite-*
 data/*.db
 data/*.db-*
 data/inbox/*
+data/remote-snapshot/
 !data/inbox/.gitkeep
 
 # Generated reports

@@ -54,7 +54,7 @@ mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
 生成产物：
 
 ```text
-adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar
+adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar
 ```
 
 ## 运行
@@ -63,13 +63,13 @@ adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java
 
 ```bash
 mvn package
-java -jar target/family-repurchase-agent-0.4.0.jar
+java -jar target/family-repurchase-agent.jar
 ```
 
 再启动 MCP Server：
 
 ```bash
-java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar
+java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar
 ```
 
 默认后端地址：
@@ -119,7 +119,7 @@ $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS = "examples;data/imports;imports"
 Claude Code、Codex、OpenClaw 等 Host 的 MCP 配置方式取决于各自版本。项目侧提供 stdio MCP Server 命令：
 
 ```bash
-java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar
+java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar
 ```
 
 请按对应 Host 的 MCP 配置方式，将该命令配置为 stdio MCP server。
@@ -217,6 +217,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test-mcp.ps1
 
 ```bash
 mvn package
-java -jar target/family-repurchase-agent-0.4.0.jar
+java -jar target/family-repurchase-agent.jar
 ```
 

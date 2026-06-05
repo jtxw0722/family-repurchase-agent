@@ -19,7 +19,9 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。
 当前 MCP tools：
 
 * `import_file`：导入本地 CSV / Excel 订单文件
+* `record_purchase`：录入手动购买记录或自然语言抽取后的结构化购买记录
 * `compare_price`：将当前商品单位价格与本地历史购买记录进行比较
+* `get_price_baseline`：查询某个复购品的历史最低价、中位价、平均价和样本 evidence
 * `generate_report`：生成指定月份的复购品价格报告
 
 OpenClaw 应通过 MCP Server 调用这些 tools。Agent Host 不应直接访问 SQLite、Repository、Domain Service，也不应绕过 Spring Boot 后端自行计算价格结论。
@@ -30,7 +32,7 @@ OpenClaw 应通过 MCP Server 调用这些 tools。Agent Host 不应直接访问
 
 ```bash
 mvn package
-java -jar target/family-repurchase-agent-0.4.0.jar
+java -jar target/family-repurchase-agent.jar
 ```
 
 然后构建 MCP Server：
@@ -42,7 +44,7 @@ mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package
 MCP Server 启动命令：
 
 ```bash
-java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar
+java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar
 ```
 
 ## 环境变量

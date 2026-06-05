@@ -5,12 +5,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$mcpTarget = Join-Path $repoRoot "adapters\mcp\family-repurchase-mcp-java-server\target"
-$mcpJar = Get-ChildItem -Path $mcpTarget -Filter "family-repurchase-mcp-java-server-*.jar" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notlike "*.original" } |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+$mcpJarPath = Join-Path $repoRoot "adapters\mcp\family-repurchase-mcp-java-server\target\family-repurchase-mcp-java-server.jar"
+
+if (-not (Test-Path $mcpJarPath)) {
+    Write-Error "MCP jar not found: $mcpJarPath. Run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package"
+    exit 1
+}
+
+$mcpJar = Get-Item $mcpJarPath
 
 if ($null -eq $mcpJar) {
     Write-Error "MCP jar not found. Run: mvn -pl adapters/mcp/family-repurchase-mcp-java-server -am package"

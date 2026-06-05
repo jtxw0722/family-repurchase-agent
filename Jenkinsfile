@@ -17,13 +17,14 @@ pipeline {
 
     environment {
         APP_NAME = 'family-repurchase-agent'
-        JAR_NAME = 'family-repurchase-agent-0.4.0.jar'
+        SERVICE_NAME = 'family-repurchase-agent'
 
-        LOCAL_JAR = 'target\\family-repurchase-agent-0.4.0.jar'
+        BACKEND_LOCAL_JAR = 'target\\family-repurchase-agent.jar'
+        MCP_LOCAL_JAR = 'adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server.jar'
+        MCP_RUNTIME_JAR_NAME = 'family-repurchase-mcp-java-server.jar'
 
         REMOTE_TMP_JAR = '/tmp/family-repurchase-agent.jar'
         REMOTE_APP_JAR = '/opt/family-repurchase-agent/app/family-repurchase-agent.jar'
-        SERVICE_NAME = 'family-repurchase-agent'
     }
 
     stages {
@@ -60,6 +61,29 @@ pipeline {
             }
         }
 
+        stage('Validate Build Artifacts') {
+            steps {
+                bat encoding: 'UTF-8', script: '''
+                @echo off
+                chcp 65001 >NUL
+
+                echo ===== Validate build artifacts =====
+
+                if not exist "%BACKEND_LOCAL_JAR%" (
+                    echo Backend jar not found: %BACKEND_LOCAL_JAR%
+                    exit /b 1
+                )
+
+                if not exist "%MCP_LOCAL_JAR%" (
+                    echo MCP jar not found: %MCP_LOCAL_JAR%
+                    exit /b 1
+                )
+
+                echo Backend jar: %BACKEND_LOCAL_JAR%
+                echo MCP jar: %MCP_LOCAL_JAR%
+                '''
+            }
+        }
 
         stage('Publish MCP Server Locally') {
             steps {
@@ -68,10 +92,11 @@ pipeline {
                 chcp 65001 >NUL
                 setlocal EnableExtensions
 
-                set "MCP_SOURCE_JAR=adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
-                set "MCP_RUNTIME_JAR=%MCP_RUNTIME_DIR%\\family-repurchase-mcp-java-server.jar"
+                set "MCP_SOURCE_JAR=%MCP_LOCAL_JAR%"
+                set "MCP_RUNTIME_JAR=%MCP_RUNTIME_DIR%\\%MCP_RUNTIME_JAR_NAME%"
 
                 echo ===== Publish MCP Server locally =====
+                echo MCP_SOURCE_JAR=%MCP_SOURCE_JAR%
                 echo MCP_RUNTIME_DIR=%MCP_RUNTIME_DIR%
                 echo MCP_RUNTIME_JAR=%MCP_RUNTIME_JAR%
 
@@ -114,8 +139,8 @@ pipeline {
                     setlocal EnableExtensions
 
                     echo ===== Validate local jar =====
-                    if not exist "%LOCAL_JAR%" (
-                        echo LOCAL_JAR not found: %LOCAL_JAR%
+                    if not exist "%BACKEND_LOCAL_JAR%" (
+                        echo BACKEND_LOCAL_JAR not found: %BACKEND_LOCAL_JAR%
                         exit /b 1
                     )
 
@@ -129,7 +154,7 @@ pipeline {
                     if errorlevel 1 exit /b %errorlevel%
 
                     echo ===== Upload jar to server =====
-                    scp -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "%LOCAL_JAR%" "%DEPLOY_USER%@%DEPLOY_HOST%:%REMOTE_TMP_JAR%"
+                    scp -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "%BACKEND_LOCAL_JAR%" "%DEPLOY_USER%@%DEPLOY_HOST%:%REMOTE_TMP_JAR%"
                     if errorlevel 1 exit /b %errorlevel%
 
                     echo ===== Restart remote service =====

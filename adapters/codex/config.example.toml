@@ -2,7 +2,7 @@
 command = "java"
 args = [
     "-jar",
-    "<PROJECT_ROOT>\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server-0.4.0.jar"
+    "<PROJECT_ROOT>\\adapters\\mcp\\family-repurchase-mcp-java-server\\target\\family-repurchase-mcp-java-server.jar"
 ]
 startup_timeout_sec = 20
 tool_timeout_sec = 60

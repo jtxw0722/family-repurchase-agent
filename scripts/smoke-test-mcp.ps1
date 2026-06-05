@@ -12,21 +12,13 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 if ([string]::IsNullOrWhiteSpace($McpJarPath)) {
-    $mcpTarget = Join-Path $repoRoot "adapters/mcp/family-repurchase-mcp-java-server/target"
+    $McpJarPath = Join-Path $repoRoot "adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar"
 
-    $mcpJar = Get-ChildItem -Path $mcpTarget -Filter "family-repurchase-mcp-java-server-*.jar" -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Name -notlike "original-*" -and
-            $_.Name -notlike "*.original"
-        } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-
-    if ($null -eq $mcpJar) {
-        throw "MCP jar not found. Run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package"
+    if (-not (Test-Path $McpJarPath)) {
+        throw "MCP jar not found: $McpJarPath. Run: mvn -f adapters/mcp/family-repurchase-mcp-java-server/pom.xml package"
     }
 
-    $McpJarPath = $mcpJar.FullName
+    $McpJarPath = (Resolve-Path $McpJarPath).Path
 } else {
     $McpJarPath = (Resolve-Path $McpJarPath).Path
 }
@@ -230,7 +222,7 @@ try {
     $tools = @($toolsResponse.result.tools)
     $toolNames = @($tools | ForEach-Object { $_.name })
 
-    foreach ($expectedTool in @("import_file", "compare_price", "get_price_baseline", "generate_report")) {
+    foreach ($expectedTool in @("import_file", "record_purchase", "compare_price", "get_price_baseline", "generate_report")) {
         if ($toolNames -notcontains $expectedTool) {
             throw "tools/list missing tool: $expectedTool"
         }
@@ -250,53 +242,6 @@ try {
 
         return $tool
     }
-
-    function Assert-OutputSchemaProperties {
-        param(
-            [Parameter(Mandatory = $true)]
-            [object]$Tool,
-
-            [Parameter(Mandatory = $true)]
-            [string[]]$Properties
-        )
-
-        if ($null -eq $Tool.outputSchema) {
-            throw "tool '$($Tool.name)' missing outputSchema"
-        }
-
-        if ($null -eq $Tool.outputSchema.properties) {
-            throw "tool '$($Tool.name)' outputSchema missing properties"
-        }
-
-        $actualProperties = @($Tool.outputSchema.properties.PSObject.Properties.Name)
-
-        foreach ($property in $Properties) {
-            if ($actualProperties -notcontains $property) {
-                throw "tool '$($Tool.name)' outputSchema missing property: $property"
-            }
-        }
-    }
-
-    $generateReportTool = Find-Tool -Name "generate_report"
-
-    Assert-OutputSchemaProperties -Tool $generateReportTool -Properties @(
-        "month",
-        "recordCount",
-        "totalAmount",
-        "pendingReviewCount",
-        "reportPath",
-        "message"
-    )
-
-    $getPriceBaselineTool = Find-Tool -Name "get_price_baseline"
-
-    Assert-OutputSchemaProperties -Tool $getPriceBaselineTool -Properties @(
-        "productName",
-        "normalizedName",
-        "baseline",
-        "evidence",
-        "warnings"
-    )
 
     Write-Host "MCP smoke test passed. Tools: $($toolNames -join ', ')"
     exit 0

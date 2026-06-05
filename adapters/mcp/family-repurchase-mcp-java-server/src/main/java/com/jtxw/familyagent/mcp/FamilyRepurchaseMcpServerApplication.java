@@ -26,7 +26,7 @@ import java.util.concurrent.CountDownLatch;
  */
 public class FamilyRepurchaseMcpServerApplication {
     private static final String SERVER_NAME = "family-repurchase-agent";
-    private static final String SERVER_VERSION = "0.4.0";
+    private static final String SERVER_VERSION = resolveVersion();
 
     private final ObjectMapper objectMapper;
     private final FamilyAgentRestClient restClient;
@@ -38,6 +38,22 @@ public class FamilyRepurchaseMcpServerApplication {
         this.objectMapper = objectMapper;
         this.restClient = restClient;
         this.importFilePathValidator = importFilePathValidator;
+    }
+
+    /**
+     * 读取 Jar Manifest 中的 Implementation-Version。
+     *
+     * <p>本地 IDE 运行时通常读取不到版本号，此时返回 dev；打包运行时由 Maven 写入真实版本。</p>
+     *
+     * @return 应用版本号
+     */
+    private static String resolveVersion() {
+        Package currentPackage = FamilyRepurchaseMcpServerApplication.class.getPackage();
+        if (currentPackage == null) {
+            return "dev";
+        }
+        String version = currentPackage.getImplementationVersion();
+        return version == null || version.isBlank() ? "dev" : version;
     }
 
     public static void main(String[] args) {
@@ -507,7 +523,8 @@ public class FamilyRepurchaseMcpServerApplication {
                 property("shopName", stringSchema("店铺名称，可选")),
                 property("sku", stringSchema("商品规格或 SKU，可选")),
                 property("note", stringSchema("备注，可选")),
-                property("sourceText", stringSchema("自然语言原文，可选"))
+                property("sourceText", stringSchema("自然语言原文，可选")),
+                property("confirmOutOfRange", booleanSchema("是否确认接受偏离历史价格区间的样本，可选，默认 false"))
         ), List.of("productName", "price", "quantity", "unit"));
     }
 

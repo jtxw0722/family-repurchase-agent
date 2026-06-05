@@ -35,7 +35,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           gh release create "$TAG_NAME" \
-            target/family-repurchase-agent-*.jar \
-            adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-*.jar \
+            target/family-repurchase-agent.jar \
+            adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar \
             --title "$TAG_NAME" \
             --generate-notes

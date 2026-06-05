@@ -18,7 +18,7 @@ Family Repurchase Agent 的统一工具出口是 Java MCP Server。Claude Code�
 
 MCP jar 路径：
 
-`<PROJECT_ROOT>/adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server-0.4.0.jar`
+`<PROJECT_ROOT>/adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java-server.jar`
 
 构建命令：
 
