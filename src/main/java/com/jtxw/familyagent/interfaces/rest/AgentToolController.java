@@ -139,6 +139,25 @@ public class AgentToolController {
         return reviewApplicationService.apply(id, request.action(), request.note());
     }
 
+    /**
+     * 应用商品归一化复核动作。
+     *
+     * <p>该接口只处理 PRODUCT_NAME_NORMALIZATION_REVIEW 的确认、拒绝和忽略动作，
+     * 普通 include/exclude 统计决策复核仍由 /review-items/{id}/apply 处理。</p>
+     *
+     * @param id      复核项 ID
+     * @param request 归一化复核请求
+     * @return 复核应用结果
+     */
+    @Operation(summary = "应用商品归一化复核", description = "统一处理商品归一化确认、拒绝或忽略动作，并沉淀正向/负向别名。")
+    @PostMapping("/review-items/{id}/apply-normalization")
+    public ReviewApplyResult applyNormalizationReview(@PathVariable long id,
+                                                      @RequestBody(required = false) ApplyNormalizationReviewRequest request) {
+        ApplyNormalizationReviewRequest body = request == null ? new ApplyNormalizationReviewRequest() : request;
+        return reviewApplicationService.applyNormalization(id, body.action(), body.normalizedName(),
+                body.targetUnit(), body.includeInBaseline(), body.rejectedNormalizedName(), body.note());
+    }
+
     @Schema(description = "本地订单文件导入请求")
     public static class ImportFileRequest {
         /**
@@ -359,6 +378,117 @@ public class AgentToolController {
 
         public void setAction(String action) {
             this.action = action;
+        }
+
+        public String getNote() {
+            return note;
+        }
+
+        public void setNote(String note) {
+            this.note = note;
+        }
+    }
+
+    @Schema(description = "商品归一化复核应用请求")
+    public static class ApplyNormalizationReviewRequest {
+        /**
+         * 归一化复核动作，取值 confirm、reject 或 ignore
+         */
+        @Schema(description = "归一化复核动作，confirm 确认、reject 拒绝、ignore 忽略",
+                example = "confirm", allowableValues = {"confirm", "reject", "ignore"},
+                requiredMode = Schema.RequiredMode.REQUIRED)
+        private String action;
+        /**
+         * 人工确认的标准品类
+         */
+        @Schema(description = "confirm 时人工确认的标准品类", example = "沐浴露")
+        private String normalizedName;
+        /**
+         * 标准单位
+         */
+        @Schema(description = "confirm 时标准单位；为空时使用购买记录当前单位", example = "L")
+        private String targetUnit;
+        /**
+         * 是否同步纳入价格基准
+         */
+        @Schema(description = "confirm 时是否同步将购买记录 decision 改为 include", example = "true")
+        private boolean includeInBaseline;
+        /**
+         * 被拒绝的标准品类
+         */
+        @Schema(description = "reject 时被拒绝的标准品类；为空时使用购买记录当前 normalized_name", example = "猫砂")
+        private String rejectedNormalizedName;
+        /**
+         * 复核备注
+         */
+        @Schema(description = "人工复核备注")
+        private String note;
+
+        public ApplyNormalizationReviewRequest() {
+        }
+
+        public String action() {
+            return action;
+        }
+
+        public String normalizedName() {
+            return normalizedName;
+        }
+
+        public String targetUnit() {
+            return targetUnit;
+        }
+
+        public boolean includeInBaseline() {
+            return includeInBaseline;
+        }
+
+        public String rejectedNormalizedName() {
+            return rejectedNormalizedName;
+        }
+
+        public String note() {
+            return note;
+        }
+
+        public String getAction() {
+            return action;
+        }
+
+        public void setAction(String action) {
+            this.action = action;
+        }
+
+        public String getNormalizedName() {
+            return normalizedName;
+        }
+
+        public void setNormalizedName(String normalizedName) {
+            this.normalizedName = normalizedName;
+        }
+
+        public String getTargetUnit() {
+            return targetUnit;
+        }
+
+        public void setTargetUnit(String targetUnit) {
+            this.targetUnit = targetUnit;
+        }
+
+        public boolean isIncludeInBaseline() {
+            return includeInBaseline;
+        }
+
+        public void setIncludeInBaseline(boolean includeInBaseline) {
+            this.includeInBaseline = includeInBaseline;
+        }
+
+        public String getRejectedNormalizedName() {
+            return rejectedNormalizedName;
+        }
+
+        public void setRejectedNormalizedName(String rejectedNormalizedName) {
+            this.rejectedNormalizedName = rejectedNormalizedName;
         }
 
         public String getNote() {

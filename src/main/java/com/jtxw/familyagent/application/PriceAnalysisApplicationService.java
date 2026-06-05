@@ -3,9 +3,9 @@ package com.jtxw.familyagent.application;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
+import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.PriceDecisionPolicy;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import org.springframework.stereotype.Service;
@@ -20,12 +20,12 @@ import java.util.List;
 @Service
 public class PriceAnalysisApplicationService {
     private final DatabaseInitializer databaseInitializer;
-    private final ProductNameNormalizer productNameNormalizer;
+    private final LearningProductNameNormalizer productNameNormalizer;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final PriceDecisionPolicy priceDecisionPolicy;
 
     public PriceAnalysisApplicationService(DatabaseInitializer databaseInitializer,
-                                           ProductNameNormalizer productNameNormalizer,
+                                           LearningProductNameNormalizer productNameNormalizer,
                                            PurchaseRecordRepository purchaseRecordRepository,
                                            PriceDecisionPolicy priceDecisionPolicy) {
         this.databaseInitializer = databaseInitializer;

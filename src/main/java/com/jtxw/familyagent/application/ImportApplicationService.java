@@ -7,8 +7,8 @@ import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
 import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
 import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
+import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
@@ -40,7 +40,7 @@ public class ImportApplicationService {
     private final PaymentAdjustmentPolicy paymentAdjustmentPolicy;
     private final OwnerNormalizer ownerNormalizer;
     private final PurchaseTimeNormalizer purchaseTimeNormalizer;
-    private final ProductNameNormalizer productNameNormalizer;
+    private final LearningProductNameNormalizer productNameNormalizer;
     private final QuantityUnitParser quantityUnitParser;
     private final UnitPriceCalculator unitPriceCalculator;
     private final ImportBatchRepository importBatchRepository;
@@ -54,7 +54,7 @@ public class ImportApplicationService {
                                     PaymentAdjustmentPolicy paymentAdjustmentPolicy,
                                     OwnerNormalizer ownerNormalizer,
                                     PurchaseTimeNormalizer purchaseTimeNormalizer,
-                                    ProductNameNormalizer productNameNormalizer,
+                                    LearningProductNameNormalizer productNameNormalizer,
                                     QuantityUnitParser quantityUnitParser,
                                     UnitPriceCalculator unitPriceCalculator,
                                     ImportBatchRepository importBatchRepository,
@@ -124,6 +124,8 @@ public class ImportApplicationService {
             // 后端导入链路内完成商品归一化，MCP Server 只负责把 import_file 请求转发到这里。
             ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(raw.productName(), raw.sku());
             String normalizedName = nameResult.normalizedName();
+            // 负向别名是人工确认过的误判样本：自动排除，但不再生成归一化复核噪音。
+            boolean negativeAliasExcluded = isProductNegativeAlias(nameResult);
             PaymentAdjustmentPolicy.PaymentAdjustmentResult amountResult = paymentAdjustmentPolicy.adjust(raw);
             Double totalAmount = amountResult.totalAmount();
             // 规格解析使用归一化后的标准品类和目标单位；高置信结果会覆盖原始“件”等粗粒度单位。
@@ -161,7 +163,7 @@ public class ImportApplicationService {
                     null, batchId, normalizedOrderTime, raw.platform(), normalizedOwner, raw.productName(), normalizedName,
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
-                    unitPrice, raw.currency(), duplicate || normalizationReviewRequired ? "exclude" : "include", duplicate,
+                    unitPrice, raw.currency(), duplicate || normalizationReviewRequired || negativeAliasExcluded ? "exclude" : "include", duplicate,
                     duplicate ? "duplicate" : "unique", file.toString(), ClockUtils.nowText()
             );
             long recordId = purchaseRecordRepository.save(record);
@@ -225,6 +227,10 @@ public class ImportApplicationService {
                 safeText(raw.category()),
                 safeText(raw.subCategory()));
         return text.contains("赠品") || text.contains("试用");
+    }
+
+    private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
+        return "product_negative_alias".equals(nameResult.matchedRule());
     }
 
     private String safeText(String value) {

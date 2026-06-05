@@ -10,6 +10,8 @@ import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import org.apache.poi.ss.usermodel.Row;
@@ -184,13 +186,22 @@ class ImportSpecIntegrationTest {
         DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
+        databaseInitializer.initialize();
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
+        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
+        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ProductSpecParser productSpecParser = new ProductSpecParser();
         OrderImportMapper orderImportMapper = new OrderImportMapper(productSpecParser);
         ProductNormalizer productNormalizer = new ProductNormalizer();
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(productNormalizer, testRules());
+        LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
+                new ProductTitleCleaner(),
+                productAliasRepository,
+                productNegativeAliasRepository,
+                productNameNormalizer
+        );
         ImportApplicationService importService = new ImportApplicationService(
                 databaseInitializer,
                 new CsvPurchaseImporter(orderImportMapper),
@@ -199,7 +210,7 @@ class ImportSpecIntegrationTest {
                 new PaymentAdjustmentPolicy(),
                 new OwnerNormalizer(),
                 new PurchaseTimeNormalizer(),
-                productNameNormalizer,
+                learningProductNameNormalizer,
                 new QuantityUnitParser(),
                 new UnitPriceCalculator(),
                 importBatchRepository,
@@ -208,7 +219,7 @@ class ImportSpecIntegrationTest {
         );
         PriceAnalysisApplicationService priceService = new PriceAnalysisApplicationService(
                 databaseInitializer,
-                productNameNormalizer,
+                learningProductNameNormalizer,
                 purchaseRecordRepository,
                 newPriceDecisionPolicy()
         );

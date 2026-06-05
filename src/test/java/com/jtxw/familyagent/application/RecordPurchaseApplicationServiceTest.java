@@ -5,15 +5,19 @@ import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
+import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.NormalizationRule;
 import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
 import com.jtxw.familyagent.domain.policy.PriceDecisionThresholds;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.ProductNormalizer;
+import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
 import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import org.junit.jupiter.api.Test;
@@ -472,7 +476,10 @@ class RecordPurchaseApplicationServiceTest {
         DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
+        databaseInitializer.initialize();
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
+        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
+        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(
@@ -480,9 +487,15 @@ class RecordPurchaseApplicationServiceTest {
                 List.of(new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
                         List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100))
         );
+        LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
+                new ProductTitleCleaner(),
+                productAliasRepository,
+                productNegativeAliasRepository,
+                productNameNormalizer
+        );
         RecordPurchaseApplicationService service = new RecordPurchaseApplicationService(
                 databaseInitializer,
-                productNameNormalizer,
+                learningProductNameNormalizer,
                 new QuantityUnitParser(),
                 new DuplicateDetectionPolicy(),
                 new OwnerNormalizer(),

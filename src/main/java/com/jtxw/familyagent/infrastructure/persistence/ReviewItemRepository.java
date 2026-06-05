@@ -108,6 +108,26 @@ public class ReviewItemRepository {
     }
 
     /**
+     * 判断同一购买记录上是否仍存在其他阻塞型复核项。
+     *
+     * <p>阻塞条件包括仍待处理的复核项，以及已经被人工确认为 exclude 的风险复核项。
+     * 这样确认商品归一化时不能把同一记录从 exclude 覆盖回 include，避免绕过已确认风险。</p>
+     *
+     * @param recordId        购买记录 ID
+     * @param currentReviewId 当前正在处理的复核项 ID
+     * @return 是否存在其他阻塞型复核项
+     */
+    public boolean existsOtherBlockingReviewByRecordId(long recordId, long currentReviewId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM review_items
+                WHERE record_id = ?
+                  AND id <> ?
+                  AND (status = 'pending' OR review_decision = 'exclude')
+                """, Integer.class, recordId, currentReviewId);
+        return count != null && count > 0;
+    }
+
+    /**
      * 将待复核项标记为已处理。
      *
      * <p>该方法只更新 pending 状态的复核项，用于避免重复应用人工复核结果。</p>

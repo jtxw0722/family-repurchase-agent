@@ -19,13 +19,14 @@
 
 - CSV / Excel 订单文件导入
 - 自然语言 / 手动购买记录录入
-- SQLite 本地存储
-- 商品名称归一化
+- SQLite 本地存储 
+- 商品名称归一化 
+- 商品归一化样本沉淀：人工确认后的正向 alias、负向 alias 可被后续导入复用 
+- 异常样本人工复核：支持统计决策复核和商品归一化学习复核
 - 规格解析与单位价格计算
 - 当前价格与本地历史价格对比
 - 历史价格基准线查询
 - 重复记录检测
-- 异常样本人工复核
 - 手动录入防御：未来日期、重复订单、单位不匹配、价格偏离历史区间
 - 购买记录溯源：`shopName`、`note`、`sourceText`
 - Markdown 复购品价格报告
@@ -87,6 +88,9 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/compare-price`
 - `/api/tools/get-price-baseline`
 - `/api/tools/generate-report`
+- `/api/tools/review-items`
+- `/api/tools/review-items/{id}/apply`
+- `/api/tools/review-items/{id}/apply-normalization`
 
 MCP tools：
 
@@ -146,6 +150,13 @@ http://localhost:8080/swagger-ui.html
 curl -X POST "http://localhost:8080/api/tools/import-file" `
   -H "Content-Type: application/json" `
   -d "{\"filePath\":\"examples/sample_orders.csv\",\"owner\":\"jtxw\"}"
+```
+### 归一化复核
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/review-items/12/apply-normalization" `
+  -H "Content-Type: application/json" `
+  -d "{\"action\":\"confirm\",\"normalizedName\":\"沐浴露\",\"targetUnit\":\"L\",\"includeInBaseline\":true,\"note\":\"确认该商品归一化为沐浴露\"}"
 ```
 
 ### 手动 / 自然语言购买记录录入
@@ -303,6 +314,7 @@ Family Repurchase Agent 默认本地运行。
 - 工具计算优先：LLM 负责理解意图和解释结果，价格判断由后端基于历史样本计算。
 - 价格判断阈值当前采用可配置的启发式 MVP 规则：当前单价低于历史最低价，或低于历史中位价一定比例时判断为好价；明显高于历史中位价时判断为偏贵。具体阈值和工具返回契约见 [Tool Contract](docs/tool_contract.md)。
 - 自然语言录入：用于补足京东、拼多多、线下超市等不方便导出订单的平台。LLM 只负责从自然语言中抽取结构化字段，后端负责最终校验和入库决策。
+- 归一化学习闭环：系统不会让未确认的低置信归一化结果直接进入价格基准。人工确认后的正向别名会沉淀到 `product_aliases`，人工拒绝的误判会沉淀到 `product_negative_aliases`，后续导入和查询优先使用这些确定性样本，避免重复复核和规则膨胀。
 
 ---
 

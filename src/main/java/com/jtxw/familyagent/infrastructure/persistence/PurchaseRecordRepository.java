@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * @Author: jtxw
@@ -110,6 +111,18 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 根据 ID 查询购买记录。
+     *
+     * @param id 购买记录 ID
+     * @return 购买记录
+     */
+    public Optional<PurchaseRecord> findById(long id) {
+        List<PurchaseRecord> records = jdbcTemplate.query("SELECT * FROM purchase_records WHERE id = ?",
+                rowMapper(), id);
+        return records.stream().findFirst();
+    }
+
+    /**
      * 查询指定商品的历史有效单价样本。
      *
      * <p>默认只返回正式统计口径内的记录：
@@ -190,6 +203,22 @@ public class PurchaseRecordRepository {
      */
     public int updateDecision(long id, String decision) {
         return jdbcTemplate.update("UPDATE purchase_records SET decision = ? WHERE id = ?", decision, id);
+    }
+
+    /**
+     * 更新购买记录的归一化商品名和统计决策。
+     *
+     * @param id             购买记录 ID
+     * @param normalizedName 归一化商品名
+     * @param decision       统计决策
+     * @return 更新记录数
+     */
+    public int updateNormalizationAndDecision(long id, String normalizedName, String decision) {
+        return jdbcTemplate.update("""
+                UPDATE purchase_records
+                SET normalized_name = ?, decision = ?
+                WHERE id = ?
+                """, normalizedName, decision, id);
     }
 
     /**

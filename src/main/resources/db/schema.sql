@@ -40,9 +40,20 @@ CREATE TABLE IF NOT EXISTS purchase_records (
 
 CREATE TABLE IF NOT EXISTS product_aliases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    alias TEXT NOT NULL UNIQUE,
+    alias TEXT NOT NULL,
+    alias_key TEXT NOT NULL UNIQUE,
     normalized_name TEXT NOT NULL,
+    target_unit TEXT,
     category TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_negative_aliases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alias TEXT NOT NULL,
+    alias_key TEXT NOT NULL UNIQUE,
+    rejected_normalized_name TEXT NOT NULL,
+    reason TEXT,
     created_at TEXT NOT NULL
 );
 

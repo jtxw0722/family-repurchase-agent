@@ -6,8 +6,8 @@ import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
 import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
+import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
 import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
@@ -41,7 +41,7 @@ public class RecordPurchaseApplicationService {
     private static final double HIGH_PRICE_FACTOR = 1.2D;
 
     private final DatabaseInitializer databaseInitializer;
-    private final ProductNameNormalizer productNameNormalizer;
+    private final LearningProductNameNormalizer productNameNormalizer;
     private final QuantityUnitParser quantityUnitParser;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
     private final OwnerNormalizer ownerNormalizer;
@@ -51,7 +51,7 @@ public class RecordPurchaseApplicationService {
     private final ReviewItemRepository reviewItemRepository;
 
     public RecordPurchaseApplicationService(DatabaseInitializer databaseInitializer,
-                                            ProductNameNormalizer productNameNormalizer,
+                                            LearningProductNameNormalizer productNameNormalizer,
                                             QuantityUnitParser quantityUnitParser,
                                             DuplicateDetectionPolicy duplicateDetectionPolicy,
                                             OwnerNormalizer ownerNormalizer,
@@ -123,6 +123,8 @@ public class RecordPurchaseApplicationService {
         String productName = input.productName().trim();
         String sku = resolveSku(input.sku());
         ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(productName, sku);
+        // 负向别名是人工确认过的误判样本：自动排除，但不再创建商品归一化复核项。
+        boolean negativeAliasExcluded = isProductNegativeAlias(nameResult);
 
         double resolvedQuantity = input.quantity();
         String resolvedUnit = input.unit().trim();
@@ -177,7 +179,7 @@ public class RecordPurchaseApplicationService {
         if (reviewReasons.isEmpty() && !Boolean.TRUE.equals(input.confirmOutOfRange())) {
             detectPriceOutOfBaselineRange(candidate, reviewReasons);
         }
-        String decision = reviewReasons.isEmpty() ? "include" : "exclude";
+        String decision = reviewReasons.isEmpty() && !negativeAliasExcluded ? "include" : "exclude";
         PurchaseRecord record = new PurchaseRecord(
                 null, batchId, candidate.orderTime(), candidate.platform(), candidate.owner(), candidate.productName(),
                 candidate.normalizedName(), candidate.sku(), candidate.category(), candidate.subCategory(),
@@ -220,6 +222,10 @@ public class RecordPurchaseApplicationService {
                             "当前单价 %.6f 元/%s 明显高于历史最高 %.6f 元/%s，疑似规格、单位或商品归一化错误，需要用户确认。",
                             unitPrice, candidate.unit(), stats.historicalMax(), candidate.unit())));
         }
+    }
+
+    private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
+        return "product_negative_alias".equals(nameResult.matchedRule());
     }
 
     private void validate(RecordPurchaseRequest request) {

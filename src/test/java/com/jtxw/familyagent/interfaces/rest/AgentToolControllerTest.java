@@ -9,6 +9,7 @@ import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
+import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -195,6 +196,87 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("purchaseDate 格式错误，请使用 yyyy-MM-dd，例如 2026-06-04。"));
+    }
+
+    @Test
+    void applyNormalizationShouldConfirmReview() throws Exception {
+        when(reviewApplicationService.applyNormalization(eq(12L), eq("confirm"), eq("沐浴露"), eq("L"),
+                eq(true), isNull(), eq("确认")))
+                .thenReturn(new ReviewApplyResult(12L, 100L, "confirm_normalization", "include",
+                        "resolved", "归一化已确认"));
+
+        mockMvc.perform(post("/api/tools/review-items/12/apply-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "confirm",
+                                  "normalizedName": "沐浴露",
+                                  "targetUnit": "L",
+                                  "includeInBaseline": true,
+                                  "note": "确认"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("confirm_normalization"))
+                .andExpect(jsonPath("$.decision").value("include"));
+    }
+
+    @Test
+    void applyNormalizationShouldRejectReview() throws Exception {
+        when(reviewApplicationService.applyNormalization(eq(13L), eq("reject"), isNull(), isNull(),
+                eq(false), eq("猫砂"), eq("误判")))
+                .thenReturn(new ReviewApplyResult(13L, 101L, "reject_normalization", "exclude",
+                        "resolved", "归一化已拒绝"));
+
+        mockMvc.perform(post("/api/tools/review-items/13/apply-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "reject",
+                                  "rejectedNormalizedName": "猫砂",
+                                  "note": "误判"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("reject_normalization"))
+                .andExpect(jsonPath("$.decision").value("exclude"));
+    }
+
+    @Test
+    void applyNormalizationShouldIgnoreReview() throws Exception {
+        when(reviewApplicationService.applyNormalization(eq(14L), eq("ignore"), isNull(), isNull(),
+                eq(false), isNull(), eq("暂不学习")))
+                .thenReturn(new ReviewApplyResult(14L, 102L, "ignore_normalization", "exclude",
+                        "resolved", "归一化复核已忽略"));
+
+        mockMvc.perform(post("/api/tools/review-items/14/apply-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "ignore",
+                                  "note": "暂不学习"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("ignore_normalization"));
+    }
+
+    @Test
+    void applyNormalizationShouldRejectInvalidAction() throws Exception {
+        when(reviewApplicationService.applyNormalization(eq(15L), eq("learn"), isNull(), isNull(),
+                eq(false), isNull(), eq("无效动作")))
+                .thenThrow(new IllegalArgumentException("不支持的商品归一化复核动作：learn"));
+
+        mockMvc.perform(post("/api/tools/review-items/15/apply-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "learn",
+                                  "note": "无效动作"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("不支持的商品归一化复核动作：learn"));
     }
 
     private PriceBaselineResult priceBaselineResult() {
