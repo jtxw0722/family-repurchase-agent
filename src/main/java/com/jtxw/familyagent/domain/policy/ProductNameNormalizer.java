@@ -80,7 +80,7 @@ public class ProductNameNormalizer {
                 fallback.standardUnit(),
                 0.5D,
                 "legacy_fallback",
-                fallback.reviewRequired()
+                true
         );
     }
 

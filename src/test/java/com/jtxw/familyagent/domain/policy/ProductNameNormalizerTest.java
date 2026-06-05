@@ -65,4 +65,13 @@ class ProductNameNormalizerTest {
                         java.util.List.of("洗衣液", "洗衣用品"), 10)
         );
     }
+
+    @Test
+    void shouldRequireReviewWhenFallbackToOriginalProductName() {
+        ProductNameNormalizationResult result = normalizer.normalize("舒肤佳红石榴泡沫沐浴露", "");
+
+        assertThat(result.matchedRule()).isEqualTo("legacy_fallback");
+        assertThat(result.confidence()).isEqualTo(0.5D);
+        assertThat(result.needReview()).isTrue();
+    }
 }
