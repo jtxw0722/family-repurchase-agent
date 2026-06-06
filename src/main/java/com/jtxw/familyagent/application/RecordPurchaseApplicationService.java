@@ -11,10 +11,12 @@ import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
 import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
+import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -28,7 +30,7 @@ import java.util.Set;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/04
+ * @Date: 2026/06/06 00:27:12
  * @Description: 手动购买记录录入应用服务，负责校验、归一化、单价计算、去重、入库和复核创建。
  */
 @Service
@@ -49,6 +51,30 @@ public class RecordPurchaseApplicationService {
     private final ImportBatchRepository importBatchRepository;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final ReviewItemRepository reviewItemRepository;
+    private final NormalizationProperties normalizationProperties;
+
+    @Autowired
+    public RecordPurchaseApplicationService(DatabaseInitializer databaseInitializer,
+                                            LearningProductNameNormalizer productNameNormalizer,
+                                            QuantityUnitParser quantityUnitParser,
+                                            DuplicateDetectionPolicy duplicateDetectionPolicy,
+                                            OwnerNormalizer ownerNormalizer,
+                                            PurchaseTimeNormalizer purchaseTimeNormalizer,
+                                            ImportBatchRepository importBatchRepository,
+                                            PurchaseRecordRepository purchaseRecordRepository,
+                                            ReviewItemRepository reviewItemRepository,
+                                            NormalizationProperties normalizationProperties) {
+        this.databaseInitializer = databaseInitializer;
+        this.productNameNormalizer = productNameNormalizer;
+        this.quantityUnitParser = quantityUnitParser;
+        this.duplicateDetectionPolicy = duplicateDetectionPolicy;
+        this.ownerNormalizer = ownerNormalizer;
+        this.purchaseTimeNormalizer = purchaseTimeNormalizer;
+        this.importBatchRepository = importBatchRepository;
+        this.purchaseRecordRepository = purchaseRecordRepository;
+        this.reviewItemRepository = reviewItemRepository;
+        this.normalizationProperties = normalizationProperties;
+    }
 
     public RecordPurchaseApplicationService(DatabaseInitializer databaseInitializer,
                                             LearningProductNameNormalizer productNameNormalizer,
@@ -59,15 +85,9 @@ public class RecordPurchaseApplicationService {
                                             ImportBatchRepository importBatchRepository,
                                             PurchaseRecordRepository purchaseRecordRepository,
                                             ReviewItemRepository reviewItemRepository) {
-        this.databaseInitializer = databaseInitializer;
-        this.productNameNormalizer = productNameNormalizer;
-        this.quantityUnitParser = quantityUnitParser;
-        this.duplicateDetectionPolicy = duplicateDetectionPolicy;
-        this.ownerNormalizer = ownerNormalizer;
-        this.purchaseTimeNormalizer = purchaseTimeNormalizer;
-        this.importBatchRepository = importBatchRepository;
-        this.purchaseRecordRepository = purchaseRecordRepository;
-        this.reviewItemRepository = reviewItemRepository;
+        this(databaseInitializer, productNameNormalizer, quantityUnitParser, duplicateDetectionPolicy,
+                ownerNormalizer, purchaseTimeNormalizer, importBatchRepository, purchaseRecordRepository,
+                reviewItemRepository, legacyReviewProperties());
     }
 
     public RecordPurchaseResult record(RecordPurchaseRequest request) {
@@ -132,7 +152,7 @@ public class RecordPurchaseApplicationService {
         List<ReviewReason> reviewReasons = new ArrayList<>();
 
         String targetUnit = nameResult.targetUnit();
-        if (nameResult.needReview()) {
+        if (shouldCreateProductNameReview(nameResult)) {
             reviewReasons.add(new ReviewReason("PRODUCT_NAME_NORMALIZATION_REVIEW",
                     "商品归一化置信度较低，matchedRule=" + nameResult.matchedRule()));
         }
@@ -179,14 +199,14 @@ public class RecordPurchaseApplicationService {
         if (reviewReasons.isEmpty() && !Boolean.TRUE.equals(input.confirmOutOfRange())) {
             detectPriceOutOfBaselineRange(candidate, reviewReasons);
         }
-        String decision = reviewReasons.isEmpty() && !negativeAliasExcluded ? "include" : "exclude";
+        String decision = reviewReasons.isEmpty() && !nameResult.needReview() && !negativeAliasExcluded ? "include" : "exclude";
         PurchaseRecord record = new PurchaseRecord(
                 null, batchId, candidate.orderTime(), candidate.platform(), candidate.owner(), candidate.productName(),
                 candidate.normalizedName(), candidate.sku(), candidate.category(), candidate.subCategory(),
                 candidate.quantity(), candidate.unit(), candidate.totalAmount(), candidate.productAmount(),
                 candidate.paidAmount(), candidate.shippingFee(), candidate.amountSource(), candidate.unitPrice(),
                 candidate.currency(), decision, duplicate, duplicate ? "duplicate" : "unique",
-                candidate.sourceFile(), candidate.shopName(), candidate.note(), candidate.sourceText(),
+                candidate.sourceFile(), candidate.shopName(), candidate.note(), candidate.sourceText(), nameResult.matchedRule(),
                 candidate.createdAt()
         );
         return new PreparedManualRecord(record, reviewReasons);
@@ -226,6 +246,17 @@ public class RecordPurchaseApplicationService {
 
     private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
         return "product_negative_alias".equals(nameResult.matchedRule());
+    }
+
+    private boolean shouldCreateProductNameReview(ProductNameNormalizationResult nameResult) {
+        if (!nameResult.needReview()) {
+            return false;
+        }
+        // legacy_fallback 在 llm_suggestion/silent_exclude 模式下不立即创建逐条归一化复核。
+        if ("legacy_fallback".equals(nameResult.matchedRule())) {
+            return normalizationProperties.immediateFallbackReview();
+        }
+        return true;
     }
 
     private void validate(RecordPurchaseRequest request) {
@@ -283,5 +314,11 @@ public class RecordPurchaseApplicationService {
     }
 
     private record ReviewReason(String code, String message) {
+    }
+
+    private static NormalizationProperties legacyReviewProperties() {
+        NormalizationProperties properties = new NormalizationProperties();
+        properties.setFallbackReviewMode("immediate_review");
+        return properties;
     }
 }

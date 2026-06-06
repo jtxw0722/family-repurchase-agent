@@ -5,6 +5,7 @@ import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.domain.model.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -21,7 +22,7 @@ import java.util.Map;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/13/10:28
+ * @Date: 2026/06/06 17:58:26
  * @Description: REST Tool API 控制器，暴露导入、比价、报告和复核查询接口。
  */
 @Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
@@ -33,17 +34,20 @@ public class AgentToolController {
     private final RecordPurchaseApplicationService recordPurchaseApplicationService;
     private final ReportApplicationService reportApplicationService;
     private final ReviewApplicationService reviewApplicationService;
+    private final NormalizationSuggestionService normalizationSuggestionService;
 
     public AgentToolController(ImportApplicationService importApplicationService,
                                PriceAnalysisApplicationService priceAnalysisApplicationService,
                                RecordPurchaseApplicationService recordPurchaseApplicationService,
                                ReportApplicationService reportApplicationService,
-                               ReviewApplicationService reviewApplicationService) {
+                               ReviewApplicationService reviewApplicationService,
+                               NormalizationSuggestionService normalizationSuggestionService) {
         this.importApplicationService = importApplicationService;
         this.priceAnalysisApplicationService = priceAnalysisApplicationService;
         this.recordPurchaseApplicationService = recordPurchaseApplicationService;
         this.reportApplicationService = reportApplicationService;
         this.reviewApplicationService = reviewApplicationService;
+        this.normalizationSuggestionService = normalizationSuggestionService;
     }
 
     /**
@@ -156,6 +160,52 @@ public class AgentToolController {
         ApplyNormalizationReviewRequest body = request == null ? new ApplyNormalizationReviewRequest() : request;
         return reviewApplicationService.applyNormalization(id, body.action(), body.normalizedName(),
                 body.targetUnit(), body.includeInBaseline(), body.rejectedNormalizedName(), body.note());
+    }
+
+    /**
+     * 触发指定导入批次的 LLM 商品归一化建议分析。
+     *
+     * <p>该接口只分析 legacy_fallback 商品，并将 LLM 输出写入 normalization_suggestions；
+     * 高置信 NORMALIZE 不会直接纳入价格基准。</p>
+     *
+     * @param batchId 导入批次 ID
+     * @param request 分析控制参数，允许为空
+     * @return 批次分析结果
+     */
+    @Operation(summary = "分析批次商品归一化建议", description = "对导入批次内 legacy_fallback 商品触发 LLM Advisor 分析，并保存建议审计记录。")
+    @PostMapping("/import-batches/{batchId}/analyze-normalization")
+    public NormalizationAnalyzeResult analyzeNormalization(@PathVariable long batchId,
+                                                           @RequestBody(required = false) AnalyzeNormalizationRequest request) {
+        AnalyzeNormalizationRequest body = request == null ? new AnalyzeNormalizationRequest() : request;
+        return normalizationSuggestionService.analyzeBatch(batchId, body.limit(), body.forceReanalyze(),
+                body.includeKeywords(), body.excludeKeywords(), body.onlyFailed());
+    }
+
+    /**
+     * 查询指定批次的商品归一化建议。
+     *
+     * @param batchId 导入批次 ID
+     * @return 当前批次的建议列表
+     */
+    @Operation(summary = "查询商品归一化建议", description = "查询指定导入批次的 normalization_suggestions 审计记录。")
+    @GetMapping("/normalization-suggestions")
+    public List<NormalizationSuggestion> listNormalizationSuggestions(@RequestParam long batchId) {
+        return normalizationSuggestionService.listByBatchId(batchId);
+    }
+
+    /**
+     * 批量应用高置信 NORMALIZE 商品归一化建议。
+     *
+     * <p>该接口只写入 product_aliases 和更新 suggestion 状态，不修改历史购买记录 decision。</p>
+     *
+     * @param request 批量应用请求
+     * @return 批量应用结果
+     */
+    @Operation(summary = "批量应用商品归一化建议", description = "批量确认 pending_batch_approval 的 NORMALIZE suggestions，并写入 product_aliases。")
+    @PostMapping("/normalization-suggestions/batch-apply")
+    public NormalizationBatchApplyResult applyNormalizationSuggestions(@Valid @RequestBody BatchApplyNormalizationRequest request) {
+        return normalizationSuggestionService.batchApply(request.batchId(), request.action(),
+                request.minConfidence(), request.onlyStatus());
     }
 
     @Schema(description = "本地订单文件导入请求")
@@ -386,6 +436,175 @@ public class AgentToolController {
 
         public void setNote(String note) {
             this.note = note;
+        }
+    }
+
+    @Schema(description = "批次商品归一化分析请求")
+    public static class AnalyzeNormalizationRequest {
+        /**
+         * 最大分析候选数，默认 100。
+         */
+        @Schema(description = "最大分析候选数", example = "100")
+        private int limit = 100;
+        /**
+         * 是否忽略同批次已有建议后重新分析。
+         */
+        @Schema(description = "是否强制重新分析", example = "false")
+        private boolean forceReanalyze = false;
+        /**
+         * 包含关键词，命中商品名或 SKU 任一字段才进入候选；为空时不过滤。
+         */
+        @Schema(description = "包含关键词，命中商品名或 SKU 任一字段才进入候选")
+        private List<String> includeKeywords = List.of();
+        /**
+         * 排除关键词，命中商品名或 SKU 任一字段时排除；为空时不过滤。
+         */
+        @Schema(description = "排除关键词，命中商品名或 SKU 任一字段时排除")
+        private List<String> excludeKeywords = List.of();
+        /**
+         * 是否只重试已有 failed suggestion 对应的候选。
+         */
+        @Schema(description = "是否只重试已有 failed suggestion 对应的候选", example = "false")
+        private boolean onlyFailed = false;
+
+        public AnalyzeNormalizationRequest() {
+        }
+
+        public int limit() {
+            return limit;
+        }
+
+        public boolean forceReanalyze() {
+            return forceReanalyze;
+        }
+
+        public List<String> includeKeywords() {
+            return includeKeywords;
+        }
+
+        public List<String> excludeKeywords() {
+            return excludeKeywords;
+        }
+
+        public boolean onlyFailed() {
+            return onlyFailed;
+        }
+
+        public int getLimit() {
+            return limit;
+        }
+
+        public void setLimit(int limit) {
+            this.limit = limit;
+        }
+
+        public boolean isForceReanalyze() {
+            return forceReanalyze;
+        }
+
+        public void setForceReanalyze(boolean forceReanalyze) {
+            this.forceReanalyze = forceReanalyze;
+        }
+
+        public List<String> getIncludeKeywords() {
+            return includeKeywords;
+        }
+
+        public void setIncludeKeywords(List<String> includeKeywords) {
+            this.includeKeywords = includeKeywords == null ? List.of() : includeKeywords;
+        }
+
+        public List<String> getExcludeKeywords() {
+            return excludeKeywords;
+        }
+
+        public void setExcludeKeywords(List<String> excludeKeywords) {
+            this.excludeKeywords = excludeKeywords == null ? List.of() : excludeKeywords;
+        }
+
+        public boolean isOnlyFailed() {
+            return onlyFailed;
+        }
+
+        public void setOnlyFailed(boolean onlyFailed) {
+            this.onlyFailed = onlyFailed;
+        }
+    }
+
+    @Schema(description = "商品归一化建议批量应用请求")
+    public static class BatchApplyNormalizationRequest {
+        /**
+         * 导入批次 ID。
+         */
+        @Schema(description = "导入批次 ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Positive
+        private long batchId;
+        /**
+         * 批量动作，当前仅支持 approve_normalize。
+         */
+        @Schema(description = "批量动作", example = "approve_normalize", allowableValues = {"approve_normalize"}, requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank
+        private String action;
+        /**
+         * 最小置信度阈值。
+         */
+        @Schema(description = "最小置信度阈值", example = "0.92")
+        private double minConfidence = 0.92D;
+        /**
+         * 只应用的 suggestion 状态，默认 pending_batch_approval。
+         */
+        @Schema(description = "只应用的 suggestion 状态", example = "pending_batch_approval")
+        private String onlyStatus = "pending_batch_approval";
+
+        public BatchApplyNormalizationRequest() {
+        }
+
+        public long batchId() {
+            return batchId;
+        }
+
+        public String action() {
+            return action;
+        }
+
+        public double minConfidence() {
+            return minConfidence;
+        }
+
+        public String onlyStatus() {
+            return onlyStatus;
+        }
+
+        public long getBatchId() {
+            return batchId;
+        }
+
+        public void setBatchId(long batchId) {
+            this.batchId = batchId;
+        }
+
+        public String getAction() {
+            return action;
+        }
+
+        public void setAction(String action) {
+            this.action = action;
+        }
+
+        public double getMinConfidence() {
+            return minConfidence;
+        }
+
+        public void setMinConfidence(double minConfidence) {
+            this.minConfidence = minConfidence;
+        }
+
+        public String getOnlyStatus() {
+            return onlyStatus;
+        }
+
+        public void setOnlyStatus(String onlyStatus) {
+            this.onlyStatus = onlyStatus;
         }
     }
 

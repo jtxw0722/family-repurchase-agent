@@ -4,6 +4,8 @@ spring:
     driver-class-name: org.sqlite.JDBC
   main:
     banner-mode: off
+  config:
+    import: optional:file:.env[.properties]
 
 server:
   port: 8080
@@ -13,6 +15,20 @@ family-agent:
     - ./examples
     - ./data/inbox
   reports-dir: ./reports
+  normalization:
+    fallback-review-mode: ${NORMALIZATION_FALLBACK_REVIEW_MODE:llm_suggestion}
+    llm:
+      enabled: ${NORMALIZATION_LLM_ENABLED:false}
+      provider: ${NORMALIZATION_LLM_PROVIDER:openai-compatible}
+      model: ${NORMALIZATION_LLM_MODEL:gpt-4.1-mini}
+      api-key: ${NORMALIZATION_LLM_API_KEY:}
+      base-url: ${NORMALIZATION_LLM_BASE_URL:https://api.openai.com/v1}
+      prompt-version: ${NORMALIZATION_LLM_PROMPT_VERSION:normalization-v1}
+      request-timeout-seconds: ${NORMALIZATION_LLM_TIMEOUT_SECONDS:30}
+      batch-size: ${NORMALIZATION_LLM_BATCH_SIZE:10}
+      exclude-confidence-threshold: ${NORMALIZATION_LLM_EXCLUDE_CONFIDENCE_THRESHOLD:0.9}
+      normalize-confidence-threshold: ${NORMALIZATION_LLM_NORMALIZE_CONFIDENCE_THRESHOLD:0.9}
+      review-confidence-threshold: ${NORMALIZATION_LLM_REVIEW_CONFIDENCE_THRESHOLD:0.85}
 
 # 价格判断阈值为可选配置，未配置时使用默认值
 #  price-decision:

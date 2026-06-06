@@ -17,7 +17,7 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/15:34
+ * @Date: 2026/06/06 00:27:12
  * @Description: 购买记录仓储，负责订单明细的写入和价格统计查询。
  */
 @Repository
@@ -40,8 +40,8 @@ public class PurchaseRecordRepository {
                     batch_id, order_time, platform, owner, product_name, normalized_name, sku,
                     category, sub_category, quantity, unit, total_amount, product_amount, paid_amount,
                     shipping_fee, amount_source, unit_price, currency, decision, is_duplicate,
-                    dedupe_status, source_file, shop_name, note, source_text, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    dedupe_status, source_file, shop_name, note, source_text, normalization_rule, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
@@ -71,7 +71,8 @@ public class PurchaseRecordRepository {
             ps.setObject(23, record.shopName());
             ps.setObject(24, record.note());
             ps.setObject(25, record.sourceText());
-            ps.setObject(26, ClockUtils.nowText());
+            ps.setObject(26, record.normalizationRule());
+            ps.setObject(27, ClockUtils.nowText());
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
@@ -120,6 +121,20 @@ public class PurchaseRecordRepository {
         List<PurchaseRecord> records = jdbcTemplate.query("SELECT * FROM purchase_records WHERE id = ?",
                 rowMapper(), id);
         return records.stream().findFirst();
+    }
+
+    /**
+     * 查询指定导入批次内的购买记录。
+     *
+     * @param batchId 导入批次 ID
+     * @return 批次内购买记录列表
+     */
+    public List<PurchaseRecord> listByBatchId(long batchId) {
+        return jdbcTemplate.query("""
+                SELECT * FROM purchase_records
+                WHERE batch_id = ?
+                ORDER BY id
+                """, rowMapper(), batchId);
     }
 
     /**
@@ -273,8 +288,16 @@ public class PurchaseRecordRepository {
                 rs.getString("amount_source"), nullableDouble(rs, "unit_price"), rs.getString("currency"),
                 rs.getString("decision"), rs.getInt("is_duplicate") == 1, rs.getString("dedupe_status"),
                 rs.getString("source_file"), rs.getString("shop_name"), rs.getString("note"),
-                rs.getString("source_text"), rs.getString("created_at")
+                rs.getString("source_text"), safeColumn(rs, "normalization_rule"), rs.getString("created_at")
         );
+    }
+
+    private String safeColumn(ResultSet rs, String columnName) {
+        try {
+            return rs.getString(columnName);
+        } catch (SQLException e) {
+            return null;
+        }
     }
 
     private Double nullableDouble(ResultSet rs, String columnName) throws SQLException {

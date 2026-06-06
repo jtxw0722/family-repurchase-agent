@@ -55,6 +55,7 @@ public class DatabaseInitializer implements ApplicationRunner {
             ensureProductAliasColumns();
             ensureProductNegativeAliasTable();
             ensureReviewItemColumns();
+            ensureNormalizationSuggestionTable();
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
         }
@@ -114,6 +115,9 @@ public class DatabaseInitializer implements ApplicationRunner {
         if (!columns.contains("source_text")) {
             jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN source_text TEXT");
         }
+        if (!columns.contains("normalization_rule")) {
+            jdbcTemplate.execute("ALTER TABLE purchase_records ADD COLUMN normalization_rule TEXT");
+        }
         jdbcTemplate.update("UPDATE purchase_records SET product_amount = total_amount WHERE product_amount IS NULL AND total_amount IS NOT NULL");
         jdbcTemplate.update("UPDATE purchase_records SET paid_amount = total_amount WHERE paid_amount IS NULL AND total_amount IS NOT NULL");
         jdbcTemplate.update("UPDATE purchase_records SET amount_source = 'paid_amount' WHERE amount_source IS NULL OR amount_source = ''");
@@ -130,6 +134,37 @@ public class DatabaseInitializer implements ApplicationRunner {
         if (!columns.contains("review_note")) {
             jdbcTemplate.execute("ALTER TABLE review_items ADD COLUMN review_note TEXT");
         }
+    }
+
+    private void ensureNormalizationSuggestionTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS normalization_suggestions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_id INTEGER,
+                    raw_product_name TEXT NOT NULL,
+                    sku TEXT,
+                    alias_key TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    suggested_normalized_name TEXT,
+                    rejected_normalized_name TEXT,
+                    product_type TEXT,
+                    target_unit TEXT,
+                    unit_family TEXT,
+                    confidence REAL NOT NULL,
+                    review_required INTEGER NOT NULL DEFAULT 1,
+                    reason TEXT,
+                    evidence_json TEXT,
+                    llm_provider TEXT,
+                    llm_model TEXT,
+                    prompt_version TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT
+                )
+                """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_batch_id ON normalization_suggestions(batch_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_alias_key ON normalization_suggestions(alias_key)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_status ON normalization_suggestions(status)");
     }
 
     private void ensureRuntimeDirectories() throws IOException {

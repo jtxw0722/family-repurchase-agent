@@ -2,7 +2,7 @@ package com.jtxw.familyagent.domain.model;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/01:18
+ * @Date: 2026/06/06 00:27:12
  * @Description: 标准化后的购买记录实体，表示可持久化和统计的订单明细。
  */
 public class PurchaseRecord {
@@ -111,6 +111,10 @@ public class PurchaseRecord {
      */
     private final String sourceText;
     /**
+     * 商品归一化命中的规则标识，例如 product_alias、product_negative_alias、legacy_fallback。
+     */
+    private final String normalizationRule;
+    /**
      * 记录创建时间
      */
     private final String createdAt;
@@ -196,6 +200,39 @@ public class PurchaseRecord {
                           String note,
                           String sourceText,
                           String createdAt) {
+        this(id, batchId, orderTime, platform, owner, productName, normalizedName, sku, category, subCategory,
+                quantity, unit, totalAmount, productAmount, paidAmount, shippingFee, amountSource, unitPrice, currency,
+                decision, duplicate, dedupeStatus, sourceFile, shopName, note, sourceText, null, createdAt);
+    }
+
+    public PurchaseRecord(Long id,
+                          Long batchId,
+                          String orderTime,
+                          String platform,
+                          String owner,
+                          String productName,
+                          String normalizedName,
+                          String sku,
+                          String category,
+                          String subCategory,
+                          Double quantity,
+                          String unit,
+                          Double totalAmount,
+                          Double productAmount,
+                          Double paidAmount,
+                          Double shippingFee,
+                          String amountSource,
+                          Double unitPrice,
+                          String currency,
+                          String decision,
+                          boolean duplicate,
+                          String dedupeStatus,
+                          String sourceFile,
+                          String shopName,
+                          String note,
+                          String sourceText,
+                          String normalizationRule,
+                          String createdAt) {
         this.id = id;
         this.batchId = batchId;
         this.orderTime = orderTime;
@@ -222,6 +259,7 @@ public class PurchaseRecord {
         this.shopName = shopName;
         this.note = note;
         this.sourceText = sourceText;
+        this.normalizationRule = normalizationRule;
         this.createdAt = createdAt;
     }
 
@@ -327,6 +365,10 @@ public class PurchaseRecord {
 
     public String sourceText() {
         return sourceText;
+    }
+
+    public String normalizationRule() {
+        return normalizationRule;
     }
 
     public String createdAt() {
@@ -435,6 +477,10 @@ public class PurchaseRecord {
 
     public String getSourceText() {
         return sourceText;
+    }
+
+    public String getNormalizationRule() {
+        return normalizationRule;
     }
 
     public String getCreatedAt() {

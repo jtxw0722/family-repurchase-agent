@@ -9,7 +9,7 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/05
+ * @Date: 2026/06/06 00:27:12
  * @Description: 商品负向别名仓储，保存人工确认过的误判样本。
  */
 @Repository
@@ -61,6 +61,33 @@ public class ProductNegativeAliasRepository {
                     rejected_normalized_name = excluded.rejected_normalized_name,
                     reason = excluded.reason
                 """, alias, aliasKey, rejectedNormalizedName, reason, ClockUtils.nowText());
+    }
+
+    /**
+     * 查询与 alias_key 存在简单包含关系的负向别名。
+     *
+     * @param aliasKey 清洗后的商品标题匹配键
+     * @param limit    最大返回条数
+     * @return 相似负向别名列表
+     */
+    public List<ProductNegativeAlias> listSimilar(String aliasKey, int limit) {
+        if (aliasKey == null || aliasKey.isBlank()) {
+            return List.of();
+        }
+        String like = "%" + aliasKey + "%";
+        return jdbcTemplate.query("""
+                SELECT id, alias, alias_key, rejected_normalized_name, reason
+                FROM product_negative_aliases
+                WHERE alias_key LIKE ? OR ? LIKE '%' || alias_key || '%'
+                ORDER BY id DESC
+                LIMIT ?
+                """, (rs, rowNum) -> new ProductNegativeAlias(
+                rs.getLong("id"),
+                rs.getString("alias"),
+                rs.getString("alias_key"),
+                rs.getString("rejected_normalized_name"),
+                rs.getString("reason")
+        ), like, aliasKey, limit);
     }
 
     public record ProductNegativeAlias(Long id,

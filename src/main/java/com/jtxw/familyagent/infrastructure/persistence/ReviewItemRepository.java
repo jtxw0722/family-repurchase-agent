@@ -14,7 +14,7 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/15:58
+ * @Date: 2026/06/06 00:27:12
  * @Description: 复核事项仓储，负责创建和查询待人工确认的异常记录。
  */
 @Repository
@@ -153,6 +153,21 @@ public class ReviewItemRepository {
     public int countPending() {
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM review_items WHERE status='pending'", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    /**
+     * 判断指定购买记录是否已有同类待复核项。
+     *
+     * @param recordId   购买记录 ID
+     * @param reasonCode 复核原因编码
+     * @return 是否已存在 pending 状态同类复核项
+     */
+    public boolean existsPendingByRecordIdAndReasonCode(long recordId, String reasonCode) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM review_items
+                WHERE record_id = ? AND reason_code = ? AND status = 'pending'
+                """, Integer.class, recordId, reasonCode);
+        return count != null && count > 0;
     }
 
     private RowMapper<ReviewItem> rowMapper() {

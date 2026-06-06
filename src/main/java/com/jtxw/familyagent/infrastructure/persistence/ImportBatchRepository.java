@@ -6,8 +6,8 @@ import org.springframework.stereotype.Repository;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/15:08
- * @Description: 导入批次仓储，负责记录每次文件导入的来源和统计信息。
+ * @Date: 2026/06/06 00:59:16
+ * @Description: 导入批次仓储，负责记录每次文件导入的来源和导入阶段统计信息。
  */
 @Repository
 public class ImportBatchRepository {
@@ -30,12 +30,15 @@ public class ImportBatchRepository {
     }
 
     /**
-     * 将导入批次标记为完成并写入统计结果。
+     * 将导入批次标记为完成并写入导入阶段统计结果。
+     *
+     * <p>raw_import_batches.review_count 只表示 import-file 或 record-purchase 导入阶段直接创建的复核数；
+     * analyze-normalization 后续新增的 PRODUCT_NAME_NORMALIZATION_REVIEW 不会回写该字段，避免混淆批次导入结果和后处理结果。</p>
      *
      * @param batchId       导入批次 ID
      * @param totalCount    文件总记录数
      * @param importedCount 成功导入记录数
-     * @param reviewCount   待复核记录数
+     * @param reviewCount   导入阶段直接创建的待复核记录数
      */
     public void complete(long batchId, int totalCount, int importedCount, int reviewCount) {
         jdbcTemplate.update("UPDATE raw_import_batches SET status=?, total_count=?, imported_count=?, review_count=? WHERE id=?",

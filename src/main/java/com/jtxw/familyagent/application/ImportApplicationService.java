@@ -15,10 +15,12 @@ import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
+import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
@@ -28,7 +30,7 @@ import java.util.Set;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/12/16:42
+ * @Date: 2026/06/06 00:27:12
  * @Description: 导入应用服务，编排 CSV 解析、记录标准化、入库和异常复核创建。
  */
 @Service
@@ -46,6 +48,38 @@ public class ImportApplicationService {
     private final ImportBatchRepository importBatchRepository;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final ReviewItemRepository reviewItemRepository;
+    private final NormalizationProperties normalizationProperties;
+
+    @Autowired
+    public ImportApplicationService(DatabaseInitializer databaseInitializer,
+                                    CsvPurchaseImporter csvPurchaseImporter,
+                                    ExcelPurchaseImporter excelPurchaseImporter,
+                                    DuplicateDetectionPolicy duplicateDetectionPolicy,
+                                    PaymentAdjustmentPolicy paymentAdjustmentPolicy,
+                                    OwnerNormalizer ownerNormalizer,
+                                    PurchaseTimeNormalizer purchaseTimeNormalizer,
+                                    LearningProductNameNormalizer productNameNormalizer,
+                                    QuantityUnitParser quantityUnitParser,
+                                    UnitPriceCalculator unitPriceCalculator,
+                                    ImportBatchRepository importBatchRepository,
+                                    PurchaseRecordRepository purchaseRecordRepository,
+                                    ReviewItemRepository reviewItemRepository,
+                                    NormalizationProperties normalizationProperties) {
+        this.databaseInitializer = databaseInitializer;
+        this.csvPurchaseImporter = csvPurchaseImporter;
+        this.excelPurchaseImporter = excelPurchaseImporter;
+        this.duplicateDetectionPolicy = duplicateDetectionPolicy;
+        this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
+        this.ownerNormalizer = ownerNormalizer;
+        this.purchaseTimeNormalizer = purchaseTimeNormalizer;
+        this.productNameNormalizer = productNameNormalizer;
+        this.quantityUnitParser = quantityUnitParser;
+        this.unitPriceCalculator = unitPriceCalculator;
+        this.importBatchRepository = importBatchRepository;
+        this.purchaseRecordRepository = purchaseRecordRepository;
+        this.reviewItemRepository = reviewItemRepository;
+        this.normalizationProperties = normalizationProperties;
+    }
 
     public ImportApplicationService(DatabaseInitializer databaseInitializer,
                                     CsvPurchaseImporter csvPurchaseImporter,
@@ -60,19 +94,10 @@ public class ImportApplicationService {
                                     ImportBatchRepository importBatchRepository,
                                     PurchaseRecordRepository purchaseRecordRepository,
                                     ReviewItemRepository reviewItemRepository) {
-        this.databaseInitializer = databaseInitializer;
-        this.csvPurchaseImporter = csvPurchaseImporter;
-        this.excelPurchaseImporter = excelPurchaseImporter;
-        this.duplicateDetectionPolicy = duplicateDetectionPolicy;
-        this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
-        this.ownerNormalizer = ownerNormalizer;
-        this.purchaseTimeNormalizer = purchaseTimeNormalizer;
-        this.productNameNormalizer = productNameNormalizer;
-        this.quantityUnitParser = quantityUnitParser;
-        this.unitPriceCalculator = unitPriceCalculator;
-        this.importBatchRepository = importBatchRepository;
-        this.purchaseRecordRepository = purchaseRecordRepository;
-        this.reviewItemRepository = reviewItemRepository;
+        this(databaseInitializer, csvPurchaseImporter, excelPurchaseImporter, duplicateDetectionPolicy,
+                paymentAdjustmentPolicy, ownerNormalizer, purchaseTimeNormalizer, productNameNormalizer,
+                quantityUnitParser, unitPriceCalculator, importBatchRepository, purchaseRecordRepository,
+                reviewItemRepository, legacyReviewProperties());
     }
 
     /**
@@ -164,7 +189,8 @@ public class ImportApplicationService {
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
                     unitPrice, raw.currency(), duplicate || normalizationReviewRequired || negativeAliasExcluded ? "exclude" : "include", duplicate,
-                    duplicate ? "duplicate" : "unique", file.toString(), ClockUtils.nowText()
+                    duplicate ? "duplicate" : "unique", file.toString(), null, null, null,
+                    nameResult.matchedRule(), ClockUtils.nowText()
             );
             long recordId = purchaseRecordRepository.save(record);
             importedCount++;
@@ -175,7 +201,7 @@ public class ImportApplicationService {
                 reviewCount++;
                 duplicateCount++;
             }
-            if (nameResult.needReview()) {
+            if (shouldCreateProductNameReview(nameResult)) {
                 reviewItemRepository.create(recordId, "PRODUCT_NAME_NORMALIZATION_REVIEW",
                         "商品归一化置信度较低，matchedRule=" + nameResult.matchedRule()
                                 + "，confidence=" + nameResult.confidence());
@@ -233,7 +259,24 @@ public class ImportApplicationService {
         return "product_negative_alias".equals(nameResult.matchedRule());
     }
 
+    private boolean shouldCreateProductNameReview(ProductNameNormalizationResult nameResult) {
+        if (!nameResult.needReview()) {
+            return false;
+        }
+        // legacy_fallback 是 LLM Advisor 的唯一候选来源，新模式下先静默 exclude，避免导入时制造大量逐条复核噪音。
+        if ("legacy_fallback".equals(nameResult.matchedRule())) {
+            return normalizationProperties.immediateFallbackReview();
+        }
+        return true;
+    }
+
     private String safeText(String value) {
         return value == null ? "" : value;
+    }
+
+    private static NormalizationProperties legacyReviewProperties() {
+        NormalizationProperties properties = new NormalizationProperties();
+        properties.setFallbackReviewMode("immediate_review");
+        return properties;
     }
 }

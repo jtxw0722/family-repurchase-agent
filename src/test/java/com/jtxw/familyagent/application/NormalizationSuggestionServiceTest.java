@@ -1,0 +1,883 @@
+package com.jtxw.familyagent.application;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jtxw.familyagent.common.ClockUtils;
+import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
+import com.jtxw.familyagent.domain.model.NormalizationAdvisorRequest;
+import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
+import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
+import com.jtxw.familyagent.domain.model.NormalizationRagContext;
+import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
+import com.jtxw.familyagent.domain.model.PurchaseRecord;
+import com.jtxw.familyagent.domain.model.ReviewItemDetail;
+import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
+import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
+import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
+import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
+import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
+import com.jtxw.familyagent.domain.policy.ProductNormalizer;
+import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
+import com.jtxw.familyagent.domain.policy.ProductRuleProperties;
+import com.jtxw.familyagent.domain.policy.ProductSpecParser;
+import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
+import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
+import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
+import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
+import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
+import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
+import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
+import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
+import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
+import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
+import com.jtxw.familyagent.infrastructure.persistence.NormalizationSuggestionRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
+import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import javax.sql.DataSource;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * @Author: jtxw
+ * @Date: 2026/06/06 19:17:57
+ * @Description: Normalization LLM Advisor 建议链路集成测试。
+ */
+class NormalizationSuggestionServiceTest {
+    @Test
+    void importFileShouldSkipLegacyFallbackReviewWhenModeIsLlmSuggestion() throws Exception {
+        Fixture fixture = fixture("import-llm-suggestion.sqlite", properties(true, "llm_suggestion"),
+                new StubAdvisor(properties(true, "llm_suggestion"), new ObjectMapper()));
+        Path file = csv(fixture.dir(), "orders-llm.csv", "手机壳透明款", "硅胶");
+
+        fixture.importService().importFile(file, null);
+
+        List<ReviewItemDetail> reviewItems = fixture.reviewItemRepository().listPendingDetails();
+        assertThat(reviewItems).extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+        assertThat(fixture.jdbcTemplate().queryForList("SELECT decision FROM purchase_records", String.class))
+                .containsExactly("exclude");
+    }
+
+    @Test
+    void importFileShouldKeepImmediateReviewLegacyBehavior() throws Exception {
+        Fixture fixture = fixture("import-immediate-review.sqlite", properties(true, "immediate_review"),
+                new StubAdvisor(properties(true, "immediate_review"), new ObjectMapper()));
+        Path file = csv(fixture.dir(), "orders-immediate.csv", "手机壳透明款", "硅胶");
+
+        fixture.importService().importFile(file, null);
+
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void analyzeBatchShouldAutoExcludeHighConfidenceNonRepurchaseAndDurable() throws Exception {
+        StubAdvisor advisor = advisor(
+                exclude("手机壳透明款", "NON_REPURCHASE"),
+                exclude("猫砂盆大号", "DURABLE")
+        );
+        Fixture fixture = fixture("analyze-auto-exclude.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款", "猫砂盆大号");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.autoExcludedCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("auto_excluded", "auto_excluded");
+        assertThat(fixture.reviewItemRepository().listPendingDetails()).isEmpty();
+        assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId))
+                .extracting(PurchaseRecord::decision)
+                .containsOnly("exclude");
+    }
+
+    @Test
+    void analyzeBatchShouldPutHighConfidenceNormalizeIntoPendingBatchApproval() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("analyze-normalize.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+        assertThat(fixture.productAliasRepository().findByAliasKey(suggestion.aliasKey())).isEmpty();
+        assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+    }
+
+    @Test
+    void analyzeBatchShouldAutoExcludePureCouponOrDeposit() throws Exception {
+        StubAdvisor advisor = advisor(
+                exclude("0.01元锁定30元", "COUPON_OR_DEPOSIT"),
+                exclude("1元预定礼", "COUPON_OR_DEPOSIT")
+        );
+        Fixture fixture = fixture("analyze-pure-coupon-deposit.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "0.01元锁定30元", "1元预定礼");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.autoExcludedCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+                    assertThat(suggestion.productType()).isEqualTo("COUPON_OR_DEPOSIT");
+                    assertThat(suggestion.status()).isEqualTo("auto_excluded");
+                });
+    }
+
+    @Test
+    void analyzeBatchShouldDowngradeRealProductsWithPresaleOrDepositToReview() throws Exception {
+        StubAdvisor advisor = advisor(
+                couponDeposit("【双11预售立即付定】尾巴生活彩虹泥主食餐盒一餐一杯猫罐头", "猫主食罐", "罐"),
+                couponDeposit("【双11预售】地狱厨房咕噜酱猫零食营养补水增肥酱包", "猫零食", "g")
+        );
+        Fixture fixture = fixture("analyze-real-product-presale-deposit.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "【双11预售立即付定】尾巴生活彩虹泥主食餐盒一餐一杯猫罐头",
+                "【双11预售】地狱厨房咕噜酱猫零食营养补水增肥酱包");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        List<NormalizationSuggestion> suggestions = fixture.suggestionRepository().listByBatchId(batchId);
+
+        assertThat(result.autoExcludedCount()).isZero();
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(2);
+        assertThat(suggestions)
+                .extracting(NormalizationSuggestion::action)
+                .containsExactly("REVIEW", "REVIEW");
+        assertThat(suggestions)
+                .extracting(NormalizationSuggestion::productType)
+                .containsExactly("REPURCHASE_CONSUMABLE", "REPURCHASE_CONSUMABLE");
+        assertThat(suggestions.get(0).suggestedNormalizedName()).isEqualTo("猫主食罐");
+        assertThat(suggestions.get(1).suggestedNormalizedName()).isIn("猫条", "猫零食");
+        assertThat(suggestions)
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("pending_review", "pending_review");
+        assertThat(suggestions.get(0).targetUnit()).isEqualTo("罐");
+        assertThat(suggestions)
+                .allSatisfy(suggestion -> assertThat(suggestion.reason()).contains("需人工确认是否为定金订单"));
+    }
+
+    @Test
+    void analyzeBatchShouldNotBatchApproveSafeUnitWhenRealProductHasDepositWord() throws Exception {
+        StubAdvisor advisor = advisor(normalize("【双11预售】猫条三文鱼口味付定", "猫条", "g"));
+        Fixture fixture = fixture("analyze-deposit-safe-unit-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "【双11预售】猫条三文鱼口味付定");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.targetUnit()).isEqualTo("g");
+    }
+
+    @Test
+    void analyzeBatchShouldCanonicalizeSuggestionBeforeSave() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫罐头主食罐鸡肉味", "主食罐", "罐"));
+        Fixture fixture = fixture("analyze-canonicalize-save.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫罐头主食罐鸡肉味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).suggestedNormalizedName())
+                .isEqualTo("猫主食罐");
+    }
+
+    @Test
+    void analyzeBatchShouldCanonicalizeBroadCatCanByMainCanContextBeforeSave() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("诚实一口全价成猫幼猫用主食餐盒营养湿粮非零食40g*7/盒", "猫罐头", "240g")
+        );
+        Fixture fixture = fixture("analyze-broad-cat-can-main-context.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "诚实一口全价成猫幼猫用主食餐盒营养湿粮非零食40g*7/盒");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(suggestion.suggestedNormalizedName()).isEqualTo("猫主食罐");
+        assertThat(suggestion.targetUnit()).isEqualTo("g");
+        assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+    }
+
+    @Test
+    void analyzeBatchShouldCanonicalizeBroadCatCanSnackContextBeforeSave() throws Exception {
+        StubAdvisor advisor = advisor(normalize("鸡肉零食罐补水罐尝鲜罐猫咪零食", "猫罐头", "240g"));
+        Fixture fixture = fixture("analyze-broad-cat-can-snack-context.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "鸡肉零食罐补水罐尝鲜罐猫咪零食");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(suggestion.suggestedNormalizedName()).isEqualTo("猫零食");
+        assertThat(suggestion.targetUnit()).isEqualTo("g");
+    }
+
+    @Test
+    void analyzeBatchShouldKeepSafeCatMainCanGramUnit() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫主食罐鸡肉味", "猫主食罐", "g"));
+        Fixture fixture = fixture("analyze-cat-main-can-g.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐鸡肉味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
+        assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+        assertThat(suggestion.targetUnit()).isEqualTo("g");
+    }
+
+    @Test
+    void analyzeBatchShouldCanonicalizeCatMainCanKgToGram() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫主食罐鸡肉味", "猫主食罐", "kg"));
+        Fixture fixture = fixture("analyze-cat-main-can-kg.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐鸡肉味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
+        assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+        assertThat(suggestion.targetUnit()).isEqualTo("g");
+    }
+
+    @Test
+    void analyzeBatchShouldStripTargetUnitSpecValuesBeforeSafetyCheck() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("猫主食罐240g规格", "猫主食罐", "240g"),
+                normalize("猫主食罐840g规格", "猫主食罐", "840g"),
+                normalize("猫主食罐80g多包装", "猫主食罐", "80g*4")
+        );
+        Fixture fixture = fixture("analyze-target-unit-spec-values.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐240g规格", "猫主食罐840g规格", "猫主食罐80g多包装");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(3);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+                    assertThat(suggestion.targetUnit()).isEqualTo("g");
+                });
+    }
+
+    @Test
+    void analyzeBatchShouldDowngradeUnsafeCatMainCanUnits() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("猫主食罐罐装", "猫主食罐", "罐"),
+                normalize("猫主食罐盒装", "猫主食罐", "盒"),
+                normalize("猫主食罐包", "猫主食罐", "包"),
+                normalize("猫主食罐杯", "猫主食罐", "杯")
+        );
+        Fixture fixture = fixture("analyze-cat-main-can-unsafe-units.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐罐装", "猫主食罐盒装", "猫主食罐包", "猫主食罐杯");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingReviewCount()).isEqualTo(4);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("猫主食罐按重量比价更稳定");
+                });
+    }
+
+    @Test
+    void analyzeBatchShouldHandleTargetUnitSafetyByCategory() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("猫条三文鱼口味", "猫条", "g"),
+                normalize("猫条鸡肉味", "猫条", "包"),
+                normalize("全价猫粮", "猫粮", "kg"),
+                normalize("豆腐猫砂", "猫砂", "kg"),
+                normalize("美瞳日抛", "美瞳", "片")
+        );
+        Fixture fixture = fixture("analyze-target-unit-by-category.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味", "猫条鸡肉味", "全价猫粮", "豆腐猫砂", "美瞳日抛");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(4);
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("pending_batch_approval", "pending_review", "pending_batch_approval",
+                        "pending_batch_approval", "pending_batch_approval");
+    }
+
+    @Test
+    void analyzeBatchShouldUseSingleLlmRequestWhenLimitFitsBatchSize() throws Exception {
+        StubAdvisor advisor = advisor(
+                exclude("手机壳透明款", "DURABLE"),
+                exclude("衣服春款", "DURABLE"),
+                exclude("包包通勤", "DURABLE")
+        );
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        properties.getLlm().setBatchSize(10);
+        Fixture fixture = fixture("analyze-batch-size.sqlite", properties, advisor);
+        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款", "衣服春款", "包包通勤");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 3, false);
+
+        assertThat(result.analyzedCount()).isEqualTo(3);
+        assertThat(advisor.callCount()).isEqualTo(1);
+    }
+
+    @Test
+    void analyzeBatchShouldFilterCandidatesByIncludeKeyword() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("猫主食罐鸡肉味", "猫主食罐", "罐"),
+                normalize("普通商品", "猫主食罐", "罐")
+        );
+        Fixture fixture = fixture("analyze-include-keyword.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("猫主食罐鸡肉味", "85g"),
+                seed("猫条三文鱼口味", "默认"),
+                seed("普通商品", "主食罐规格"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService()
+                .analyzeBatch(batchId, 10, false, List.of("主食罐"), List.of(), false);
+
+        assertThat(result.analyzedCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::rawProductName)
+                .containsExactly("猫主食罐鸡肉味", "普通商品");
+    }
+
+    @Test
+    void analyzeBatchShouldMatchIncludeKeywordAgainstProductNameOrSku() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("普通商品", "猫主食罐", "罐"),
+                normalize("湿粮餐盒鸡肉味", "猫主食罐", "罐")
+        );
+        Fixture fixture = fixture("analyze-include-product-or-sku.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("普通商品", "猫罐头规格"),
+                seed("湿粮餐盒鸡肉味", "默认"),
+                seed("猫条三文鱼口味", "默认"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService()
+                .analyzeBatch(batchId, 10, false, List.of("猫罐头", "湿粮"), List.of(), false);
+
+        assertThat(result.analyzedCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::rawProductName)
+                .containsExactly("普通商品", "湿粮餐盒鸡肉味");
+    }
+
+    @Test
+    void analyzeBatchShouldExcludeCandidatesByKeyword() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫主食罐鸡肉味", "猫主食罐", "罐"));
+        Fixture fixture = fixture("analyze-exclude-keyword.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("猫主食罐鸡肉味", "85g"),
+                seed("猫主食罐试吃装", "赠品"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService()
+                .analyzeBatch(batchId, 10, false, List.of("主食罐"), List.of("试吃", "赠品"), false);
+
+        assertThat(result.analyzedCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::rawProductName)
+                .containsExactly("猫主食罐鸡肉味");
+    }
+
+    @Test
+    void analyzeBatchShouldCreateReviewForLowConfidenceReviewAndFailedJson() throws Exception {
+        StubAdvisor advisor = advisor(review("美瞳日抛"), failed("奇怪商品"));
+        Fixture fixture = fixture("analyze-review-failed.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "美瞳日抛", "奇怪商品");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(result.failedCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("pending_review", "failed");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .containsExactly("PRODUCT_NAME_NORMALIZATION_REVIEW", "PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void analyzeBatchShouldKeepLaterBatchWhenOneBatchFails() throws Exception {
+        StubAdvisor advisor = advisor();
+        advisor.failNextBatch();
+        advisor.add(normalize("猫条三文鱼口味", "猫条", "g"));
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        properties.getLlm().setBatchSize(2);
+        Fixture fixture = fixture("analyze-one-batch-failed.sqlite", properties, advisor);
+        long batchId = batchWithLegacyRecords(fixture, "坏 JSON 商品1", "坏 JSON 商品2", "猫条三文鱼口味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 3, false);
+
+        assertThat(result.failedCount()).isEqualTo(2);
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
+        assertThat(advisor.callCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("failed", "failed", "pending_batch_approval");
+    }
+
+    @Test
+    void analyzeBatchShouldRetryFailedSuggestionWhenForceReanalyzeFalse() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("analyze-retry-failed.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+        String aliasKey = fixture.cleaner().aliasKey("猫条三文鱼口味", "默认");
+        fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, "猫条三文鱼口味", "默认", aliasKey, "REVIEW",
+                null, null, "UNKNOWN", null, "UNKNOWN", 0.5D,
+                true, "timeout_error：Read timed out", "[]", "test", "test-model", "test-prompt",
+                "failed", ClockUtils.nowText(), null));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.analyzedCount()).isEqualTo(1);
+        assertThat(advisor.callCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .hasSize(1)
+                .extracting(NormalizationSuggestion::status)
+                .containsExactly("pending_batch_approval");
+    }
+
+    @Test
+    void analyzeBatchShouldOnlyRetryFailedCandidatesWhenOnlyFailedTrue() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("analyze-only-failed.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味", "猫主食罐鸡肉味");
+        String aliasKey = fixture.cleaner().aliasKey("猫条三文鱼口味", "默认");
+        fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, "猫条三文鱼口味", "默认", aliasKey, "REVIEW",
+                null, null, "UNKNOWN", null, "UNKNOWN", 0.5D,
+                true, "timeout_error：Read timed out", "[]", "test", "test-model", "test-prompt",
+                "failed", ClockUtils.nowText(), null));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService()
+                .analyzeBatch(batchId, 10, false, List.of(), List.of(), true);
+
+        assertThat(result.analyzedCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .hasSize(1)
+                .extracting(NormalizationSuggestion::rawProductName)
+                .containsExactly("猫条三文鱼口味");
+    }
+
+    @Test
+    void analyzeBatchShouldSkipNonFailedSuggestionsWhenForceReanalyzeFalse() throws Exception {
+        StubAdvisor advisor = advisor();
+        Fixture fixture = fixture("analyze-skip-non-failed.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款", "美瞳日抛", "猫条三文鱼口味", "猫主食罐鸡肉味");
+        saveExistingSuggestion(fixture, batchId, "手机壳透明款", "auto_excluded");
+        saveExistingSuggestion(fixture, batchId, "美瞳日抛", "pending_review");
+        saveExistingSuggestion(fixture, batchId, "猫条三文鱼口味", "pending_batch_approval");
+        saveExistingSuggestion(fixture, batchId, "猫主食罐鸡肉味", "approved");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.candidateCount()).isZero();
+        assertThat(advisor.callCount()).isZero();
+    }
+
+    @Test
+    void analyzeBatchShouldClassifyTimeoutExceptionAsFailedSuggestion() throws Exception {
+        StubAdvisor advisor = advisor();
+        advisor.throwNextBatch(new RuntimeException("Read timed out"));
+        Fixture fixture = fixture("analyze-timeout-error.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.failedCount()).isEqualTo(1);
+        assertThat(result.message()).contains("timeout_error");
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).reason())
+                .contains("timeout_error")
+                .contains("Read timed out");
+    }
+
+    @Test
+    void analyzeBatchShouldReplaceFailedSuggestionAfterRetrySuccess() throws Exception {
+        StubAdvisor advisor = advisor();
+        advisor.throwNextBatch(new RuntimeException("Read timed out"));
+        advisor.add(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("analyze-timeout-retry-success.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        NormalizationAnalyzeResult firstResult = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationAnalyzeResult secondResult = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(firstResult.failedCount()).isEqualTo(1);
+        assertThat(secondResult.pendingBatchApprovalCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .hasSize(1)
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+                    assertThat(suggestion.reason()).doesNotContain("timeout_error");
+                });
+    }
+
+    @Test
+    void analyzeBatchShouldReanalyzeMatchedCandidatesWhenForceReanalyzeTrue() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("analyze-force-reanalyze-filtered.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味", "手机壳透明款");
+        saveExistingSuggestion(fixture, batchId, "猫条三文鱼口味", "pending_batch_approval");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService()
+                .analyzeBatch(batchId, 10, true, List.of("猫条"), List.of(), false);
+
+        assertThat(result.analyzedCount()).isEqualTo(1);
+        assertThat(advisor.callCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .hasSize(2)
+                .extracting(NormalizationSuggestion::rawProductName)
+                .containsExactly("猫条三文鱼口味", "猫条三文鱼口味");
+    }
+
+    @Test
+    void analyzeBatchShouldReturnClearErrorWhenLlmDisabled() throws Exception {
+        Fixture fixture = fixture("analyze-disabled.sqlite", properties(false, "llm_suggestion"),
+                new StubAdvisor(properties(false, "llm_suggestion"), new ObjectMapper()));
+        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款");
+
+        assertThatThrownBy(() -> fixture.suggestionService().analyzeBatch(batchId, 100, false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM normalization advisor 未启用");
+    }
+
+    @Test
+    void analyzeBatchShouldSkipConfirmedPositiveAndNegativeAlias() throws Exception {
+        StubAdvisor advisor = advisor(exclude("手机壳透明款", "NON_REPURCHASE"));
+        Fixture fixture = fixture("analyze-skip-alias.sqlite", properties(true, "llm_suggestion"), advisor);
+        String positiveAliasKey = fixture.cleaner().aliasKey("手机壳透明款", "默认");
+        String negativeAliasKey = fixture.cleaner().aliasKey("猫砂盆大号", "默认");
+        fixture.productAliasRepository().upsert("手机壳透明款", positiveAliasKey, "手机壳", "件", "NON_REPURCHASE");
+        fixture.productNegativeAliasRepository().upsert("猫砂盆大号", negativeAliasKey, "猫砂", "耐用品");
+        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款", "猫砂盆大号");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.candidateCount()).isZero();
+        assertThat(advisor.callCount()).isZero();
+    }
+
+    @Test
+    void batchApplyShouldWriteAliasWithoutChangingPurchaseRecordDecision() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        Fixture fixture = fixture("batch-apply.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        NormalizationBatchApplyResult result = fixture.suggestionService()
+                .batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
+
+        assertThat(result.appliedCount()).isEqualTo(1);
+        assertThat(fixture.productAliasRepository().findByAliasKey(suggestion.aliasKey()))
+                .isPresent()
+                .get()
+                .extracting(ProductAliasRepository.ProductAlias::category)
+                .isNull();
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status()).isEqualTo("approved");
+        assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+    }
+
+    @Test
+    void batchApplyShouldCanonicalizeOldSuggestionBeforeWritingAlias() throws Exception {
+        Fixture fixture = fixture("batch-apply-canonicalize.sqlite", properties(true, "llm_suggestion"), advisor());
+        long batchId = batchWithLegacyRecords(fixture, "猫罐头主食罐鸡肉味");
+        String aliasKey = fixture.cleaner().aliasKey("猫罐头主食罐鸡肉味", "默认");
+        fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, "猫罐头主食罐鸡肉味", "默认", aliasKey, "NORMALIZE",
+                "主食罐", null, "REPURCHASE_CONSUMABLE", "240g", "WEIGHT", 0.96D,
+                true, "旧 suggestion", "[]", "test", "test-model", "test-prompt",
+                "pending_batch_approval", ClockUtils.nowText(), null));
+
+        fixture.suggestionService().batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
+
+        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey))
+                .isPresent()
+                .get()
+                .extracting(ProductAliasRepository.ProductAlias::normalizedName)
+                .isEqualTo("猫主食罐");
+        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey))
+                .isPresent()
+                .get()
+                .extracting(ProductAliasRepository.ProductAlias::targetUnit)
+                .isEqualTo("g");
+        assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+    }
+
+    @Test
+    void batchApplyShouldDowngradeUnsafeOldSuggestionWithoutWritingAlias() throws Exception {
+        Fixture fixture = fixture("batch-apply-unsafe-target-unit.sqlite", properties(true, "llm_suggestion"), advisor());
+        long batchId = batchWithLegacyRecords(fixture, "猫罐头主食罐鸡肉味");
+        String aliasKey = fixture.cleaner().aliasKey("猫罐头主食罐鸡肉味", "默认");
+        fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, "猫罐头主食罐鸡肉味", "默认", aliasKey, "NORMALIZE",
+                "主食罐", null, "REPURCHASE_CONSUMABLE", "罐", "COUNT", 0.96D,
+                true, "旧 suggestion", "[]", "test", "test-model", "test-prompt",
+                "pending_batch_approval", ClockUtils.nowText(), null));
+
+        NormalizationBatchApplyResult result = fixture.suggestionService()
+                .batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
+
+        assertThat(result.appliedCount()).isZero();
+        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey)).isEmpty();
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status()).isEqualTo("pending_review");
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).reason())
+                .contains("targetUnit 不适合批量确认");
+        assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+    }
+
+
+    private long batchWithLegacyRecords(Fixture fixture, String... productNames) {
+        long batchId = fixture.importBatchRepository().create("test-source");
+        for (String productName : productNames) {
+            saveLegacyRecord(fixture, batchId, productName, "默认");
+        }
+        fixture.importBatchRepository().complete(batchId, productNames.length, productNames.length, 0);
+        return batchId;
+    }
+
+    private long batchWithLegacyRecordsAndSku(Fixture fixture, LegacyRecordSeed... records) {
+        long batchId = fixture.importBatchRepository().create("test-source");
+        for (LegacyRecordSeed record : records) {
+            saveLegacyRecord(fixture, batchId, record.productName(), record.sku());
+        }
+        fixture.importBatchRepository().complete(batchId, records.length, records.length, 0);
+        return batchId;
+    }
+
+    private void saveLegacyRecord(Fixture fixture, long batchId, String productName, String sku) {
+        fixture.purchaseRecordRepository().save(new PurchaseRecord(
+                null, batchId, "2026-06-01 00:00:00", "jd", "jtxw", productName, productName,
+                sku, "测试分类", "测试子类", 1D, "件", 10D, 10D, 10D, null,
+                "paid_amount", 10D, "CNY", "exclude", false, "unique",
+                "test-source", null, null, null, "legacy_fallback", ClockUtils.nowText()
+        ));
+    }
+
+    private LegacyRecordSeed seed(String productName, String sku) {
+        return new LegacyRecordSeed(productName, sku);
+    }
+
+    private Path csv(Path dir, String filename, String productName, String sku) throws Exception {
+        Path file = dir.resolve(filename);
+        Files.writeString(file, """
+                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+                2026-06-01 00:00:00,jd,jtxw,%s,%s,测试分类,测试子类,1,件,10,CNY
+                """.formatted(productName, sku), StandardCharsets.UTF_8);
+        return file;
+    }
+
+    private StubAdvisor advisor(NormalizationAdvisorResult... results) {
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        StubAdvisor advisor = new StubAdvisor(properties, new ObjectMapper());
+        for (NormalizationAdvisorResult result : results) {
+            advisor.add(result);
+        }
+        return advisor;
+    }
+
+    private NormalizationAdvisorResult exclude(String productName, String productType) {
+        return new NormalizationAdvisorResult(productName, "默认", "EXCLUDE", null, null,
+                productType, null, "UNKNOWN", 0.95D, false, "高置信排除", List.of("测试证据"), false);
+    }
+
+    private NormalizationAdvisorResult normalize(String productName, String normalizedName, String targetUnit) {
+        return new NormalizationAdvisorResult(productName, "默认", "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                List.of("测试证据"), false);
+    }
+
+    private NormalizationAdvisorResult couponDeposit(String productName, String normalizedName, String targetUnit) {
+        return new NormalizationAdvisorResult(productName, "默认", "EXCLUDE", normalizedName, null,
+                "COUPON_OR_DEPOSIT", targetUnit, "COUNT", 0.96D, false, "命中预售或付定",
+                List.of("测试证据"), false);
+    }
+
+    private NormalizationAdvisorResult review(String productName) {
+        return new NormalizationAdvisorResult(productName, "默认", "REVIEW", null, null,
+                "UNKNOWN", null, "UNKNOWN", 0.6D, true, "低置信需要复核", List.of("测试证据"), false);
+    }
+
+    private NormalizationAdvisorResult failed(String productName) {
+        return new NormalizationAdvisorResult(productName, "默认", "REVIEW", null, null,
+                "UNKNOWN", null, "UNKNOWN", 0.5D, true, "非法 JSON", List.of("非法 JSON"), true);
+    }
+
+    private void saveExistingSuggestion(Fixture fixture, long batchId, String productName, String status) {
+        String aliasKey = fixture.cleaner().aliasKey(productName, "默认");
+        fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, productName, "默认", aliasKey, "REVIEW",
+                null, null, "UNKNOWN", null, "UNKNOWN", 0.6D,
+                true, "已有 " + status + " 建议", "[]", "test", "test-model", "test-prompt",
+                status, ClockUtils.nowText(), null));
+    }
+
+    private NormalizationProperties properties(boolean llmEnabled, String fallbackReviewMode) {
+        NormalizationProperties properties = new NormalizationProperties();
+        properties.setFallbackReviewMode(fallbackReviewMode);
+        properties.getLlm().setEnabled(llmEnabled);
+        properties.getLlm().setApiKey("test-key");
+        return properties;
+    }
+
+    private Fixture fixture(String dbName, NormalizationProperties properties, StubAdvisor advisor) throws Exception {
+        Path dir = Path.of("target", "normalization-suggestion-service-test");
+        Files.createDirectories(dir);
+        Path db = dir.resolve(dbName);
+        Files.deleteIfExists(db);
+        Files.deleteIfExists(Path.of(db + "-shm"));
+        Files.deleteIfExists(Path.of(db + "-wal"));
+
+        DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
+        databaseInitializer.initialize();
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProductTitleCleaner cleaner = new ProductTitleCleaner();
+        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
+        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
+        PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
+        ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
+        ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
+        NormalizationSuggestionRepository suggestionRepository = new NormalizationSuggestionRepository(jdbcTemplate);
+        ProductRuleProperties ruleProperties = new ProductRuleProperties(List.of());
+        ProductNameNormalizer delegate = new ProductNameNormalizer(
+                new ProductNormalizer(new ProductRuleMatcher(ruleProperties)), List.of());
+        LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(
+                cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
+        OrderImportMapper orderImportMapper = new OrderImportMapper(new ProductSpecParser());
+        ImportApplicationService importService = new ImportApplicationService(
+                databaseInitializer,
+                new CsvPurchaseImporter(orderImportMapper),
+                new ExcelPurchaseImporter(orderImportMapper),
+                new DuplicateDetectionPolicy(),
+                new PaymentAdjustmentPolicy(),
+                new OwnerNormalizer(),
+                new PurchaseTimeNormalizer(),
+                learningNormalizer,
+                new QuantityUnitParser(),
+                new UnitPriceCalculator(),
+                importBatchRepository,
+                purchaseRecordRepository,
+                reviewItemRepository,
+                properties
+        );
+        NormalizationRagContextRetriever ragContextRetriever = new NormalizationRagContextRetriever(
+                cleaner, productAliasRepository, productNegativeAliasRepository, ruleProperties);
+        NormalizationSuggestionService suggestionService = new NormalizationSuggestionService(
+                databaseInitializer,
+                purchaseRecordRepository,
+                reviewItemRepository,
+                cleaner,
+                productAliasRepository,
+                productNegativeAliasRepository,
+                suggestionRepository,
+                ragContextRetriever,
+                advisor,
+                new SuggestedNormalizedNameCanonicalizer(),
+                new SuggestedTargetUnitCanonicalizer(),
+                properties,
+                objectMapper
+        );
+        return new Fixture(dir, jdbcTemplate, cleaner, productAliasRepository, productNegativeAliasRepository,
+                purchaseRecordRepository, reviewItemRepository, importBatchRepository, suggestionRepository,
+                importService, suggestionService);
+    }
+
+    private static class StubAdvisor extends NormalizationLlmAdvisor {
+        /**
+         * 按调用顺序返回的模拟 LLM 结果队列。
+         */
+        private final Queue<NormalizationAdvisorResult> results = new ArrayDeque<>();
+        /**
+         * 批次级失败标记队列，用于模拟单个 LLM batch 失败。
+         */
+        private final Queue<Boolean> failedBatches = new ArrayDeque<>();
+        /**
+         * 批次级异常队列，用于模拟 LLM 请求超时或网络错误。
+         */
+        private final Queue<RuntimeException> batchExceptions = new ArrayDeque<>();
+        /**
+         * LLM 批量调用次数，用于验证 batch-size 生效。
+         */
+        private int callCount;
+
+        StubAdvisor(NormalizationProperties normalizationProperties, ObjectMapper objectMapper) {
+            super(normalizationProperties, objectMapper);
+        }
+
+        void add(NormalizationAdvisorResult result) {
+            results.add(result);
+        }
+
+        void failNextBatch() {
+            failedBatches.add(true);
+        }
+
+        void throwNextBatch(RuntimeException exception) {
+            batchExceptions.add(exception);
+        }
+
+        int callCount() {
+            return callCount;
+        }
+
+        @Override
+        public List<NormalizationAdvisorResult> analyzeBatch(List<NormalizationAdvisorRequest> requests) {
+            callCount++;
+            if (!batchExceptions.isEmpty()) {
+                throw batchExceptions.remove();
+            }
+            if (!failedBatches.isEmpty() && failedBatches.remove()) {
+                return requests.stream()
+                        .map(request -> new NormalizationAdvisorResult(request.productName(), request.sku(), "REVIEW",
+                                null, null, "UNKNOWN", null, "UNKNOWN", 0.5D, true,
+                                "批量 JSON 解析失败", List.of("批量 JSON 解析失败"), true))
+                        .toList();
+            }
+            List<NormalizationAdvisorResult> batchResults = new ArrayList<>();
+            for (int i = 0; i < requests.size(); i++) {
+                batchResults.add(results.remove());
+            }
+            return batchResults;
+        }
+    }
+
+    private record Fixture(Path dir,
+                           JdbcTemplate jdbcTemplate,
+                           ProductTitleCleaner cleaner,
+                           ProductAliasRepository productAliasRepository,
+                           ProductNegativeAliasRepository productNegativeAliasRepository,
+                           PurchaseRecordRepository purchaseRecordRepository,
+                           ReviewItemRepository reviewItemRepository,
+                           ImportBatchRepository importBatchRepository,
+                           NormalizationSuggestionRepository suggestionRepository,
+                           ImportApplicationService importService,
+                           NormalizationSuggestionService suggestionService) {
+    }
+
+    private record LegacyRecordSeed(String productName, String sku) {
+    }
+}

@@ -9,7 +9,7 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/05
+ * @Date: 2026/06/06 00:27:12
  * @Description: 商品正向别名仓储，保存人工确认后的 alias_key 到标准品类映射。
  */
 @Repository
@@ -64,6 +64,34 @@ public class ProductAliasRepository {
                     target_unit = excluded.target_unit,
                     category = excluded.category
                 """, alias, aliasKey, normalizedName, targetUnit, category, ClockUtils.nowText());
+    }
+
+    /**
+     * 查询与 alias_key 存在简单包含关系的正向别名。
+     *
+     * @param aliasKey 清洗后的商品标题匹配键
+     * @param limit    最大返回条数
+     * @return 相似正向别名列表
+     */
+    public List<ProductAlias> listSimilar(String aliasKey, int limit) {
+        if (aliasKey == null || aliasKey.isBlank()) {
+            return List.of();
+        }
+        String like = "%" + aliasKey + "%";
+        return jdbcTemplate.query("""
+                SELECT id, alias, alias_key, normalized_name, target_unit, category
+                FROM product_aliases
+                WHERE alias_key LIKE ? OR ? LIKE '%' || alias_key || '%'
+                ORDER BY id DESC
+                LIMIT ?
+                """, (rs, rowNum) -> new ProductAlias(
+                rs.getLong("id"),
+                rs.getString("alias"),
+                rs.getString("alias_key"),
+                rs.getString("normalized_name"),
+                rs.getString("target_unit"),
+                rs.getString("category")
+        ), like, aliasKey, limit);
     }
 
     public record ProductAlias(Long id,

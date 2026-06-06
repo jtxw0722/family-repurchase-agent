@@ -1,10 +1,12 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.ImportApplicationService;
+import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
@@ -20,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/28/22:02
+ * @Date: 2026/06/06 17:58:26
  * @Description: Agent Tool REST API tests
  */
 @WebMvcTest(AgentToolController.class)
@@ -45,6 +48,8 @@ class AgentToolControllerTest {
     private ReportApplicationService reportApplicationService;
     @MockitoBean
     private ReviewApplicationService reviewApplicationService;
+    @MockitoBean
+    private NormalizationSuggestionService normalizationSuggestionService;
 
     @Test
     void comparePriceShouldReturnEvidenceStructure() throws Exception {
@@ -259,6 +264,30 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.action").value("ignore_normalization"));
+    }
+
+    @Test
+    void analyzeNormalizationShouldPassKeywordFilters() throws Exception {
+        when(normalizationSuggestionService.analyzeBatch(eq(7L), eq(10), eq(false),
+                eq(List.of("主食罐")), eq(List.of("试吃")), eq(true)))
+                .thenReturn(new NormalizationAnalyzeResult(7L, 1, 1, 0, 1, 0, 0, "ok"));
+
+        mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "limit": 10,
+                                  "forceReanalyze": false,
+                                  "includeKeywords": ["主食罐"],
+                                  "excludeKeywords": ["试吃"],
+                                  "onlyFailed": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analyzedCount").value(1));
+
+        verify(normalizationSuggestionService).analyzeBatch(eq(7L), eq(10), eq(false),
+                eq(List.of("主食罐")), eq(List.of("试吃")), eq(true));
     }
 
     @Test
