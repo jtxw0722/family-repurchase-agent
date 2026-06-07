@@ -29,6 +29,11 @@ family-agent:
       exclude-confidence-threshold: ${NORMALIZATION_LLM_EXCLUDE_CONFIDENCE_THRESHOLD:0.9}
       normalize-confidence-threshold: ${NORMALIZATION_LLM_NORMALIZE_CONFIDENCE_THRESHOLD:0.9}
       review-confidence-threshold: ${NORMALIZATION_LLM_REVIEW_CONFIDENCE_THRESHOLD:0.85}
+      debug-log-enabled: ${NORMALIZATION_LLM_DEBUG_LOG_ENABLED:false}
+      debug-log-full-prompt: ${NORMALIZATION_LLM_DEBUG_LOG_FULL_PROMPT:false}
+      debug-log-full-response: ${NORMALIZATION_LLM_DEBUG_LOG_FULL_RESPONSE:false}
+      debug-log-dir: ${NORMALIZATION_LLM_DEBUG_LOG_DIR:logs/llm-debug}
+      debug-max-response-chars: ${NORMALIZATION_LLM_DEBUG_MAX_RESPONSE_CHARS:8000}
 
 # 价格判断阈值为可选配置，未配置时使用默认值
 #  price-decision:

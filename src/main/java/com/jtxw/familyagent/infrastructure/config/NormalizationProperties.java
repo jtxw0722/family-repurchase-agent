@@ -99,6 +99,26 @@ public class NormalizationProperties {
          * REVIEW 参考阈值，默认 0.85。
          */
         private double reviewConfidenceThreshold = 0.85D;
+        /**
+         * 是否写入 LLM 调试 dump 文件，默认关闭。
+         */
+        private boolean debugLogEnabled = false;
+        /**
+         * 是否在调试 dump 中写入完整 prompt / request body。
+         */
+        private boolean debugLogFullPrompt = false;
+        /**
+         * 是否在调试 dump 中写入完整 response body 和提取后的模型内容。
+         */
+        private boolean debugLogFullResponse = false;
+        /**
+         * LLM 调试 dump 文件目录。
+         */
+        private String debugLogDir = "logs/llm-debug";
+        /**
+         * 调试 dump 中 response body 最大保留字符数。
+         */
+        private int debugMaxResponseChars = 8000;
 
         public boolean isEnabled() {
             return enabled;
@@ -186,6 +206,46 @@ public class NormalizationProperties {
 
         public void setReviewConfidenceThreshold(double reviewConfidenceThreshold) {
             this.reviewConfidenceThreshold = reviewConfidenceThreshold;
+        }
+
+        public boolean isDebugLogEnabled() {
+            return debugLogEnabled;
+        }
+
+        public void setDebugLogEnabled(boolean debugLogEnabled) {
+            this.debugLogEnabled = debugLogEnabled;
+        }
+
+        public boolean isDebugLogFullPrompt() {
+            return debugLogFullPrompt;
+        }
+
+        public void setDebugLogFullPrompt(boolean debugLogFullPrompt) {
+            this.debugLogFullPrompt = debugLogFullPrompt;
+        }
+
+        public boolean isDebugLogFullResponse() {
+            return debugLogFullResponse;
+        }
+
+        public void setDebugLogFullResponse(boolean debugLogFullResponse) {
+            this.debugLogFullResponse = debugLogFullResponse;
+        }
+
+        public String getDebugLogDir() {
+            return debugLogDir;
+        }
+
+        public void setDebugLogDir(String debugLogDir) {
+            this.debugLogDir = debugLogDir;
+        }
+
+        public int getDebugMaxResponseChars() {
+            return debugMaxResponseChars;
+        }
+
+        public void setDebugMaxResponseChars(int debugMaxResponseChars) {
+            this.debugMaxResponseChars = debugMaxResponseChars;
         }
     }
 }

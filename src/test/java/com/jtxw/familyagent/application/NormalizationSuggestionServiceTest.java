@@ -44,6 +44,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Queue;
 
@@ -118,6 +119,111 @@ class NormalizationSuggestionServiceTest {
         assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
         assertThat(fixture.productAliasRepository().findByAliasKey(suggestion.aliasKey())).isEmpty();
         assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+    }
+
+    @Test
+    void analyzeBatchShouldNotWriteDebugDumpWhenDisabled() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        Fixture fixture = fixture("debug-disabled.sqlite", properties, advisor);
+        Path debugDir = fixture.dir().resolve("debug-disabled");
+        deleteTree(debugDir);
+        properties.getLlm().setDebugLogDir(debugDir.toString());
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(Files.exists(debugDir)).isFalse();
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status())
+                .isEqualTo("pending_batch_approval");
+    }
+
+    @Test
+    void analyzeBatchShouldWriteDebugDumpWithoutBodiesByDefault() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        Fixture fixture = fixture("debug-no-body.sqlite", properties, advisor);
+        Path debugDir = fixture.dir().resolve("debug-no-body");
+        deleteTree(debugDir);
+        properties.getLlm().setDebugLogEnabled(true);
+        properties.getLlm().setDebugLogDir(debugDir.toString());
+        properties.getLlm().setApiKey("secret-test-key");
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        String debugJson = Files.readString(singleDebugFile(debugDir), StandardCharsets.UTF_8);
+        assertThat(debugJson).doesNotContain("Authorization").doesNotContain("secret-test-key");
+        var root = new ObjectMapper().readTree(debugJson);
+        assertThat(root.path("request").path("body").isNull()).isTrue();
+        assertThat(root.path("response").path("body").isNull()).isTrue();
+        assertThat(root.path("promptChars").asInt()).isGreaterThan(0);
+        assertThat(root.path("requestBytes").asInt()).isGreaterThan(0);
+    }
+
+    @Test
+    void analyzeBatchShouldWriteFullPromptAndResponseWhenEnabled() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        advisor.responseBody("{\"choices\":[{\"message\":{\"content\":\"ok-response\"}}]}");
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        Fixture fixture = fixture("debug-full-body.sqlite", properties, advisor);
+        Path debugDir = fixture.dir().resolve("debug-full-body");
+        deleteTree(debugDir);
+        properties.getLlm().setDebugLogEnabled(true);
+        properties.getLlm().setDebugLogFullPrompt(true);
+        properties.getLlm().setDebugLogFullResponse(true);
+        properties.getLlm().setDebugLogDir(debugDir.toString());
+        properties.getLlm().setApiKey("secret-test-key");
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        String debugJson = Files.readString(singleDebugFile(debugDir), StandardCharsets.UTF_8);
+        assertThat(debugJson).doesNotContain("Authorization").doesNotContain("secret-test-key");
+        var root = new ObjectMapper().readTree(debugJson);
+        assertThat(root.path("request").path("body").asText()).contains("messages");
+        assertThat(root.path("response").path("body").asText()).contains("ok-response");
+        assertThat(root.path("extractedContent").asText()).contains("ok-response");
+    }
+
+    @Test
+    void analyzeBatchShouldTruncateDebugResponseBody() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        advisor.responseBody("0123456789");
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        Fixture fixture = fixture("debug-truncated-response.sqlite", properties, advisor);
+        Path debugDir = fixture.dir().resolve("debug-truncated-response");
+        deleteTree(debugDir);
+        properties.getLlm().setDebugLogEnabled(true);
+        properties.getLlm().setDebugLogFullResponse(true);
+        properties.getLlm().setDebugLogDir(debugDir.toString());
+        properties.getLlm().setDebugMaxResponseChars(5);
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        var root = new ObjectMapper().readTree(Files.readString(singleDebugFile(debugDir), StandardCharsets.UTF_8));
+        assertThat(root.path("response").path("body").asText()).isEqualTo("01234");
+        assertThat(root.path("response").path("truncated").asBoolean()).isTrue();
+    }
+
+    @Test
+    void analyzeBatchShouldIgnoreDebugDumpWriteFailure() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
+        NormalizationProperties properties = properties(true, "llm_suggestion");
+        Fixture fixture = fixture("debug-write-failure.sqlite", properties, advisor);
+        Path debugDirAsFile = fixture.dir().resolve("debug-dir-as-file");
+        deleteTree(debugDirAsFile);
+        Files.writeString(debugDirAsFile, "not a directory", StandardCharsets.UTF_8);
+        properties.getLlm().setDebugLogEnabled(true);
+        properties.getLlm().setDebugLogDir(debugDirAsFile.toString());
+        long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status())
+                .isEqualTo("pending_batch_approval");
     }
 
     @Test
@@ -680,6 +786,25 @@ class NormalizationSuggestionServiceTest {
         return new LegacyRecordSeed(productName, sku);
     }
 
+    private Path singleDebugFile(Path debugDir) throws Exception {
+        try (var files = Files.list(debugDir)) {
+            List<Path> debugFiles = files.toList();
+            assertThat(debugFiles).hasSize(1);
+            return debugFiles.get(0);
+        }
+    }
+
+    private void deleteTree(Path path) throws Exception {
+        if (!Files.exists(path)) {
+            return;
+        }
+        try (var paths = Files.walk(path)) {
+            for (Path item : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(item);
+            }
+        }
+    }
+
     private Path csv(Path dir, String filename, String productName, String sku) throws Exception {
         Path file = dir.resolve(filename);
         Files.writeString(file, """
@@ -823,6 +948,10 @@ class NormalizationSuggestionServiceTest {
          * LLM 批量调用次数，用于验证 batch-size 生效。
          */
         private int callCount;
+        /**
+         * 模拟 LLM 原始响应体，用于 debug dump 测试。
+         */
+        private String responseBody = "{\"stub\":\"response\"}";
 
         StubAdvisor(NormalizationProperties normalizationProperties, ObjectMapper objectMapper) {
             super(normalizationProperties, objectMapper);
@@ -844,24 +973,51 @@ class NormalizationSuggestionServiceTest {
             return callCount;
         }
 
+        void responseBody(String responseBody) {
+            this.responseBody = responseBody;
+        }
+
         @Override
         public List<NormalizationAdvisorResult> analyzeBatch(List<NormalizationAdvisorRequest> requests) {
+            return analyzeBatchWithObservation(requests).results();
+        }
+
+        @Override
+        public LlmBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
             callCount++;
             if (!batchExceptions.isEmpty()) {
                 throw batchExceptions.remove();
             }
+            LlmRequestMetrics requestMetrics;
+            try {
+                requestMetrics = requestMetrics(requests);
+            } catch (Exception e) {
+                requestMetrics = new LlmRequestMetrics(0, 0, null);
+            }
             if (!failedBatches.isEmpty() && failedBatches.remove()) {
-                return requests.stream()
+                List<NormalizationAdvisorResult> failedResults = requests.stream()
                         .map(request -> new NormalizationAdvisorResult(request.productName(), request.sku(), "REVIEW",
                                 null, null, "UNKNOWN", null, "UNKNOWN", 0.5D, true,
                                 "批量 JSON 解析失败", List.of("批量 JSON 解析失败"), true))
                         .toList();
+                return new LlmBatchAnalysis(failedResults, observation(requestMetrics, 0, "json_parse_error",
+                        "批量 JSON 解析失败"));
             }
             List<NormalizationAdvisorResult> batchResults = new ArrayList<>();
             for (int i = 0; i < requests.size(); i++) {
                 batchResults.add(results.remove());
             }
-            return batchResults;
+            return new LlmBatchAnalysis(batchResults, observation(requestMetrics, batchResults.size(), null, null));
+        }
+
+        private LlmBatchObservation observation(LlmRequestMetrics requestMetrics,
+                                                int parsedItems,
+                                                String errorType,
+                                                String errorMessage) {
+            return new LlmBatchObservation(requestMetrics.promptChars(), requestMetrics.requestBytes(),
+                    requestMetrics.requestBody(), 1L, 2L, 3L, 4L, 10L, 200, "application/json",
+                    responseBody.getBytes(StandardCharsets.UTF_8).length, responseBody.length(), parsedItems,
+                    errorType, errorMessage, responseBody, responseBody);
         }
     }
 

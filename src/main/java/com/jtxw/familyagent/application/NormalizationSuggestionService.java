@@ -22,6 +22,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -107,6 +113,11 @@ public class NormalizationSuggestionService {
      * SKU 或商品名中的数量包装单位正则，用于 targetUnit 兜底推断。
      */
     private static final Pattern COUNT_UNIT_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?\\s*(罐|包|盒|杯)");
+    /**
+     * LLM debug dump 文件名时间戳格式。
+     */
+    private static final DateTimeFormatter DEBUG_FILE_TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
     /**
      * 数据库初始化器，用于确保建议表和复核表结构可用。
@@ -250,19 +261,29 @@ public class NormalizationSuggestionService {
             List<Candidate> batchCandidates = limitedCandidates.subList(start, Math.min(start + batchSize, limitedCandidates.size()));
             int batchIndex = start / batchSize + 1;
             long batchStartNanos = System.nanoTime();
-            LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, aliasKeys={}",
-                    batchId, batchIndex, totalBatches, batchCandidates.size(), aliasKeySummary(batchCandidates));
+            List<NormalizationAdvisorRequest> advisorRequests = batchCandidates.stream()
+                    .map(Candidate::toAdvisorRequest)
+                    .toList();
+            NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics = requestMetrics(advisorRequests);
+            NormalizationProperties.Llm llm = normalizationProperties.getLlm();
+            LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, model={}, baseUrlHost={}, timeoutSeconds={}, promptChars={}, requestBytes={}, aliasKeys={}",
+                    batchId, batchIndex, totalBatches, batchCandidates.size(), llm.getModel(),
+                    baseUrlHost(llm.getBaseUrl()), llm.getRequestTimeoutSeconds(),
+                    requestMetrics.promptChars(), requestMetrics.requestBytes(), aliasKeySummary(batchCandidates));
             List<NormalizationAdvisorResult> advisorResults;
+            NormalizationLlmAdvisor.LlmBatchObservation observation;
             try {
-                advisorResults = llmAdvisor.analyzeBatch(batchCandidates.stream()
-                        .map(Candidate::toAdvisorRequest)
-                        .toList());
+                NormalizationLlmAdvisor.LlmBatchAnalysis analysis = llmAdvisor.analyzeBatchWithObservation(advisorRequests);
+                advisorResults = analysis.results();
+                observation = analysis.observation();
             } catch (Exception e) {
                 advisorResults = batchCandidates.stream()
                         .map(candidate -> failedResult(candidate, classifyException(e)))
                         .toList();
+                observation = failedObservation(e, requestMetrics, batchStartNanos);
             }
             int batchFailedCount = 0;
+            long saveStartNanos = System.nanoTime();
             for (int index = 0; index < batchCandidates.size(); index++) {
                 Candidate candidate = batchCandidates.get(index);
                 NormalizationAdvisorResult advisorResult = advisorResults.get(index);
@@ -286,11 +307,23 @@ public class NormalizationSuggestionService {
                     createNormalizationReview(candidate.record(), suggestion.reason());
                 }
             }
+            long saveElapsedMs = elapsedMs(saveStartNanos);
             long elapsedMs = (System.nanoTime() - batchStartNanos) / 1_000_000;
             String batchStatus = batchFailedCount == 0 ? "success"
                     : batchFailedCount == batchCandidates.size() ? "failed" : "partial_failed";
-            LOGGER.info("Normalization LLM batch end: batchId={}, batchIndex={}/{}, elapsedMs={}, status={}, failedCount={}",
-                    batchId, batchIndex, totalBatches, elapsedMs, batchStatus, batchFailedCount);
+            if (observation.errorType() != null && !observation.errorType().isBlank()) {
+                LOGGER.info("Normalization LLM batch failed: batchId={}, batchIndex={}/{}, elapsedMs={}, errorType={}, message={}, httpStatus={}, contentType={}",
+                        batchId, batchIndex, totalBatches, elapsedMs, observation.errorType(),
+                        abbreviate(observation.errorMessage(), 200), observation.httpStatus(), observation.contentType());
+            }
+            LOGGER.info("Normalization LLM batch end: batchId={}, batchIndex={}/{}, elapsedMs={}, status={}, httpStatus={}, contentType={}, responseBytes={}, extractedContentChars={}, parsedItems={}, failedCount={}, saveElapsedMs={}, requestBuildElapsedMs={}, llmHttpElapsedMs={}, extractElapsedMs={}, parseElapsedMs={}, totalElapsedMs={}",
+                    batchId, batchIndex, totalBatches, elapsedMs, batchStatus, observation.httpStatus(),
+                    observation.contentType(), observation.responseBytes(), observation.extractedContentChars(),
+                    observation.parsedItems(), batchFailedCount, saveElapsedMs, observation.requestBuildElapsedMs(),
+                    observation.llmHttpElapsedMs(), observation.extractElapsedMs(), observation.parseElapsedMs(),
+                    observation.totalElapsedMs());
+            writeDebugDump(batchId, batchIndex, batchCandidates.size(), requestMetrics, observation,
+                    elapsedMs, saveElapsedMs);
         }
         String message = analyzeMessage(candidates.size(), analyzedCount, failureTypeCounts);
         return new NormalizationAnalyzeResult(batchId, candidates.size(), analyzedCount, autoExcludedCount,
@@ -456,7 +489,7 @@ public class NormalizationSuggestionService {
     }
 
     private String classifyException(Exception e) {
-        String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        String message = errorMessage(e);
         String lowerMessage = message.toLowerCase();
         if (lowerMessage.contains("read timed out") || lowerMessage.contains("timed out")
                 || lowerMessage.contains("timeout")) {
@@ -471,7 +504,10 @@ public class NormalizationSuggestionService {
         if (lowerMessage.contains("空响应")) {
             return "empty_response：" + sanitizeError(message);
         }
-        return "llm_error：" + sanitizeError(message);
+        if (e instanceof IOException || lowerMessage.contains("i/o") || lowerMessage.contains("io error")) {
+            return "io_error：" + sanitizeError(message);
+        }
+        return "unknown_error：" + sanitizeError(message);
     }
 
     private String sanitizeError(String message) {
@@ -523,6 +559,149 @@ public class NormalizationSuggestionService {
             return "";
         }
         return text.length() <= maxLength ? text : text.substring(0, maxLength) + "...";
+    }
+
+    private NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests) {
+        try {
+            return llmAdvisor.requestMetrics(requests);
+        } catch (Exception e) {
+            LOGGER.warn("Normalization LLM request metrics build failed: errorType={}, message={}",
+                    errorType(classifyException(e)), abbreviate(sanitizeError(errorMessage(e)), 200));
+            return new NormalizationLlmAdvisor.LlmRequestMetrics(0, 0, null);
+        }
+    }
+
+    private NormalizationLlmAdvisor.LlmBatchObservation failedObservation(Exception e,
+                                                                         NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics,
+                                                                         long batchStartNanos) {
+        return new NormalizationLlmAdvisor.LlmBatchObservation(
+                requestMetrics.promptChars(),
+                requestMetrics.requestBytes(),
+                requestMetrics.requestBody(),
+                0L,
+                0L,
+                0L,
+                0L,
+                elapsedMs(batchStartNanos),
+                0,
+                "",
+                0,
+                0,
+                0,
+                errorType(classifyException(e)),
+                sanitizeError(errorMessage(e)),
+                null,
+                null
+        );
+    }
+
+    private void writeDebugDump(long batchId,
+                                int batchIndex,
+                                int batchSize,
+                                NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics,
+                                NormalizationLlmAdvisor.LlmBatchObservation observation,
+                                long elapsedMs,
+                                long saveElapsedMs) {
+        NormalizationProperties.Llm llm = normalizationProperties.getLlm();
+        if (!llm.isDebugLogEnabled()) {
+            return;
+        }
+        try {
+            Path debugDir = Path.of(llm.getDebugLogDir());
+            Files.createDirectories(debugDir);
+            String timestamp = LocalDateTime.now().format(DEBUG_FILE_TIMESTAMP_FORMAT);
+            Path debugFile = debugDir.resolve("normalization-batch-" + batchId + "-" + batchIndex
+                    + "-" + timestamp + ".json");
+            Map<String, Object> dump = new LinkedHashMap<>();
+            dump.put("batchId", batchId);
+            dump.put("batchIndex", batchIndex);
+            dump.put("batchSize", batchSize);
+            dump.put("model", llm.getModel());
+            dump.put("baseUrlHost", baseUrlHost(llm.getBaseUrl()));
+            dump.put("timeoutSeconds", llm.getRequestTimeoutSeconds());
+            dump.put("promptChars", requestMetrics.promptChars());
+            dump.put("requestBytes", requestMetrics.requestBytes());
+            dump.put("startedAt", ClockUtils.nowText());
+            dump.put("finishedAt", ClockUtils.nowText());
+            dump.put("elapsedMs", elapsedMs);
+            dump.put("httpStatus", observation.httpStatus());
+            dump.put("contentType", observation.contentType());
+            dump.put("responseBytes", observation.responseBytes());
+            dump.put("extractedContentChars", observation.extractedContentChars());
+            dump.put("parsedItems", observation.parsedItems());
+            dump.put("errorType", observation.errorType());
+            dump.put("errorMessage", observation.errorMessage());
+            dump.put("requestBuildElapsedMs", observation.requestBuildElapsedMs());
+            dump.put("llmHttpElapsedMs", observation.llmHttpElapsedMs());
+            dump.put("extractElapsedMs", observation.extractElapsedMs());
+            dump.put("parseElapsedMs", observation.parseElapsedMs());
+            dump.put("saveElapsedMs", saveElapsedMs);
+            dump.put("totalElapsedMs", observation.totalElapsedMs() > 0 ? observation.totalElapsedMs() : elapsedMs);
+            dump.put("request", debugRequest(llm, observation));
+            dump.put("response", debugResponse(llm, observation));
+            dump.put("extractedContent", llm.isDebugLogFullResponse()
+                    ? truncatedText(observation.extractedContent(), llm.getDebugMaxResponseChars()).text()
+                    : null);
+            Files.writeString(debugFile, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dump));
+        } catch (Exception e) {
+            LOGGER.warn("Normalization LLM debug dump write failed: errorType={}, message={}",
+                    errorType(classifyException(e)), abbreviate(sanitizeError(errorMessage(e)), 200));
+        }
+    }
+
+    private Map<String, Object> debugRequest(NormalizationProperties.Llm llm,
+                                             NormalizationLlmAdvisor.LlmBatchObservation observation) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("body", llm.isDebugLogFullPrompt() ? observation.requestBody() : null);
+        return request;
+    }
+
+    private Map<String, Object> debugResponse(NormalizationProperties.Llm llm,
+                                              NormalizationLlmAdvisor.LlmBatchObservation observation) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (!llm.isDebugLogFullResponse()) {
+            response.put("body", null);
+            response.put("truncated", false);
+            return response;
+        }
+        TruncatedText truncatedResponse = truncatedText(observation.responseBody(), llm.getDebugMaxResponseChars());
+        response.put("body", truncatedResponse.text());
+        response.put("truncated", truncatedResponse.truncated());
+        return response;
+    }
+
+    private TruncatedText truncatedText(String text, int maxChars) {
+        if (text == null) {
+            return new TruncatedText(null, false);
+        }
+        int safeMaxChars = Math.max(0, maxChars);
+        if (text.length() <= safeMaxChars) {
+            return new TruncatedText(text, false);
+        }
+        return new TruncatedText(text.substring(0, safeMaxChars), true);
+    }
+
+    private String baseUrlHost(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return "";
+        }
+        try {
+            String host = URI.create(baseUrl).getHost();
+            return host == null ? "" : host;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String errorMessage(Exception e) {
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
+
+    private long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
+    private record TruncatedText(String text, boolean truncated) {
     }
 
     private String status(NormalizationAdvisorResult result) {

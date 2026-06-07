@@ -12,6 +12,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -135,8 +136,12 @@ public class NormalizationLlmAdvisor {
      * @return 与输入顺序一致的结构化归一化建议列表
      */
     public List<NormalizationAdvisorResult> analyzeBatch(List<NormalizationAdvisorRequest> requests) {
+        return analyzeBatchWithObservation(requests).results();
+    }
+
+    public LlmBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
         if (requests == null || requests.isEmpty()) {
-            return List.of();
+            return new LlmBatchAnalysis(List.of(), LlmBatchObservation.empty());
         }
         NormalizationProperties.Llm llm = normalizationProperties.getLlm();
         if (!llm.isEnabled()) {
@@ -151,19 +156,71 @@ public class NormalizationLlmAdvisor {
         if (llm.getBaseUrl() == null || llm.getBaseUrl().isBlank()) {
             throw new IllegalStateException("LLM normalization advisor 缺少 baseUrl");
         }
+        long totalStartNanos = System.nanoTime();
+        long requestBuildStartNanos = totalStartNanos;
+        long requestBuildElapsedMs = 0L;
+        long llmHttpElapsedMs = 0L;
+        long extractElapsedMs = 0L;
+        long parseElapsedMs = 0L;
+        LlmHttpResponse httpResponse = null;
+        LlmRequestMetrics requestMetrics = null;
+        String extractedContent = "";
         try {
-            String content = callOpenAi(requests, llm);
-            return parseBatchContent(content, requests);
+            requestMetrics = requestMetrics(requests);
+            requestBuildElapsedMs = elapsedMs(requestBuildStartNanos);
+            long httpStartNanos = System.nanoTime();
+            httpResponse = callOpenAi(requestMetrics.requestBody(), llm);
+            llmHttpElapsedMs = elapsedMs(httpStartNanos);
+            long extractStartNanos = System.nanoTime();
+            extractedContent = extractModelOutput(httpResponse.body());
+            extractElapsedMs = elapsedMs(extractStartNanos);
+            long parseStartNanos = System.nanoTime();
+            List<NormalizationAdvisorResult> results = parseBatchContent(extractedContent, requests);
+            parseElapsedMs = elapsedMs(parseStartNanos);
+            return new LlmBatchAnalysis(results, new LlmBatchObservation(
+                    requestMetrics.promptChars(), requestMetrics.requestBytes(), requestMetrics.requestBody(),
+                    requestBuildElapsedMs, llmHttpElapsedMs, extractElapsedMs, parseElapsedMs, elapsedMs(totalStartNanos),
+                    httpResponse.httpStatus(), httpResponse.contentType(), httpResponse.responseBytes(),
+                    extractedContent.length(), results.size(), null, null, httpResponse.body(), extractedContent
+            ));
         } catch (Exception e) {
-            return requests.stream()
+            if (requestBuildElapsedMs == 0L) {
+                requestBuildElapsedMs = elapsedMs(requestBuildStartNanos);
+            }
+            List<NormalizationAdvisorResult> failedResults = requests.stream()
                     .map(request -> failedResult(request.productName(), request.sku(),
                             classifyException(e)))
                     .toList();
+            return new LlmBatchAnalysis(failedResults, new LlmBatchObservation(
+                    requestMetrics == null ? 0 : requestMetrics.promptChars(),
+                    requestMetrics == null ? 0 : requestMetrics.requestBytes(),
+                    requestMetrics == null ? null : requestMetrics.requestBody(),
+                    requestBuildElapsedMs, llmHttpElapsedMs, extractElapsedMs, parseElapsedMs, elapsedMs(totalStartNanos),
+                    httpStatus(e, httpResponse), contentType(e, httpResponse), responseBytes(e, httpResponse),
+                    extractedContent.length(), 0, errorType(e), sanitizeError(errorMessage(e)),
+                    responseBody(e, httpResponse), extractedContent
+            ));
         }
     }
 
-    private String callOpenAi(List<NormalizationAdvisorRequest> requests,
-                              NormalizationProperties.Llm llm) throws JsonProcessingException {
+    public LlmRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests) throws JsonProcessingException {
+        NormalizationProperties.Llm llm = normalizationProperties.getLlm();
+        String systemPrompt = systemPrompt();
+        String userPrompt = userPrompt(requests);
+        Map<String, Object> request = Map.of(
+                "model", llm.getModel(),
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt)
+                )
+        );
+        String requestBody = objectMapper.writeValueAsString(request);
+        return new LlmRequestMetrics(systemPrompt.length() + userPrompt.length(),
+                requestBody.getBytes(StandardCharsets.UTF_8).length, requestBody);
+    }
+
+    private LlmHttpResponse callOpenAi(String requestBody,
+                                       NormalizationProperties.Llm llm) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         int timeoutMillis = Math.max(1, llm.getRequestTimeoutSeconds()) * 1000;
         requestFactory.setConnectTimeout(Duration.ofMillis(timeoutMillis));
@@ -171,29 +228,24 @@ public class NormalizationLlmAdvisor {
         RestClient restClient = RestClient.builder()
                 .requestFactory(requestFactory)
                 .build();
-        Map<String, Object> request = Map.of(
-                "model", llm.getModel(),
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt()),
-                        Map.of("role", "user", "content", userPrompt(requests))
-                )
-        );
-        String response = restClient.post()
+        return restClient.post()
                 .uri(endpointUrl(llm.getBaseUrl(), OPENAI_CHAT_COMPLETIONS_PATH))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + llm.getApiKey())
-                .body(request)
+                .body(requestBody)
                 .exchange((clientRequest, clientResponse) -> {
                     byte[] responseBody = clientResponse.getBody().readAllBytes();
                     String responseText = new String(responseBody, StandardCharsets.UTF_8);
+                    int httpStatus = clientResponse.getStatusCode().value();
+                    String contentType = clientResponse.getHeaders().getContentType() == null
+                            ? "" : clientResponse.getHeaders().getContentType().toString();
                     if (!clientResponse.getStatusCode().is2xxSuccessful()) {
-                        throw new IllegalStateException("LLM HTTP 响应异常："
-                                + clientResponse.getStatusCode().value() + "；响应：" + abbreviate(responseText));
+                        throw new LlmHttpException(httpStatus, contentType, responseBody.length, responseText,
+                                "LLM HTTP 响应异常：" + httpStatus + "；响应：" + abbreviate(responseText));
                     }
-                    return responseText(responseBody);
+                    return new LlmHttpResponse(httpStatus, contentType, responseBody.length, responseText(responseBody));
                 });
-        return extractModelOutput(response);
     }
 
     private String responseText(byte[] responseBody) {
@@ -515,7 +567,7 @@ public class NormalizationLlmAdvisor {
     }
 
     private String classifyException(Exception e) {
-        String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        String message = errorMessage(e);
         String lowerMessage = message.toLowerCase(Locale.ROOT);
         if (lowerMessage.contains("read timed out") || lowerMessage.contains("timed out")
                 || lowerMessage.contains("timeout")) {
@@ -530,7 +582,52 @@ public class NormalizationLlmAdvisor {
         if (e instanceof JsonProcessingException || lowerMessage.contains("json")) {
             return "json_parse_error：" + sanitizeError(message);
         }
-        return "llm_error：" + sanitizeError(message);
+        if (e instanceof IOException || lowerMessage.contains("i/o") || lowerMessage.contains("io error")) {
+            return "io_error：" + sanitizeError(message);
+        }
+        return "unknown_error：" + sanitizeError(message);
+    }
+
+    private String errorType(Exception e) {
+        String classified = classifyException(e);
+        int splitIndex = classified.indexOf('：');
+        return splitIndex <= 0 ? "unknown_error" : classified.substring(0, splitIndex);
+    }
+
+    private String errorMessage(Exception e) {
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
+
+    private int httpStatus(Exception e, LlmHttpResponse httpResponse) {
+        if (e instanceof LlmHttpException httpException) {
+            return httpException.httpStatus();
+        }
+        return httpResponse == null ? 0 : httpResponse.httpStatus();
+    }
+
+    private String contentType(Exception e, LlmHttpResponse httpResponse) {
+        if (e instanceof LlmHttpException httpException) {
+            return httpException.contentType();
+        }
+        return httpResponse == null ? "" : httpResponse.contentType();
+    }
+
+    private int responseBytes(Exception e, LlmHttpResponse httpResponse) {
+        if (e instanceof LlmHttpException httpException) {
+            return httpException.responseBytes();
+        }
+        return httpResponse == null ? 0 : httpResponse.responseBytes();
+    }
+
+    private String responseBody(Exception e, LlmHttpResponse httpResponse) {
+        if (e instanceof LlmHttpException httpException) {
+            return httpException.responseBody();
+        }
+        return httpResponse == null ? null : httpResponse.body();
+    }
+
+    private long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
     }
 
     private String sanitizeError(String message) {
@@ -672,5 +769,68 @@ public class NormalizationLlmAdvisor {
     }
 
     private record ClassificationCorrection(String action, String productType, boolean reviewRequired, String reason) {
+    }
+
+    public record LlmRequestMetrics(int promptChars, int requestBytes, String requestBody) {
+    }
+
+    public record LlmBatchAnalysis(List<NormalizationAdvisorResult> results, LlmBatchObservation observation) {
+    }
+
+    public record LlmBatchObservation(int promptChars,
+                                      int requestBytes,
+                                      String requestBody,
+                                      long requestBuildElapsedMs,
+                                      long llmHttpElapsedMs,
+                                      long extractElapsedMs,
+                                      long parseElapsedMs,
+                                      long totalElapsedMs,
+                                      int httpStatus,
+                                      String contentType,
+                                      int responseBytes,
+                                      int extractedContentChars,
+                                      int parsedItems,
+                                      String errorType,
+                                      String errorMessage,
+                                      String responseBody,
+                                      String extractedContent) {
+        public static LlmBatchObservation empty() {
+            return new LlmBatchObservation(0, 0, null, 0L, 0L, 0L, 0L, 0L,
+                    0, "", 0, 0, 0, null, null, null, null);
+        }
+    }
+
+    private record LlmHttpResponse(int httpStatus, String contentType, int responseBytes, String body) {
+    }
+
+    private static class LlmHttpException extends RuntimeException {
+        private final int httpStatus;
+        private final String contentType;
+        private final int responseBytes;
+        private final String responseBody;
+
+        LlmHttpException(int httpStatus, String contentType, int responseBytes, String responseBody, String message) {
+            super(message);
+            this.httpStatus = httpStatus;
+            this.contentType = contentType;
+            this.responseBytes = responseBytes;
+            this.responseBody = responseBody;
+        }
+
+        int httpStatus() {
+            return httpStatus;
+        }
+
+        String contentType() {
+            return contentType;
+        }
+
+        int responseBytes() {
+            return responseBytes;
+        }
+
+        String responseBody() {
+            return responseBody;
+        }
     }
 }
