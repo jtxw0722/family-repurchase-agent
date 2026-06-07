@@ -276,7 +276,7 @@ class NormalizationSuggestionServiceTest {
                 .containsExactly("pending_review", "pending_review");
         assertThat(suggestions.get(0).targetUnit()).isEqualTo("罐");
         assertThat(suggestions)
-                .allSatisfy(suggestion -> assertThat(suggestion.reason()).contains("需人工确认是否为定金订单"));
+                .allSatisfy(suggestion -> assertThat(suggestion.reason()).contains("真实商品含预售付定需复核"));
     }
 
     @Test
@@ -402,7 +402,7 @@ class NormalizationSuggestionServiceTest {
         assertThat(fixture.suggestionRepository().listByBatchId(batchId))
                 .allSatisfy(suggestion -> {
                     assertThat(suggestion.status()).isEqualTo("pending_review");
-                    assertThat(suggestion.reason()).contains("猫主食罐按重量比价更稳定");
+                    assertThat(suggestion.reason()).contains("单位需复核");
                 });
     }
 
@@ -426,6 +426,246 @@ class NormalizationSuggestionServiceTest {
                 .extracting(NormalizationSuggestion::status)
                 .containsExactly("pending_batch_approval", "pending_review", "pending_batch_approval",
                         "pending_batch_approval", "pending_batch_approval");
+    }
+
+    @Test
+    void safetyGuardShouldReviewNormalizeWithNonPositiveProductType() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeTyped("纯棉T恤", "T恤", "件", "DURABLE"),
+                normalizeTyped("一次性服务", "服务", "件", "NON_REPURCHASE")
+        );
+        Fixture fixture = fixture("safety-type-conflict.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "纯棉T恤", "一次性服务");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("REVIEW");
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("类型动作冲突");
+                });
+    }
+
+    @Test
+    void safetyGuardShouldReviewReasonCodesThatRequireReview() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeWithReasonCode("手作面包早餐", "面包", "件", "FOOD_REVIEW"),
+                normalizeWithReasonCode("持妆粉底液", "粉底液", "ml", "COLOR_COSMETIC_REVIEW"),
+                normalizeWithReasonCode("双11预售猫条15g", "猫条", "g", "REAL_PRODUCT_WITH_DEPOSIT")
+        );
+        Fixture fixture = fixture("safety-review-reason-code.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "手作面包早餐", "持妆粉底液", "双11预售猫条15g");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(3);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("REVIEW");
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("reasonCode 需复核");
+                });
+    }
+
+    @Test
+    void safetyGuardShouldReviewWhenModelExplanationRequiresReview() throws Exception {
+        StubAdvisor advisor = advisor(normalizeWithShortReason("美瞳取戴器", "美瞳", "件", "需确认是否为耗材"));
+        Fixture fixture = fixture("safety-short-reason-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "美瞳取戴器");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("模型解释需复核");
+    }
+
+    @Test
+    void safetyGuardShouldReviewWhenFinalReasonRequiresManualReview() throws Exception {
+        StubAdvisor advisor = advisor(normalizeWithReason("美瞳护理液", "护理液", "ml", "最终判断需要人工复核"));
+        Fixture fixture = fixture("safety-final-reason-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "美瞳护理液");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("需要人工复核");
+    }
+
+    @Test
+    void safetyGuardShouldReviewUnitFamilyValueInTargetUnit() throws Exception {
+        StubAdvisor advisor = advisor(normalize("美瞳日抛", "美瞳", "PIECE"));
+        Fixture fixture = fixture("safety-invalid-target-unit.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "美瞳日抛");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("单位字段非法");
+    }
+
+    @Test
+    void safetyGuardShouldReviewOrdinaryFoodAndSamples() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("手作面包早餐", "面包", "件"),
+                normalize("中秋月饼礼盒", "月饼", "盒"),
+                normalize("【U先尝鲜】营养补水奶酪冻尝鲜60g*4", "猫零食", "g"),
+                normalize("【会员试用装】麦富迪主食冻干成幼猫试吃包15g*2", "主食冻干", "g"),
+                normalize("1元抢先加赠兰花油", "精华液", "ml")
+        );
+        Fixture fixture = fixture("safety-food-sample-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "手作面包早餐", "中秋月饼礼盒",
+                "【U先尝鲜】营养补水奶酪冻尝鲜60g*4",
+                "【会员试用装】麦富迪主食冻干成幼猫试吃包15g*2",
+                "1元抢先加赠兰花油");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(5);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsOnly("pending_review");
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::reason)
+                .anySatisfy(reason -> assertThat(reason).contains("食品需复核"))
+                .anySatisfy(reason -> assertThat(reason).contains("试吃样品需复核"));
+    }
+
+    @Test
+    void safetyGuardShouldKeepPureCouponDepositAutoExcludedWhenSampleWordAppears() throws Exception {
+        StubAdvisor advisor = advisor(exclude("1元加赠权益", "COUPON_OR_DEPOSIT"));
+        Fixture fixture = fixture("safety-pure-coupon-sample.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "1元加赠权益");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.autoExcludedCount()).isEqualTo(1);
+        assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+        assertThat(suggestion.productType()).isEqualTo("COUPON_OR_DEPOSIT");
+        assertThat(suggestion.status()).isEqualTo("auto_excluded");
+    }
+
+    @Test
+    void safetyGuardShouldReviewPetFoodWeightUnitWithoutSpecEvidence() throws Exception {
+        StubAdvisor advisor = advisor(normalizeNoSpec("猫主食罐鸡肉味", "猫主食罐", "g"));
+        Fixture fixture = fixture("safety-pet-food-without-spec.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐鸡肉味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("缺少规格证据");
+    }
+
+    @Test
+    void safetyGuardShouldReviewPetFoodPackageAndCountUnits() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("猫主食罐鸡肉味", "猫主食罐", "罐"),
+                normalize("猫咪零食冻干", "猫咪零食", "袋"),
+                normalize("猫条三文鱼口味", "猫条", "条"),
+                normalize("猫汤包鸡肉味", "猫汤包", "盒")
+        );
+        Fixture fixture = fixture("safety-pet-food-package-units.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "猫主食罐鸡肉味", "猫咪零食冻干", "猫条三文鱼口味", "猫汤包鸡肉味");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(4);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("REVIEW");
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("单位需复核");
+                });
+    }
+
+    @Test
+    void safetyGuardShouldReviewAmbiguousSoupCatFoodAsCatMainCan() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeWithSku("猫咪鸡肉汤罐", "80g", "猫主食罐", "g"),
+                normalizeWithSku("幼猫补水奶昔", "60g", "猫主食罐", "g"),
+                normalizeWithSku("猫咪嘘嘘汤", "40ml", "猫主食罐", "ml")
+        );
+        Fixture fixture = fixture("safety-cat-soup-main-can-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("猫咪鸡肉汤罐", "80g"),
+                seed("幼猫补水奶昔", "60g"),
+                seed("猫咪嘘嘘汤", "40ml"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(3);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("REVIEW");
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("汤类猫食品需复核");
+                });
+    }
+
+    @Test
+    void safetyGuardShouldReviewPackageUnitWhenSpecExists() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeWithSku("补水精华液", "30ml", "精华液", "瓶"),
+                normalizeWithSku("洗衣液家庭装", "2kg", "洗衣液", "袋")
+        );
+        Fixture fixture = fixture("safety-spec-package-unit-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("补水精华液", "30ml"),
+                seed("洗衣液家庭装", "2kg"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(2);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("REVIEW");
+                    assertThat(suggestion.status()).isEqualTo("pending_review");
+                    assertThat(suggestion.reason()).contains("规格单位不一致需复核");
+                });
+    }
+
+    @Test
+    void safetyGuardShouldAllowPetFoodWeightUnitWithSpecEvidence() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeWithSku("猫主食罐鸡肉味", "510g", "猫主食罐", "g"),
+                normalizeWithSku("猫粮鸡肉味", "600g", "猫粮", "g"),
+                normalizeWithSku("猫条三文鱼口味", "100g", "猫条", "g")
+        );
+        Fixture fixture = fixture("safety-pet-food-with-spec.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("猫主食罐鸡肉味", "510g"),
+                seed("猫粮鸡肉味", "600g"),
+                seed("猫条三文鱼口味", "100g"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.pendingBatchApprovalCount()).isEqualTo(3);
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::status)
+                .containsOnly("pending_batch_approval");
     }
 
     @Test
@@ -828,10 +1068,132 @@ class NormalizationSuggestionServiceTest {
                 productType, null, "UNKNOWN", 0.95D, false, "高置信排除", List.of("测试证据"), false);
     }
 
+    /**
+     * 构造高置信 NORMALIZE 结果，按 targetUnit 自动补充默认规格 SKU。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @return 测试用 LLM 归一化结果
+     */
     private NormalizationAdvisorResult normalize(String productName, String normalizedName, String targetUnit) {
+        return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造不带规格证据的高置信 NORMALIZE 结果。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeNoSpec(String productName, String normalizedName, String targetUnit) {
         return new NormalizationAdvisorResult(productName, "默认", "NORMALIZE", normalizedName, null,
                 "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
                 List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造带指定 SKU 的高置信 NORMALIZE 结果。
+     *
+     * @param productName    原始商品名
+     * @param sku            商品规格或 SKU
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeWithSku(String productName,
+                                                        String sku,
+                                                        String normalizedName,
+                                                        String targetUnit) {
+        return new NormalizationAdvisorResult(productName, sku, "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造指定 productType 的 NORMALIZE 结果，用于测试类型和动作冲突。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @param productType    LLM 建议商品类型
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeTyped(String productName,
+                                                      String normalizedName,
+                                                      String targetUnit,
+                                                      String productType) {
+        return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                productType, targetUnit, "COUNT", 0.96D, false, "高置信归一化",
+                List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造带 reasonCode 的 NORMALIZE 结果，用于测试 reasonCode 安全降级。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @param reasonCode     LLM 输出原因码
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeWithReasonCode(String productName,
+                                                               String normalizedName,
+                                                               String targetUnit,
+                                                               String reasonCode) {
+        return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, "高置信复购消耗品",
+                List.of("测试证据"), reasonCode, null, false);
+    }
+
+    /**
+     * 构造带 shortReason 的 NORMALIZE 结果，用于测试解释文本安全降级。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @param shortReason    LLM 输出短原因
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeWithShortReason(String productName,
+                                                                String normalizedName,
+                                                                String targetUnit,
+                                                                String shortReason) {
+        return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, "高置信复购消耗品",
+                List.of("测试证据"), null, shortReason, false);
+    }
+
+    /**
+     * 构造带自定义 reason 的 NORMALIZE 结果，用于测试最终 reason 安全兜底。
+     *
+     * @param productName    原始商品名
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @param reason         LLM 输出原因说明
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeWithReason(String productName,
+                                                           String normalizedName,
+                                                           String targetUnit,
+                                                           String reason) {
+        return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, reason,
+                List.of("测试证据"), false);
+    }
+
+    /**
+     * 根据 targetUnit 生成默认 SKU，保证重量和体积单位测试默认带规格证据。
+     *
+     * @param targetUnit LLM 建议目标单位
+     * @return 默认 SKU 文本
+     */
+    private String defaultSkuFor(String targetUnit) {
+        return targetUnit != null && List.of("g", "kg", "ml", "L").contains(targetUnit) ? "100g" : "默认";
     }
 
     private NormalizationAdvisorResult couponDeposit(String productName, String normalizedName, String targetUnit) {

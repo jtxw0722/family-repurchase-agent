@@ -92,6 +92,61 @@ public class NormalizationSuggestionService {
      */
     private static final String PRODUCT_TYPE_REPURCHASE_CONSUMABLE = "REPURCHASE_CONSUMABLE";
     /**
+     * 非正向商品类型；若与 NORMALIZE 同时出现，说明 LLM 输出自相矛盾，只能进入人工复核。
+     */
+    private static final Set<String> NON_POSITIVE_PRODUCT_TYPES = Set.of(
+            "DURABLE", "NON_REPURCHASE", "COUPON_OR_DEPOSIT", "UNKNOWN");
+    /**
+     * reasonCode 明确表达需要复核的集合，只用于安全降级，不用于反推商品分类。
+     */
+    private static final Set<String> REVIEW_REQUIRED_REASON_CODES = Set.of(
+            "FOOD_REVIEW", "COLOR_COSMETIC_REVIEW", "UNKNOWN_REVIEW",
+            "REAL_PRODUCT_WITH_DEPOSIT", "UNIT_UNSAFE", "CAT_SOUP_AMBIGUOUS");
+    /**
+     * 模型解释中表达不确定或需要人工确认的短语。
+     */
+    private static final List<String> REVIEW_TEXT_KEYWORDS = List.of(
+            "需要人工复核", "人工复核", "需复核", "需确认", "需审核", "不确定", "模糊", "待确认");
+    /**
+     * 模型误把 unitFamily 写入 targetUnit 时会出现的枚举值。
+     */
+    private static final Set<String> UNIT_FAMILY_VALUES = Set.of("PIECE", "WEIGHT", "VOLUME", "COUNT", "UNKNOWN");
+    /**
+     * 宠物食品不适合直接批量确认的件数或包装单位，规格差异会明显污染价格基准。
+     */
+    private static final Set<String> PET_FOOD_REVIEW_UNITS = Set.of(
+            "罐", "包", "盒", "杯", "袋", "个", "件", "片", "条", "对");
+    /**
+     * LLM 输出 targetUnit 时不应优先使用的包装单位；如果标题或 SKU 已有规格值，应转人工复核。
+     */
+    private static final Set<String> PACKAGE_TARGET_UNITS = Set.of("瓶", "盒", "包", "罐", "袋", "件", "个");
+    /**
+     * 普通食品关键词；第一阶段不自动进入本地价格基准，避免个人场景差异导致误确认。
+     */
+    private static final List<String> ORDINARY_FOOD_KEYWORDS = List.of(
+            "面包", "吐司", "糕点", "月饼", "蛋糕", "饼干", "零食", "点心", "伴手礼", "礼盒");
+    /**
+     * 试吃、尝鲜和赠品类关键词；真实商品命中时只允许人工复核。
+     */
+    private static final List<String> SAMPLE_OR_GIFT_KEYWORDS = List.of(
+            "试吃", "试用", "尝鲜", "U先", "U选", "小样", "体验装", "会员试用", "赠品", "赠1", "加赠", "抢先加赠");
+    /**
+     * 宠物食品标准名称集合，用于判断重量/体积 targetUnit 是否需要商品标题或 SKU 中有规格证据。
+     */
+    private static final Set<String> PET_FOOD_NORMALIZED_NAMES = Set.of(
+            "猫主食罐", "猫罐头", "猫零食", "猫条", "猫汤包", "猫粮", "主食冻干", "猫冻干", "猫咪零食");
+    /**
+     * 宠物食品关键词，用于避免普通食品安全降级误伤猫零食等宠物消耗品。
+     */
+    private static final List<String> PET_FOOD_KEYWORDS = List.of(
+            "猫主食罐", "主食罐", "猫罐头", "湿粮", "餐盒", "猫条", "猫汤包", "猫零食", "猫咪零食",
+            "猫粮", "主食冻干", "猫冻干", "冻干");
+    /**
+     * 汤类、补水类猫食品语义容易在主食罐、零食罐和补水零食之间摇摆，不能直接归入猫主食罐价格基准。
+     */
+    private static final List<String> CAT_FOOD_SOUP_AMBIGUOUS_KEYWORDS = List.of(
+            "汤包", "汤罐", "补水汤", "奶昔", "嘘嘘汤", "猫汤", "鲜鸡汤", "补水");
+    /**
      * 预售、付定和定金类交易词；真实商品命中这些词时必须人工复核。
      */
     private static final List<String> PRESALE_DEPOSIT_KEYWORDS = List.of("预售", "预定", "定金", "付定", "锁定");
@@ -110,6 +165,10 @@ public class NormalizationSuggestionService {
      * SKU 或商品名中的重量规格正则，用于 targetUnit 兜底推断。
      */
     private static final Pattern WEIGHT_UNIT_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?\\s*(?:kg|KG|Kg|g|G|克|千克)");
+    /**
+     * SKU 或商品名中的体积规格正则，用于宠物食品 targetUnit 证据校验。
+     */
+    private static final Pattern VOLUME_UNIT_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?\\s*(?:ml|ML|Ml|mL|L|l|毫升|升)");
     /**
      * SKU 或商品名中的数量包装单位正则，用于 targetUnit 兜底推断。
      */
@@ -295,7 +354,8 @@ public class NormalizationSuggestionService {
                     .toList();
             NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics = requestMetrics(advisorRequests);
             NormalizationProperties.Llm llm = normalizationProperties.getLlm();
-            LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, model={}, baseUrlHost={}, timeoutSeconds={}, promptChars={}, requestBytes={}, aliasKeys={}",
+            LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, model={}, "
+                            + "baseUrlHost={}, timeoutSeconds={}, promptChars={}, requestBytes={}, aliasKeys={}",
                     batchId, batchIndex, totalBatches, batchCandidates.size(), llm.getModel(),
                     baseUrlHost(llm.getBaseUrl()), llm.getRequestTimeoutSeconds(),
                     requestMetrics.promptChars(), requestMetrics.requestBytes(), aliasKeySummary(batchCandidates));
@@ -341,11 +401,15 @@ public class NormalizationSuggestionService {
             String batchStatus = batchFailedCount == 0 ? "success"
                     : batchFailedCount == batchCandidates.size() ? "failed" : "partial_failed";
             if (observation.errorType() != null && !observation.errorType().isBlank()) {
-                LOGGER.info("Normalization LLM batch failed: batchId={}, batchIndex={}/{}, elapsedMs={}, errorType={}, message={}, httpStatus={}, contentType={}",
+                LOGGER.info("Normalization LLM batch failed: batchId={}, batchIndex={}/{}, elapsedMs={}, "
+                                + "errorType={}, message={}, httpStatus={}, contentType={}",
                         batchId, batchIndex, totalBatches, elapsedMs, observation.errorType(),
                         abbreviate(observation.errorMessage(), 200), observation.httpStatus(), observation.contentType());
             }
-            LOGGER.info("Normalization LLM batch end: batchId={}, batchIndex={}/{}, elapsedMs={}, status={}, httpStatus={}, contentType={}, responseBytes={}, extractedContentChars={}, parsedItems={}, failedCount={}, saveElapsedMs={}, requestBuildElapsedMs={}, llmHttpElapsedMs={}, extractElapsedMs={}, parseElapsedMs={}, totalElapsedMs={}",
+            LOGGER.info("Normalization LLM batch end: batchId={}, batchIndex={}/{}, elapsedMs={}, status={}, "
+                            + "httpStatus={}, contentType={}, responseBytes={}, extractedContentChars={}, "
+                            + "parsedItems={}, failedCount={}, saveElapsedMs={}, requestBuildElapsedMs={}, "
+                            + "llmHttpElapsedMs={}, extractElapsedMs={}, parseElapsedMs={}, totalElapsedMs={}",
                     batchId, batchIndex, totalBatches, elapsedMs, batchStatus, observation.httpStatus(),
                     observation.contentType(), observation.responseBytes(), observation.extractedContentChars(),
                     observation.parsedItems(), batchFailedCount, saveElapsedMs, observation.requestBuildElapsedMs(),
@@ -797,15 +861,29 @@ public class NormalizationSuggestionService {
             action = ACTION_REVIEW;
             productType = PRODUCT_TYPE_REPURCHASE_CONSUMABLE;
             reviewRequired = true;
-            reason = appendReason(reason, "商品本体是复购品，但标题含预售/付定/定金，需人工确认是否为定金订单，不能静默进入价格基准");
+            reason = appendReason(reason, "真实商品含预售付定需复核");
         }
+        SafetyGuardDecision guardDecision = applySafetyGuards(result, canonicalNormalizedName,
+                targetUnitResult.targetUnit(), action, productType, reviewRequired, reason);
+        action = guardDecision.action();
+        productType = guardDecision.productType();
+        reviewRequired = guardDecision.reviewRequired();
+        reason = guardDecision.reason();
         String status = status(new NormalizationAdvisorResult(result.rawProductName(), result.sku(), action,
-                result.suggestedNormalizedName(), result.rejectedNormalizedName(), productType, result.targetUnit(),
+                result.suggestedNormalizedName(), result.rejectedNormalizedName(), productType, targetUnitResult.targetUnit(),
                 result.unitFamily(), result.confidence(), reviewRequired, reason, result.evidence(), result.failed()));
+        if (guardDecision.forcePendingReview() && !STATUS_FAILED.equals(status)) {
+            status = STATUS_PENDING_REVIEW;
+        }
         if (STATUS_PENDING_BATCH_APPROVAL.equals(status) && !targetUnitResult.batchApprovalSafe()) {
             status = STATUS_PENDING_REVIEW;
             reviewRequired = true;
-            reason = appendReason(reason, targetUnitResult.unsafeReason());
+            reason = appendReason(reason, "单位需复核");
+        }
+        if (!result.failed() && containsAnyText(reason, REVIEW_TEXT_KEYWORDS)) {
+            status = STATUS_PENDING_REVIEW;
+            reviewRequired = true;
+            action = ACTION_REVIEW;
         }
         NormalizationSuggestion suggestion = new NormalizationSuggestion(
                 null,
@@ -842,6 +920,296 @@ public class NormalizationSuggestionService {
             return true;
         }
         return containsAnyText(rawText, REPURCHASE_PRODUCT_KEYWORDS);
+    }
+
+    /**
+     * 对 LLM 输出做最终安全降级，避免自相矛盾或不适合批量确认的建议直接进入价格基准。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param canonicalTargetUnit     清洗后的目标单位
+     * @param action                  当前动作，可能已被预售定金规则调整
+     * @param productType             当前商品类型，可能已被预售定金规则调整
+     * @param reviewRequired          当前是否要求人工复核
+     * @param reason                  当前 reason 文本
+     * @return 安全降级后的动作、类型、复核标记和原因
+     */
+    private SafetyGuardDecision applySafetyGuards(NormalizationAdvisorResult result,
+                                                  String canonicalNormalizedName,
+                                                  String canonicalTargetUnit,
+                                                  String action,
+                                                  String productType,
+                                                  boolean reviewRequired,
+                                                  String reason) {
+        // decision 贯穿所有 safety guard，统一承载最终是否需要人工复核和短 reason。
+        SafetyGuardDecision decision = new SafetyGuardDecision(action, productType, reviewRequired, reason, false);
+        if (result.failed()) {
+            return decision;
+        }
+        decision = downgradeNormalizeTypeConflict(decision);
+        decision = downgradeReviewReasonCode(result, decision);
+        decision = downgradeReviewExplanation(result, decision);
+        decision = downgradeInvalidTargetUnit(result, decision);
+        decision = downgradeOrdinaryFood(result, canonicalNormalizedName, decision);
+        decision = downgradeSampleOrGift(result, decision);
+        decision = downgradeCatMainCanAmbiguousSoup(result, canonicalNormalizedName, decision);
+        decision = downgradePackageUnitWhenSpecExists(result, canonicalTargetUnit, decision);
+        decision = downgradePetFoodCountUnit(result, canonicalNormalizedName, canonicalTargetUnit, decision);
+        return downgradePetFoodWithoutSpecEvidence(result, canonicalNormalizedName, canonicalTargetUnit, decision);
+    }
+
+    /**
+     * 当 LLM 同时输出 NORMALIZE 和非正向商品类型时降级复核。
+     *
+     * @param decision 当前安全决策
+     * @return 若命中类型动作冲突，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeNormalizeTypeConflict(SafetyGuardDecision decision) {
+        if (ACTION_NORMALIZE.equals(decision.action()) && NON_POSITIVE_PRODUCT_TYPES.contains(decision.productType())) {
+            return decision.review("类型动作冲突");
+        }
+        return decision;
+    }
+
+    /**
+     * 当 reasonCode 明确表达需要人工复核时降级复核。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 若命中复核 reasonCode，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeReviewReasonCode(NormalizationAdvisorResult result,
+                                                          SafetyGuardDecision decision) {
+        String reasonCode = safeText(result.reasonCode()).toUpperCase();
+        if (!REVIEW_REQUIRED_REASON_CODES.contains(reasonCode)) {
+            return decision;
+        }
+        if (ACTION_EXCLUDE.equals(decision.action()) && "COUPON_OR_DEPOSIT".equals(decision.productType())) {
+            return decision.forceReview("reasonCode 需复核");
+        }
+        return decision.review("reasonCode 需复核");
+    }
+
+    /**
+     * 当模型解释中已经表达不确定或需要复核时降级复核。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 若解释文本命中复核语义，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeReviewExplanation(NormalizationAdvisorResult result,
+                                                           SafetyGuardDecision decision) {
+        if (decision.reviewRequired()) {
+            return decision;
+        }
+        String explanation = safeText(result.shortReason()) + " " + safeText(result.reason());
+        if (containsAnyText(explanation, REVIEW_TEXT_KEYWORDS)) {
+            return decision.review("模型解释需复核");
+        }
+        return decision;
+    }
+
+    /**
+     * 当 LLM 把 unitFamily 枚举误写入 targetUnit 时降级复核。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 若 targetUnit 是单位族枚举值，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeInvalidTargetUnit(NormalizationAdvisorResult result,
+                                                           SafetyGuardDecision decision) {
+        String targetUnit = safeText(result.targetUnit()).toUpperCase();
+        if (!targetUnit.isBlank() && UNIT_FAMILY_VALUES.contains(targetUnit)) {
+            return decision.review("单位字段非法");
+        }
+        return decision;
+    }
+
+    /**
+     * 普通食品场景先进入人工复核，避免把低频或礼品类食品误纳入长期复购价格基准。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param decision                当前安全决策
+     * @return 若命中普通食品风险，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeOrdinaryFood(NormalizationAdvisorResult result,
+                                                      String canonicalNormalizedName,
+                                                      SafetyGuardDecision decision) {
+        String text = safeText(result.rawProductName()) + " " + safeText(result.sku()) + " "
+                + safeText(canonicalNormalizedName);
+        if (isPetFood(canonicalNormalizedName, text)) {
+            return decision;
+        }
+        if ("FOOD_REVIEW".equals(safeText(result.reasonCode()).toUpperCase())
+                || containsAnyText(text, ORDINARY_FOOD_KEYWORDS)) {
+            return decision.review("食品需复核");
+        }
+        return decision;
+    }
+
+    /**
+     * 试吃、试用、赠品类真实商品只允许人工复核，纯券或纯权益仍保留自动排除。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 若命中真实商品样品或赠品风险，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeSampleOrGift(NormalizationAdvisorResult result,
+                                                      SafetyGuardDecision decision) {
+        String text = safeText(result.rawProductName()) + " " + safeText(result.sku());
+        if (!containsAnyText(text, SAMPLE_OR_GIFT_KEYWORDS)) {
+            return decision;
+        }
+        if (ACTION_EXCLUDE.equals(decision.action()) && "COUPON_OR_DEPOSIT".equals(decision.productType())) {
+            return decision;
+        }
+        return decision.review("试吃样品需复核");
+    }
+
+    /**
+     * 猫主食罐归一化命中汤类、补水类模糊词时降级复核。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param decision                当前安全决策
+     * @return 若猫主食罐命中汤类模糊词，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeCatMainCanAmbiguousSoup(NormalizationAdvisorResult result,
+                                                                 String canonicalNormalizedName,
+                                                                 SafetyGuardDecision decision) {
+        if (!"猫主食罐".equals(safeText(canonicalNormalizedName))) {
+            return decision;
+        }
+        String text = safeText(result.rawProductName()) + " " + safeText(result.sku());
+        if (containsAnyText(text, CAT_FOOD_SOUP_AMBIGUOUS_KEYWORDS)) {
+            return decision.review("汤类猫食品需复核");
+        }
+        return decision;
+    }
+
+    /**
+     * 标题或 SKU 已有明确规格值但 targetUnit 仍是包装单位时降级复核。
+     *
+     * @param result              LLM 原始结构化建议
+     * @param canonicalTargetUnit 清洗后的目标单位
+     * @param decision            当前安全决策
+     * @return 若规格证据和目标单位不一致，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradePackageUnitWhenSpecExists(NormalizationAdvisorResult result,
+                                                                   String canonicalTargetUnit,
+                                                                   SafetyGuardDecision decision) {
+        String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
+        if (!WEIGHT_UNIT_PATTERN.matcher(rawText).find() && !VOLUME_UNIT_PATTERN.matcher(rawText).find()) {
+            return decision;
+        }
+        if (PACKAGE_TARGET_UNITS.contains(purePackageTargetUnit(canonicalTargetUnit))) {
+            return decision.review("规格单位不一致需复核");
+        }
+        return decision;
+    }
+
+    /**
+     * 宠物食品使用重量或体积单位时，必须能在标题或 SKU 中找到规格证据。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param canonicalTargetUnit     清洗后的目标单位
+     * @param decision                当前安全决策
+     * @return 若缺少规格证据，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradePetFoodWithoutSpecEvidence(NormalizationAdvisorResult result,
+                                                                    String canonicalNormalizedName,
+                                                                    String canonicalTargetUnit,
+                                                                    SafetyGuardDecision decision) {
+        String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
+        if (!isPetFood(canonicalNormalizedName, rawText)) {
+            return decision;
+        }
+        if (!isWeightOrVolumeUnit(canonicalTargetUnit)) {
+            return decision;
+        }
+        if (WEIGHT_UNIT_PATTERN.matcher(rawText).find() || VOLUME_UNIT_PATTERN.matcher(rawText).find()) {
+            return decision;
+        }
+        return decision.review("缺少规格证据");
+    }
+
+    /**
+     * 宠物食品使用罐、袋、盒、条等件数或包装单位时降级复核。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param canonicalTargetUnit     清洗后的目标单位
+     * @param decision                当前安全决策
+     * @return 若宠物食品目标单位是包装或件数单位，则返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradePetFoodCountUnit(NormalizationAdvisorResult result,
+                                                          String canonicalNormalizedName,
+                                                          String canonicalTargetUnit,
+                                                          SafetyGuardDecision decision) {
+        String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
+        if (!isPetFood(canonicalNormalizedName, rawText)) {
+            return decision;
+        }
+        if (PET_FOOD_REVIEW_UNITS.contains(purePetFoodReviewUnit(canonicalTargetUnit))) {
+            return decision.review("宠物食品单位需复核");
+        }
+        return decision;
+    }
+
+    /**
+     * 判断当前建议是否属于宠物食品语义。
+     *
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param text                    商品名、SKU 或其他上下文文本
+     * @return 命中宠物食品标准名或关键词时返回 true
+     */
+    private boolean isPetFood(String canonicalNormalizedName, String text) {
+        return PET_FOOD_NORMALIZED_NAMES.contains(safeText(canonicalNormalizedName))
+                || containsAnyText(text, PET_FOOD_KEYWORDS);
+    }
+
+    /**
+     * 判断 targetUnit 是否是重量或体积基准单位。
+     *
+     * @param targetUnit 清洗后的目标单位
+     * @return g、kg、ml、L 返回 true
+     */
+    private boolean isWeightOrVolumeUnit(String targetUnit) {
+        return List.of("g", "kg", "ml", "L").contains(safeText(targetUnit));
+    }
+
+    /**
+     * 从宠物食品 targetUnit 中提取需要人工复核的包装或件数单位。
+     *
+     * @param targetUnit 清洗后的目标单位
+     * @return 命中的包装或件数单位；未命中时返回原单位
+     */
+    private String purePetFoodReviewUnit(String targetUnit) {
+        String unit = safeText(targetUnit);
+        for (String reviewUnit : PET_FOOD_REVIEW_UNITS) {
+            if (unit.contains(reviewUnit)) {
+                return reviewUnit;
+            }
+        }
+        return unit;
+    }
+
+    /**
+     * 从 targetUnit 中提取包装单位，用于规格证据与目标单位一致性校验。
+     *
+     * @param targetUnit 清洗后的目标单位
+     * @return 命中的包装单位；未命中时返回原单位
+     */
+    private String purePackageTargetUnit(String targetUnit) {
+        String unit = safeText(targetUnit);
+        for (String packageUnit : PACKAGE_TARGET_UNITS) {
+            if (unit.contains(packageUnit)) {
+                return packageUnit;
+            }
+        }
+        return unit;
     }
 
     private String appendReason(String originalReason, String extraReason) {
@@ -881,6 +1249,37 @@ public class NormalizationSuggestionService {
             }
         }
         return false;
+    }
+
+    /**
+     * 安全降级过程中的中间决策。
+     *
+     * @param action             最终建议动作
+     * @param productType        最终商品类型
+     * @param reviewRequired     是否需要人工复核
+     * @param reason             最终 reason 文本
+     * @param forcePendingReview 是否强制落为 pending_review
+     */
+    private record SafetyGuardDecision(String action,
+                                       String productType,
+                                       boolean reviewRequired,
+                                       String reason,
+                                       boolean forcePendingReview) {
+        private SafetyGuardDecision review(String extraReason) {
+            return new SafetyGuardDecision(ACTION_REVIEW, productType, true, appendGuardReason(extraReason), true);
+        }
+
+        private SafetyGuardDecision forceReview(String extraReason) {
+            return new SafetyGuardDecision(action, productType, true, appendGuardReason(extraReason), true);
+        }
+
+        private String appendGuardReason(String extraReason) {
+            String baseReason = reason == null || reason.isBlank() ? "LLM 安全校验" : reason;
+            if (extraReason == null || extraReason.isBlank() || baseReason.contains(extraReason)) {
+                return baseReason;
+            }
+            return baseReason + "；" + extraReason;
+        }
     }
 
     private record Candidate(String aliasKey, PurchaseRecord record, NormalizationRagContext context) {

@@ -51,7 +51,7 @@ public class NormalizationProperties {
 
     /**
      * @Author: jtxw
-     * @Date: 2026/06/06 11:45:16
+     * @Date: 2026/06/07 21:07:05
      * @Description: Normalization LLM Advisor 调用和阈值配置。
      */
     public static class Llm {
@@ -71,6 +71,14 @@ public class NormalizationProperties {
          * LLM 模型名称。
          */
         private String model = "gpt-4.1-mini";
+        /**
+         * LLM 最大输出 token 数；0 表示不传 max_tokens，大于 0 时写入 OpenAI-compatible request body。
+         */
+        private int maxTokens = 0;
+        /**
+         * provider 专属 OpenAI-compatible request body 扩展 JSON；必须是对象，且不能包含鉴权或覆盖核心字段。
+         */
+        private String extraBodyJson = "";
         /**
          * LLM API Key，默认读取环境变量占位配置。
          */
@@ -150,6 +158,22 @@ public class NormalizationProperties {
 
         public void setModel(String model) {
             this.model = model;
+        }
+
+        public int getMaxTokens() {
+            return maxTokens;
+        }
+
+        public void setMaxTokens(int maxTokens) {
+            this.maxTokens = maxTokens;
+        }
+
+        public String getExtraBodyJson() {
+            return extraBodyJson;
+        }
+
+        public void setExtraBodyJson(String extraBodyJson) {
+            this.extraBodyJson = extraBodyJson;
         }
 
         public String getApiKey() {

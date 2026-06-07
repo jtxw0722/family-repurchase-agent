@@ -57,8 +57,49 @@ public record NormalizationAdvisorResult(
          */
         List<String> evidence,
         /**
+         * LLM compact schema 返回的解释码，仅用于后端安全降级和展示文案，不反推业务分类。
+         */
+        String reasonCode,
+        /**
+         * LLM compact schema 返回的短原因，用于识别模型自身要求复核的场景。
+         */
+        String shortReason,
+        /**
          * 是否为 LLM 调用或 JSON 解析失败的兜底结果。
          */
         boolean failed
 ) {
+    /**
+     * 兼容旧构造签名，未提供 reasonCode / shortReason 时按空值处理。
+     *
+     * @param rawProductName          原始商品名称
+     * @param sku                     商品规格或 SKU 文本
+     * @param action                  建议动作
+     * @param suggestedNormalizedName 建议标准品类
+     * @param rejectedNormalizedName  被拒绝的标准品类
+     * @param productType             商品类型
+     * @param targetUnit              建议目标单位
+     * @param unitFamily              建议单位族
+     * @param confidence              置信度
+     * @param reviewRequired          是否需要人工复核
+     * @param reason                  建议原因
+     * @param evidence                证据文本
+     * @param failed                  是否为失败兜底结果
+     */
+    public NormalizationAdvisorResult(String rawProductName,
+                                      String sku,
+                                      String action,
+                                      String suggestedNormalizedName,
+                                      String rejectedNormalizedName,
+                                      String productType,
+                                      String targetUnit,
+                                      String unitFamily,
+                                      double confidence,
+                                      boolean reviewRequired,
+                                      String reason,
+                                      List<String> evidence,
+                                      boolean failed) {
+        this(rawProductName, sku, action, suggestedNormalizedName, rejectedNormalizedName, productType, targetUnit,
+                unitFamily, confidence, reviewRequired, reason, evidence, null, null, failed);
+    }
 }
