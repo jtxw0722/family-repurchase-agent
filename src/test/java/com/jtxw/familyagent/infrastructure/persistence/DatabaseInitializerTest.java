@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/04
- * @Description: 数据库初始化兼容性测试，覆盖老库字段补齐场景。
+ * @Date: 2026/06/07 15:10:28
+ * @Description: 数据库初始化兼容性测试，覆盖老库字段补齐和新增任务表补齐场景。
  */
 class DatabaseInitializerTest {
     @Test
@@ -133,5 +133,56 @@ class DatabaseInitializerTest {
         assertThat(aliasKeyCount).isEqualTo(2);
         assertThat(repository.findByAliasKey("shufujia720ml")).isPresent();
         assertThat(repository.findByAliasKey("shufujia1l")).isPresent();
+    }
+
+    @Test
+    void shouldCreateNormalizationAnalysisTaskTable() throws Exception {
+        Path dir = Path.of("target", "database-initializer-test");
+        Files.createDirectories(dir);
+        Path db = dir.resolve("normalization-analysis-tasks.sqlite");
+        Files.deleteIfExists(db);
+        Files.deleteIfExists(Path.of(db + "-shm"));
+        Files.deleteIfExists(Path.of(db + "-wal"));
+
+        DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+        new DatabaseInitializer(jdbcTemplate).initialize();
+
+        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(normalization_analysis_tasks)")
+                .stream()
+                .map(row -> String.valueOf(row.get("name")))
+                .toList();
+        assertThat(columns).contains("id", "batch_id", "status", "limit_count",
+                "candidate_count", "failed_count", "error_message", "created_at", "updated_at");
+    }
+
+    @Test
+    void shouldAddNormalizationAnalysisTaskTableForLegacyDatabase() throws Exception {
+        Path dir = Path.of("target", "database-initializer-test");
+        Files.createDirectories(dir);
+        Path db = dir.resolve("legacy-normalization-analysis-tasks.sqlite");
+        Files.deleteIfExists(db);
+        Files.deleteIfExists(Path.of(db + "-shm"));
+        Files.deleteIfExists(Path.of(db + "-wal"));
+
+        DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.execute("""
+                CREATE TABLE raw_import_batches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_file TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """);
+
+        new DatabaseInitializer(jdbcTemplate).initialize();
+
+        Integer tableCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type = 'table' AND name = 'normalization_analysis_tasks'
+                """, Integer.class);
+        assertThat(tableCount).isEqualTo(1);
     }
 }

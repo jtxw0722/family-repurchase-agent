@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
 import com.jtxw.familyagent.domain.model.NormalizationAdvisorRequest;
+import com.jtxw.familyagent.domain.model.NormalizationAnalyzeProgress;
 import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
 import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
@@ -235,6 +236,31 @@ public class NormalizationSuggestionService {
                                                    List<String> includeKeywords,
                                                    List<String> excludeKeywords,
                                                    boolean onlyFailed) {
+        return analyzeBatch(batchId, limit, forceReanalyze, includeKeywords, excludeKeywords, onlyFailed, null);
+    }
+
+    /**
+     * 按关键词筛选后分析指定导入批次内的 legacy_fallback 商品，并通过监听器回传异步任务进度。
+     *
+     * <p>该重载只增加进度通知能力，不改变 normalization_suggestions 的生成、失败重试、
+     * batch-apply 或 review_items 写入规则；监听器异常会被记录并忽略，避免进度写库失败中断主分析流程。</p>
+     *
+     * @param batchId          导入批次 ID
+     * @param limit            最大分析候选数，小于等于 0 时默认 100
+     * @param forceReanalyze   是否忽略同批次已有成功状态 suggestion 后重新分析
+     * @param includeKeywords  包含关键词，命中商品名或 SKU 任一字段才进入候选；为空时不过滤
+     * @param excludeKeywords  排除关键词，命中商品名或 SKU 任一字段时排除；为空时不过滤
+     * @param onlyFailed       是否只重试已有 failed suggestion 对应的候选
+     * @param progressListener 分析进度监听器，允许为空；为空时不回传进度
+     * @return 批次分析统计结果
+     */
+    public NormalizationAnalyzeResult analyzeBatch(long batchId,
+                                                   int limit,
+                                                   boolean forceReanalyze,
+                                                   List<String> includeKeywords,
+                                                   List<String> excludeKeywords,
+                                                   boolean onlyFailed,
+                                                   NormalizationAnalyzeProgressListener progressListener) {
         databaseInitializer.initialize();
         if (!normalizationProperties.getLlm().isEnabled()) {
             throw new IllegalStateException("LLM normalization advisor 未启用");
@@ -256,6 +282,9 @@ public class NormalizationSuggestionService {
         Map<String, Integer> failureTypeCounts = new LinkedHashMap<>();
         int totalBatches = limitedCandidates.isEmpty() ? 0
                 : (limitedCandidates.size() + batchSize - 1) / batchSize;
+        notifyProgress(progressListener, new NormalizationAnalyzeProgress(batchId, candidates.size(),
+                analyzedCount, autoExcludedCount, pendingBatchApprovalCount, pendingReviewCount, failedCount,
+                0, totalBatches));
 
         for (int start = 0; start < limitedCandidates.size(); start += batchSize) {
             List<Candidate> batchCandidates = limitedCandidates.subList(start, Math.min(start + batchSize, limitedCandidates.size()));
@@ -324,6 +353,9 @@ public class NormalizationSuggestionService {
                     observation.totalElapsedMs());
             writeDebugDump(batchId, batchIndex, batchCandidates.size(), requestMetrics, observation,
                     elapsedMs, saveElapsedMs);
+            notifyProgress(progressListener, new NormalizationAnalyzeProgress(batchId, candidates.size(),
+                    analyzedCount, autoExcludedCount, pendingBatchApprovalCount, pendingReviewCount, failedCount,
+                    batchIndex, totalBatches));
         }
         String message = analyzeMessage(candidates.size(), analyzedCount, failureTypeCounts);
         return new NormalizationAnalyzeResult(batchId, candidates.size(), analyzedCount, autoExcludedCount,
@@ -699,6 +731,28 @@ public class NormalizationSuggestionService {
 
     private long elapsedMs(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
+    /**
+     * 向异步任务监听器发送当前分析进度。
+     *
+     * <p>进度写库属于旁路观测能力，不能影响商品归一化建议生成；
+     * 因此监听器为空或监听器自身抛错时，本方法只跳过或记录告警。</p>
+     *
+     * @param progressListener 进度监听器，允许为空
+     * @param progress         当前分析进度快照，不允许为空
+     */
+    private void notifyProgress(NormalizationAnalyzeProgressListener progressListener,
+                                NormalizationAnalyzeProgress progress) {
+        if (progressListener == null) {
+            return;
+        }
+        try {
+            progressListener.onProgress(progress);
+        } catch (Exception e) {
+            LOGGER.warn("Normalization analysis progress listener failed: errorType={}, message={}",
+                    errorType(classifyException(e)), abbreviate(sanitizeError(errorMessage(e)), 200));
+        }
     }
 
     private record TruncatedText(String text, boolean truncated) {

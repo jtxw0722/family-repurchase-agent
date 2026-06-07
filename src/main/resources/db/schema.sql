@@ -94,6 +94,31 @@ CREATE TABLE IF NOT EXISTS normalization_suggestions (
     reviewed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS normalization_analysis_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    limit_count INTEGER NOT NULL DEFAULT 100,
+    force_reanalyze INTEGER NOT NULL DEFAULT 0,
+    include_keywords_json TEXT NOT NULL DEFAULT '[]',
+    exclude_keywords_json TEXT NOT NULL DEFAULT '[]',
+    only_failed INTEGER NOT NULL DEFAULT 0,
+    candidate_count INTEGER NOT NULL DEFAULT 0,
+    analyzed_count INTEGER NOT NULL DEFAULT 0,
+    auto_excluded_count INTEGER NOT NULL DEFAULT 0,
+    pending_batch_approval_count INTEGER NOT NULL DEFAULT 0,
+    pending_review_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    current_batch_index INTEGER NOT NULL DEFAULT 0,
+    total_batch_count INTEGER NOT NULL DEFAULT 0,
+    message TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
@@ -115,3 +140,5 @@ CREATE INDEX IF NOT EXISTS idx_review_status ON review_items(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_batch_id ON normalization_suggestions(batch_id);
 CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_alias_key ON normalization_suggestions(alias_key);
 CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_status ON normalization_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id);

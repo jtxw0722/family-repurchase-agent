@@ -1,12 +1,25 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.ImportApplicationService;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
-import com.jtxw.familyagent.domain.model.*;
+import com.jtxw.familyagent.domain.model.ImportResult;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
+import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
+import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
+import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.PriceReportResult;
+import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
+import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
+import com.jtxw.familyagent.domain.model.ReviewApplyResult;
+import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,7 +27,15 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -23,31 +44,66 @@ import java.util.Map;
 /**
  * @Author: jtxw
  * @Date: 2026/06/06 17:58:26
- * @Description: REST Tool API 控制器，暴露导入、比价、报告和复核查询接口。
+ * @Description: REST Tool API 控制器，暴露导入、比价、报告、复核和商品归一化任务接口。
  */
 @Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
 @RestController
 @RequestMapping("/api/tools")
 public class AgentToolController {
+    /**
+     * 文件导入应用服务，负责 CSV/Excel 订单导入。
+     */
     private final ImportApplicationService importApplicationService;
+    /**
+     * 价格分析应用服务，负责比价和历史基准线查询。
+     */
     private final PriceAnalysisApplicationService priceAnalysisApplicationService;
+    /**
+     * 手动购买记录录入应用服务，负责结构化记录校验和入库。
+     */
     private final RecordPurchaseApplicationService recordPurchaseApplicationService;
+    /**
+     * 报告应用服务，负责生成本地价格报告。
+     */
     private final ReportApplicationService reportApplicationService;
+    /**
+     * 人工复核应用服务，负责查询和应用复核结果。
+     */
     private final ReviewApplicationService reviewApplicationService;
+    /**
+     * 商品归一化建议服务，负责查询和批量应用 normalization_suggestions。
+     */
     private final NormalizationSuggestionService normalizationSuggestionService;
+    /**
+     * 商品归一化异步分析任务服务，负责创建任务和查询任务进度。
+     */
+    private final NormalizationAnalysisTaskService normalizationAnalysisTaskService;
 
+    /**
+     * 创建 REST Tool API 控制器。
+     *
+     * @param importApplicationService            文件导入应用服务，不能为空
+     * @param priceAnalysisApplicationService     价格分析应用服务，不能为空
+     * @param recordPurchaseApplicationService    手动记录录入应用服务，不能为空
+     * @param reportApplicationService            报告应用服务，不能为空
+     * @param reviewApplicationService            人工复核应用服务，不能为空
+     * @param normalizationSuggestionService      商品归一化建议服务，不能为空
+     * @param normalizationAnalysisTaskService    商品归一化异步分析任务服务，不能为空
+     */
     public AgentToolController(ImportApplicationService importApplicationService,
                                PriceAnalysisApplicationService priceAnalysisApplicationService,
                                RecordPurchaseApplicationService recordPurchaseApplicationService,
                                ReportApplicationService reportApplicationService,
                                ReviewApplicationService reviewApplicationService,
-                               NormalizationSuggestionService normalizationSuggestionService) {
+                               NormalizationSuggestionService normalizationSuggestionService,
+                               NormalizationAnalysisTaskService normalizationAnalysisTaskService) {
         this.importApplicationService = importApplicationService;
         this.priceAnalysisApplicationService = priceAnalysisApplicationService;
         this.recordPurchaseApplicationService = recordPurchaseApplicationService;
         this.reportApplicationService = reportApplicationService;
         this.reviewApplicationService = reviewApplicationService;
         this.normalizationSuggestionService = normalizationSuggestionService;
+        this.normalizationAnalysisTaskService = normalizationAnalysisTaskService;
     }
 
     /**
@@ -170,15 +226,27 @@ public class AgentToolController {
      *
      * @param batchId 导入批次 ID
      * @param request 分析控制参数，允许为空
-     * @return 批次分析结果
+     * @return 异步分析任务创建结果
      */
-    @Operation(summary = "分析批次商品归一化建议", description = "对导入批次内 legacy_fallback 商品触发 LLM Advisor 分析，并保存建议审计记录。")
+    @Operation(summary = "分析批次商品归一化建议", description = "对导入批次内 legacy_fallback 商品创建 LLM Advisor 异步分析任务，并在后台保存建议审计记录。")
     @PostMapping("/import-batches/{batchId}/analyze-normalization")
-    public NormalizationAnalyzeResult analyzeNormalization(@PathVariable long batchId,
-                                                           @RequestBody(required = false) AnalyzeNormalizationRequest request) {
+    public NormalizationAnalysisTaskCreateResult analyzeNormalization(@PathVariable long batchId,
+                                                                      @RequestBody(required = false) AnalyzeNormalizationRequest request) {
         AnalyzeNormalizationRequest body = request == null ? new AnalyzeNormalizationRequest() : request;
-        return normalizationSuggestionService.analyzeBatch(batchId, body.limit(), body.forceReanalyze(),
+        return normalizationAnalysisTaskService.create(batchId, body.limit(), body.forceReanalyze(),
                 body.includeKeywords(), body.excludeKeywords(), body.onlyFailed());
+    }
+
+    /**
+     * 查询商品归一化分析任务状态。
+     *
+     * @param taskId 商品归一化分析任务 ID
+     * @return 任务状态、进度和统计结果
+     */
+    @Operation(summary = "查询商品归一化分析任务", description = "查询 analyze-normalization 异步任务的状态、进度和统计结果。")
+    @GetMapping("/normalization-analysis-tasks/{taskId}")
+    public NormalizationAnalysisTask getNormalizationAnalysisTask(@PathVariable long taskId) {
+        return normalizationAnalysisTaskService.get(taskId);
     }
 
     /**
@@ -728,6 +796,18 @@ public class AgentToolController {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public Map<String, String> handleBadRequest(RuntimeException exception) {
+        return Map.of("error", exception.getMessage());
+    }
+
+    /**
+     * 将归一化分析任务并发冲突转换为 409 响应，明确提示调用方稍后重试。
+     *
+     * @param exception 归一化分析任务冲突异常
+     * @return 错误信息
+     */
+    @ResponseStatus(HttpStatus.CONFLICT)
+    @ExceptionHandler(NormalizationAnalysisTaskConflictException.class)
+    public Map<String, String> handleConflict(RuntimeException exception) {
         return Map.of("error", exception.getMessage());
     }
 }

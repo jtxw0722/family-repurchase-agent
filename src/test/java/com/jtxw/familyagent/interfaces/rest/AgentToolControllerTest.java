@@ -1,12 +1,15 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.ImportApplicationService;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
-import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
@@ -21,9 +24,17 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -31,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @Author: jtxw
  * @Date: 2026/06/06 17:58:26
- * @Description: Agent Tool REST API tests
+ * @Description: Agent Tool REST API 控制器测试，覆盖工具接口响应结构和异常映射。
  */
 @WebMvcTest(AgentToolController.class)
 class AgentToolControllerTest {
@@ -50,6 +61,8 @@ class AgentToolControllerTest {
     private ReviewApplicationService reviewApplicationService;
     @MockitoBean
     private NormalizationSuggestionService normalizationSuggestionService;
+    @MockitoBean
+    private NormalizationAnalysisTaskService normalizationAnalysisTaskService;
 
     @Test
     void comparePriceShouldReturnEvidenceStructure() throws Exception {
@@ -268,9 +281,10 @@ class AgentToolControllerTest {
 
     @Test
     void analyzeNormalizationShouldPassKeywordFilters() throws Exception {
-        when(normalizationSuggestionService.analyzeBatch(eq(7L), eq(10), eq(false),
+        when(normalizationAnalysisTaskService.create(eq(7L), eq(10), eq(false),
                 eq(List.of("主食罐")), eq(List.of("试吃")), eq(true)))
-                .thenReturn(new NormalizationAnalyzeResult(7L, 1, 1, 0, 1, 0, 0, "ok"));
+                .thenReturn(new NormalizationAnalysisTaskCreateResult(99L, 7L, "pending",
+                        "归一化建议分析任务已创建"));
 
         mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -284,10 +298,42 @@ class AgentToolControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analyzedCount").value(1));
+                .andExpect(jsonPath("$.taskId").value(99))
+                .andExpect(jsonPath("$.batchId").value(7))
+                .andExpect(jsonPath("$.status").value("pending"));
 
-        verify(normalizationSuggestionService).analyzeBatch(eq(7L), eq(10), eq(false),
+        verify(normalizationAnalysisTaskService).create(eq(7L), eq(10), eq(false),
                 eq(List.of("主食罐")), eq(List.of("试吃")), eq(true));
+    }
+
+    @Test
+    void getNormalizationAnalysisTaskShouldReturnStatus() throws Exception {
+        when(normalizationAnalysisTaskService.get(99L))
+                .thenReturn(new NormalizationAnalysisTask(99L, 7L, "running", 10,
+                        false, List.of("cat"), List.of(), true, 3, 1,
+                        0, 1, 0, 0, 1, 2,
+                        null, null, "2026-06-07 10:00:00", "2026-06-07 10:00:01",
+                        null, "2026-06-07 10:00:02"));
+
+        mockMvc.perform(get("/api/tools/normalization-analysis-tasks/99"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(99))
+                .andExpect(jsonPath("$.batchId").value(7))
+                .andExpect(jsonPath("$.status").value("running"))
+                .andExpect(jsonPath("$.analyzedCount").value(1));
+    }
+
+    @Test
+    void analyzeNormalizationShouldReturnConflictWhenActiveTaskExists() throws Exception {
+        when(normalizationAnalysisTaskService.create(eq(7L), anyInt(), anyBoolean(),
+                anyList(), anyList(), anyBoolean()))
+                .thenThrow(new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试"));
+
+        mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("已有归一化建议分析任务正在执行，请稍后再试"));
     }
 
     @Test

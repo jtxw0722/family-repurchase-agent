@@ -16,7 +16,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/14:22
+ * @Date: 2026/06/07 15:10:28
  * @Description: 数据库初始化组件，负责创建运行目录并执行 SQLite 表结构脚本。
  */
 @Component
@@ -56,6 +56,7 @@ public class DatabaseInitializer implements ApplicationRunner {
             ensureProductNegativeAliasTable();
             ensureReviewItemColumns();
             ensureNormalizationSuggestionTable();
+            ensureNormalizationAnalysisTaskTable();
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
         }
@@ -171,5 +172,42 @@ public class DatabaseInitializer implements ApplicationRunner {
         Files.createDirectories(Path.of("data"));
         Files.createDirectories(Path.of("data", "inbox"));
         Files.createDirectories(Path.of("reports"));
+    }
+
+    /**
+     * 确保商品归一化异步分析任务表存在。
+     *
+     * <p>该方法用于兼容旧版本 SQLite 数据库；应用升级后即使 schema.sql 已包含新表，
+     * 运行时也需要在初始化阶段补齐任务表和查询索引。</p>
+     */
+    private void ensureNormalizationAnalysisTaskTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS normalization_analysis_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    limit_count INTEGER NOT NULL DEFAULT 100,
+                    force_reanalyze INTEGER NOT NULL DEFAULT 0,
+                    include_keywords_json TEXT NOT NULL DEFAULT '[]',
+                    exclude_keywords_json TEXT NOT NULL DEFAULT '[]',
+                    only_failed INTEGER NOT NULL DEFAULT 0,
+                    candidate_count INTEGER NOT NULL DEFAULT 0,
+                    analyzed_count INTEGER NOT NULL DEFAULT 0,
+                    auto_excluded_count INTEGER NOT NULL DEFAULT 0,
+                    pending_batch_approval_count INTEGER NOT NULL DEFAULT 0,
+                    pending_review_count INTEGER NOT NULL DEFAULT 0,
+                    failed_count INTEGER NOT NULL DEFAULT 0,
+                    current_batch_index INTEGER NOT NULL DEFAULT 0,
+                    total_batch_count INTEGER NOT NULL DEFAULT 0,
+                    message TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id)");
     }
 }
