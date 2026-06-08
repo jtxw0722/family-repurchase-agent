@@ -6,17 +6,17 @@ import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
-import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
-import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
 import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
+import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
+import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
 import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
 import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
 import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
 import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
+import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
-import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
@@ -36,6 +36,67 @@ import java.util.Set;
  */
 @Service
 public class ImportApplicationService {
+    /**
+     * CSV 文件后缀
+     */
+    private static final String CSV_FILE_SUFFIX = ".csv";
+    /**
+     * Excel 文件后缀
+     */
+    private static final String EXCEL_FILE_SUFFIX = ".xlsx";
+    /**
+     * 统计决策：纳入价格基准
+     */
+    private static final String DECISION_INCLUDE = "include";
+    /**
+     * 统计决策：排除出价格基准
+     */
+    private static final String DECISION_EXCLUDE = "exclude";
+    /**
+     * 去重状态：唯一记录
+     */
+    private static final String DEDUPE_STATUS_UNIQUE = "unique";
+    /**
+     * 去重状态：疑似重复记录
+     */
+    private static final String DEDUPE_STATUS_DUPLICATE = "duplicate";
+    /**
+     * 复核原因码：疑似重复订单
+     */
+    private static final String REVIEW_REASON_DUPLICATE_ORDER = "DUPLICATE_ORDER";
+    /**
+     * 复核原因码：商品名称归一化置信度较低
+     */
+    private static final String REVIEW_REASON_PRODUCT_NAME_NORMALIZATION = "PRODUCT_NAME_NORMALIZATION_REVIEW";
+    /**
+     * 复核原因码：规格数量解析置信度较低
+     */
+    private static final String REVIEW_REASON_QUANTITY_UNIT_PARSE = "QUANTITY_UNIT_PARSE_REVIEW";
+    /**
+     * 复核原因码：实付金额为 0
+     */
+    private static final String REVIEW_REASON_ZERO_PAYMENT = "ZERO_PAYMENT";
+    /**
+     * 负向别名规则标识，表示人工确认过的误判样本
+     */
+    private static final String NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS = "product_negative_alias";
+    /**
+     * 旧归一化兜底规则标识，LLM Advisor 的唯一候选来源
+     */
+    private static final String NORMALIZATION_RULE_LEGACY_FALLBACK = "legacy_fallback";
+    /**
+     * 旧模式兜底复核模式：导入时立即创建复核项
+     */
+    private static final String FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW = "immediate_review";
+    /**
+     * 0 元可信支付关键词：赠品
+     */
+    private static final String ZERO_PAYMENT_GIFT_KEYWORD = "赠品";
+    /**
+     * 0 元可信支付关键词：试用
+     */
+    private static final String ZERO_PAYMENT_TRIAL_KEYWORD = "试用";
+
     private final DatabaseInitializer databaseInitializer;
     private final CsvPurchaseImporter csvPurchaseImporter;
     private final ExcelPurchaseImporter excelPurchaseImporter;
@@ -194,7 +255,7 @@ public class ImportApplicationService {
                     null, batchId, normalizedOrderTime, raw.platform(), normalizedOwner, raw.productName(), normalizedName,
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
-                    unitPrice, raw.currency(), "include", false, "unique", file.toString(), ClockUtils.nowText()
+                    unitPrice, raw.currency(), DECISION_INCLUDE, false, DEDUPE_STATUS_UNIQUE, file.toString(), ClockUtils.nowText()
             );
             // 同时检查历史数据库和当前批次，避免重复导入影响价格统计和价格报告
             boolean duplicate = duplicateDetectionPolicy.isDuplicate(candidate, currentBatchFingerprints,
@@ -204,28 +265,28 @@ public class ImportApplicationService {
                     null, batchId, normalizedOrderTime, raw.platform(), normalizedOwner, raw.productName(), normalizedName,
                     raw.sku(), raw.category(), raw.subCategory(), resolvedQuantity, resolvedUnit, totalAmount,
                     raw.productAmount(), raw.paidAmount(), raw.shippingFee(), amountResult.amountSource(),
-                    unitPrice, raw.currency(), duplicate || normalizationReviewRequired || negativeAliasExcluded ? "exclude" : "include", duplicate,
-                    duplicate ? "duplicate" : "unique", file.toString(), null, null, null,
+                    unitPrice, raw.currency(), duplicate || normalizationReviewRequired || negativeAliasExcluded ? DECISION_EXCLUDE : DECISION_INCLUDE, duplicate,
+                    duplicate ? DEDUPE_STATUS_DUPLICATE : DEDUPE_STATUS_UNIQUE, file.toString(), null, null, null,
                     nameResult.matchedRule(), ClockUtils.nowText()
             );
             long recordId = purchaseRecordRepository.save(record);
             importedCount++;
             if (duplicate) {
                 // 重复记录需要人工确认，避免误伤真实的二次购买
-                reviewItemRepository.create(recordId, "DUPLICATE_ORDER",
+                reviewItemRepository.create(recordId, REVIEW_REASON_DUPLICATE_ORDER,
                         "疑似重复订单，已默认排除统计；如确认不是重复购买，可人工复核为 include。");
                 reviewCount++;
                 duplicateCount++;
             }
             if (shouldCreateProductNameReview(nameResult)) {
-                reviewItemRepository.create(recordId, "PRODUCT_NAME_NORMALIZATION_REVIEW",
+                reviewItemRepository.create(recordId, REVIEW_REASON_PRODUCT_NAME_NORMALIZATION,
                         "商品归一化置信度较低，matchedRule=" + nameResult.matchedRule()
                                 + "，confidence=" + nameResult.confidence());
                 reviewCount++;
             }
             if (quantityResult.needReview()) {
                 // 规格数量不明确时创建复核项，并因 decision=exclude 不进入 purchase_records 的正式统计查询。
-                reviewItemRepository.create(recordId, "QUANTITY_UNIT_PARSE_REVIEW",
+                reviewItemRepository.create(recordId, REVIEW_REASON_QUANTITY_UNIT_PARSE,
                         "规格数量解析置信度较低，evidence=" + quantityResult.parseEvidence()
                                 + "，confidence=" + quantityResult.confidence());
                 reviewCount++;
@@ -240,7 +301,7 @@ public class ImportApplicationService {
             } else if (totalAmount != null && totalAmount == 0D) {
                 if (!isTrustedZeroPayment(raw)) {
                     // 无明确赠品或试用标识的 0 元记录仍需人工确认，避免售后补发、组合支付等场景误入库
-                    reviewItemRepository.create(recordId, "ZERO_PAYMENT", "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。");
+                    reviewItemRepository.create(recordId, REVIEW_REASON_ZERO_PAYMENT, "实付金额为 0，需确认是否赠品、试用、售后补发或购物金抵扣。");
                     reviewCount++;
                 }
             }
@@ -253,10 +314,10 @@ public class ImportApplicationService {
 
     private List<RawPurchaseRecord> importRawRecords(Path file, String ownerOverride) {
         String filename = file.getFileName().toString().toLowerCase();
-        if (filename.endsWith(".csv")) {
+        if (filename.endsWith(CSV_FILE_SUFFIX)) {
             return csvPurchaseImporter.importFile(file, ownerOverride);
         }
-        if (filename.endsWith(".xlsx")) {
+        if (filename.endsWith(EXCEL_FILE_SUFFIX)) {
             return excelPurchaseImporter.importFile(file, ownerOverride);
         }
         throw new IllegalArgumentException("不支持的订单文件类型，仅支持 .csv 和 .xlsx：" + file);
@@ -268,11 +329,11 @@ public class ImportApplicationService {
                 safeText(raw.sku()),
                 safeText(raw.category()),
                 safeText(raw.subCategory()));
-        return text.contains("赠品") || text.contains("试用");
+        return text.contains(ZERO_PAYMENT_GIFT_KEYWORD) || text.contains(ZERO_PAYMENT_TRIAL_KEYWORD);
     }
 
     private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
-        return "product_negative_alias".equals(nameResult.matchedRule());
+        return NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS.equals(nameResult.matchedRule());
     }
 
     private boolean shouldCreateProductNameReview(ProductNameNormalizationResult nameResult) {
@@ -280,7 +341,7 @@ public class ImportApplicationService {
             return false;
         }
         // legacy_fallback 是 LLM Advisor 的唯一候选来源，新模式下先静默 exclude，避免导入时制造大量逐条复核噪音。
-        if ("legacy_fallback".equals(nameResult.matchedRule())) {
+        if (NORMALIZATION_RULE_LEGACY_FALLBACK.equals(nameResult.matchedRule())) {
             return normalizationProperties.immediateFallbackReview();
         }
         return true;
@@ -292,7 +353,7 @@ public class ImportApplicationService {
 
     private static NormalizationProperties legacyReviewProperties() {
         NormalizationProperties properties = new NormalizationProperties();
-        properties.setFallbackReviewMode("immediate_review");
+        properties.setFallbackReviewMode(FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW);
         return properties;
     }
 }
