@@ -1,7 +1,6 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.ImportApplicationService;
-import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
 import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
@@ -31,19 +30,15 @@ import com.jtxw.familyagent.interfaces.rest.request.ReviewApplyRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * @Author: jtxw
@@ -276,29 +271,5 @@ public class AgentToolController {
     @PostMapping("/normalization-suggestions/batch-apply")
     public NormalizationBatchApplyResult applyNormalizationSuggestions(@Valid @RequestBody BatchApplyNormalizationRequest request) {
         return normalizationSuggestionService.batchApply(request.toCommand());
-    }
-
-    /**
-     * 将业务参数错误转换为 400 响应，避免工具调用方收到不明确的 500 错误。
-     *
-     * @param exception 参数或状态异常
-     * @return 错误信息
-     */
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
-    public Map<String, String> handleBadRequest(RuntimeException exception) {
-        return Map.of("error", exception.getMessage());
-    }
-
-    /**
-     * 将归一化分析任务并发冲突转换为 409 响应，明确提示调用方稍后重试。
-     *
-     * @param exception 归一化分析任务冲突异常
-     * @return 错误信息
-     */
-    @ResponseStatus(HttpStatus.CONFLICT)
-    @ExceptionHandler(NormalizationAnalysisTaskConflictException.class)
-    public Map<String, String> handleConflict(RuntimeException exception) {
-        return Map.of("error", exception.getMessage());
     }
 }
