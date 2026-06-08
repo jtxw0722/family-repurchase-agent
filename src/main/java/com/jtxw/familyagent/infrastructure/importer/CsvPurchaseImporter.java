@@ -54,7 +54,7 @@ public class CsvPurchaseImporter {
                      .setHeader()
                      .setSkipHeaderRecord(true)
                      .setTrim(true)
-                     .build()
+                     .get()
                      .parse(reader)) {
             OrderImportMapper.ImportSchema schema = orderImportMapper.detectSchema(parser.getHeaderMap().keySet());
             List<RawPurchaseRecord> records = new ArrayList<>();

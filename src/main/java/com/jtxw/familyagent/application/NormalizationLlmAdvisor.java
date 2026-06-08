@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -876,9 +875,7 @@ public class NormalizationLlmAdvisor {
             throw new IllegalArgumentException("NORMALIZATION_LLM_EXTRA_BODY_JSON 必须是 JSON object");
         }
         validateExtraBodyJson(extraRoot);
-        Iterator<Map.Entry<String, JsonNode>> fields = extraRoot.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> field = fields.next();
+        for (Map.Entry<String, JsonNode> field : extraRoot.properties()) {
             String key = field.getKey();
             if (EXTRA_BODY_FORBIDDEN_TOP_LEVEL_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("NORMALIZATION_LLM_EXTRA_BODY_JSON 不能覆盖核心字段：" + key);
@@ -890,9 +887,7 @@ public class NormalizationLlmAdvisor {
 
     private void validateExtraBodyJson(JsonNode root) {
         if (root.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> field = fields.next();
+            for (Map.Entry<String, JsonNode> field : root.properties()) {
                 String normalizedKey = field.getKey().toLowerCase(Locale.ROOT);
                 for (String sensitiveKey : SENSITIVE_EXTRA_BODY_KEY_PARTS) {
                     if (normalizedKey.contains(sensitiveKey)) {
