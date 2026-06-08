@@ -1,27 +1,12 @@
 package com.jtxw.familyagent.interfaces.rest;
 
-import com.jtxw.familyagent.application.ImportApplicationService;
-import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
-import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
-import com.jtxw.familyagent.application.NormalizationSuggestionService;
-import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
-import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
-import com.jtxw.familyagent.application.ReportApplicationService;
-import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.application.*;
 import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
 import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
-import com.jtxw.familyagent.application.command.ApplyReviewCommand;
-import com.jtxw.familyagent.application.command.BatchApplyNormalizationCommand;
-import com.jtxw.familyagent.application.command.ImportFileCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
-import com.jtxw.familyagent.domain.model.PriceBaselineResult;
-import com.jtxw.familyagent.domain.model.PriceDecisionResult;
-import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
-import com.jtxw.familyagent.domain.model.ReviewApplyResult;
+import com.jtxw.familyagent.domain.model.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -42,9 +27,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @Author: jtxw
  * @Date: 2026/06/06 17:58:26
- * @Description: Agent Tool REST API 控制器测试，覆盖工具接口响应结构和异常映射。
+ * @Description: REST Tool API 控制器测试，覆盖工具接口响应结构和异常映射。
  */
-@WebMvcTest(AgentToolController.class)
+@WebMvcTest({
+        ImportToolController.class,
+        RecordPurchaseToolController.class,
+        PriceToolController.class,
+        ReportToolController.class,
+        ReviewToolController.class,
+        NormalizationToolController.class
+})
 class AgentToolControllerTest {
     @Autowired
     private MockMvc mockMvc;

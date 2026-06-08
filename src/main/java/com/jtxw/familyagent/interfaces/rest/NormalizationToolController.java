@@ -1,0 +1,109 @@
+package com.jtxw.familyagent.interfaces.rest;
+
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
+import com.jtxw.familyagent.application.NormalizationSuggestionService;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
+import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
+import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
+import com.jtxw.familyagent.interfaces.rest.request.AnalyzeNormalizationRequest;
+import com.jtxw.familyagent.interfaces.rest.request.BatchApplyNormalizationRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * @Author: jtxw
+ * @Date: 2026/06/08 17:45:00
+ * @Description: 商品归一化工具 Controller，暴露归一化异步分析任务和归一化建议管理接口。
+ */
+@Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
+@RestController
+@RequestMapping("/api/tools")
+public class NormalizationToolController {
+    /**
+     * 商品归一化异步分析任务服务，负责创建任务和查询任务进度。
+     */
+    private final NormalizationAnalysisTaskService normalizationAnalysisTaskService;
+    /**
+     * 商品归一化建议服务，负责查询和批量应用 normalization_suggestions。
+     */
+    private final NormalizationSuggestionService normalizationSuggestionService;
+
+    /**
+     * 创建商品归一化工具 Controller。
+     *
+     * @param normalizationAnalysisTaskService 商品归一化异步分析任务服务
+     * @param normalizationSuggestionService   商品归一化建议服务
+     */
+    public NormalizationToolController(NormalizationAnalysisTaskService normalizationAnalysisTaskService,
+                                       NormalizationSuggestionService normalizationSuggestionService) {
+        this.normalizationAnalysisTaskService = normalizationAnalysisTaskService;
+        this.normalizationSuggestionService = normalizationSuggestionService;
+    }
+
+    /**
+     * 触发指定导入批次的 LLM 商品归一化建议分析。
+     *
+     * <p>该接口只分析 legacy_fallback 商品，并将 LLM 输出写入 normalization_suggestions；
+     * 高置信 NORMALIZE 不会直接纳入价格基准。</p>
+     *
+     * @param batchId 导入批次 ID
+     * @param request 分析控制参数，允许为空
+     * @return 异步分析任务创建结果
+     */
+    @Operation(summary = "分析批次商品归一化建议", description = "对导入批次内 legacy_fallback 商品创建 LLM Advisor 异步分析任务，并在后台保存建议审计记录。")
+    @PostMapping("/import-batches/{batchId}/analyze-normalization")
+    public NormalizationAnalysisTaskCreateResult analyzeNormalization(@PathVariable long batchId,
+                                                                      @RequestBody(required = false) AnalyzeNormalizationRequest request) {
+        AnalyzeNormalizationRequest body = request == null ? new AnalyzeNormalizationRequest() : request;
+        return normalizationAnalysisTaskService.create(body.toCommand(batchId));
+    }
+
+    /**
+     * 查询商品归一化分析任务状态。
+     *
+     * @param taskId 商品归一化分析任务 ID
+     * @return 任务状态、进度和统计结果
+     */
+    @Operation(summary = "查询商品归一化分析任务", description = "查询 analyze-normalization 异步任务的状态、进度和统计结果。")
+    @GetMapping("/normalization-analysis-tasks/{taskId}")
+    public NormalizationAnalysisTask getNormalizationAnalysisTask(@PathVariable long taskId) {
+        return normalizationAnalysisTaskService.get(taskId);
+    }
+
+    /**
+     * 查询指定批次的商品归一化建议。
+     *
+     * @param batchId 导入批次 ID
+     * @return 当前批次的建议列表
+     */
+    @Operation(summary = "查询指定批次的商品归一化建议", description = "查询指定导入批次的 normalization_suggestions 审计记录。")
+    @GetMapping("/normalization-suggestions")
+    public List<NormalizationSuggestion> listNormalizationSuggestions(@RequestParam long batchId) {
+        return normalizationSuggestionService.listByBatchId(batchId);
+    }
+
+    /**
+     * 批量应用高置信 NORMALIZE 商品归一化建议。
+     *
+     * <p>该接口只写入 product_aliases 和更新 suggestion 状态，不修改历史购买记录 decision。</p>
+     *
+     * @param request 批量应用请求
+     * @return 批量应用结果
+     */
+    @Operation(summary = "批量应用商品归一化建议", description = "批量确认 pending_batch_approval 的 NORMALIZE suggestions，并写入 product_aliases。")
+    @PostMapping("/normalization-suggestions/batch-apply")
+    public NormalizationBatchApplyResult applyNormalizationSuggestions(@Valid @RequestBody BatchApplyNormalizationRequest request) {
+        return normalizationSuggestionService.batchApply(request.toCommand());
+    }
+}
