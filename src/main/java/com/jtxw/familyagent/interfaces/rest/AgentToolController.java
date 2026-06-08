@@ -1,16 +1,47 @@
 package com.jtxw.familyagent.interfaces.rest;
 
-import com.jtxw.familyagent.application.*;
-import com.jtxw.familyagent.domain.model.*;
-import com.jtxw.familyagent.interfaces.rest.request.*;
+import com.jtxw.familyagent.application.ImportApplicationService;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
+import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
+import com.jtxw.familyagent.application.NormalizationSuggestionService;
+import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
+import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
+import com.jtxw.familyagent.application.ReportApplicationService;
+import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.domain.model.ImportResult;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
+import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
+import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
+import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
+import com.jtxw.familyagent.domain.model.PriceBaselineResult;
+import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.PriceReportResult;
+import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
+import com.jtxw.familyagent.domain.model.ReviewApplyResult;
+import com.jtxw.familyagent.domain.model.ReviewItemDetail;
+import com.jtxw.familyagent.interfaces.rest.request.AnalyzeNormalizationRequest;
+import com.jtxw.familyagent.interfaces.rest.request.ApplyNormalizationReviewRequest;
+import com.jtxw.familyagent.interfaces.rest.request.BatchApplyNormalizationRequest;
+import com.jtxw.familyagent.interfaces.rest.request.ComparePriceRequest;
+import com.jtxw.familyagent.interfaces.rest.request.GenerateReportRequest;
+import com.jtxw.familyagent.interfaces.rest.request.GetPriceBaselineRequest;
+import com.jtxw.familyagent.interfaces.rest.request.ImportFileRequest;
 import com.jtxw.familyagent.interfaces.rest.request.RecordPurchaseRequest;
+import com.jtxw.familyagent.interfaces.rest.request.ReviewApplyRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -91,7 +122,7 @@ public class AgentToolController {
     @Operation(summary = "导入订单文件", description = "导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录。")
     @PostMapping("/import-file")
     public ImportResult importFile(@Valid @RequestBody ImportFileRequest request) {
-        return importApplicationService.importCsv(Path.of(request.filePath()), request.owner());
+        return importApplicationService.importFile(request.toCommand());
     }
 
     /**
@@ -118,7 +149,7 @@ public class AgentToolController {
     @Operation(summary = "查询历史价格基准线", description = "查询指定复购品的本地历史价格基准线，包括历史最低价、中位价、平均价、样本数量和证据。")
     @PostMapping("/get-price-baseline")
     public PriceBaselineResult getPriceBaseline(@Valid @RequestBody GetPriceBaselineRequest request) {
-        return priceAnalysisApplicationService.getPriceBaseline(request.productName(), request.unit());
+        return priceAnalysisApplicationService.getPriceBaseline(request.toQuery());
     }
 
     /**
@@ -130,7 +161,7 @@ public class AgentToolController {
     @Operation(summary = "比较当前价格", description = "比较当前商品单位价格与本地历史价格，返回价格判断结果。")
     @PostMapping("/compare-price")
     public PriceDecisionResult comparePrice(@Valid @RequestBody ComparePriceRequest request) {
-        return priceAnalysisApplicationService.comparePrice(request.productName(), request.price(), request.quantity(), request.unit());
+        return priceAnalysisApplicationService.comparePrice(request.toQuery());
     }
 
     /**
@@ -170,7 +201,7 @@ public class AgentToolController {
     @Operation(summary = "应用复核结果", description = "将人工复核结果应用到待复核记录，并同步更新关联购买记录的统计决策。")
     @PostMapping("/review-items/{id}/apply")
     public ReviewApplyResult applyReview(@PathVariable long id, @Valid @RequestBody ReviewApplyRequest request) {
-        return reviewApplicationService.apply(id, request.action(), request.note());
+        return reviewApplicationService.apply(request.toCommand(id));
     }
 
     /**
@@ -188,8 +219,7 @@ public class AgentToolController {
     public ReviewApplyResult applyNormalizationReview(@PathVariable long id,
                                                       @RequestBody(required = false) ApplyNormalizationReviewRequest request) {
         ApplyNormalizationReviewRequest body = request == null ? new ApplyNormalizationReviewRequest() : request;
-        return reviewApplicationService.applyNormalization(id, body.action(), body.normalizedName(),
-                body.targetUnit(), body.includeInBaseline(), body.rejectedNormalizedName(), body.note());
+        return reviewApplicationService.applyNormalization(body.toCommand(id));
     }
 
     /**
@@ -207,8 +237,7 @@ public class AgentToolController {
     public NormalizationAnalysisTaskCreateResult analyzeNormalization(@PathVariable long batchId,
                                                                       @RequestBody(required = false) AnalyzeNormalizationRequest request) {
         AnalyzeNormalizationRequest body = request == null ? new AnalyzeNormalizationRequest() : request;
-        return normalizationAnalysisTaskService.create(batchId, body.limit(), body.forceReanalyze(),
-                body.includeKeywords(), body.excludeKeywords(), body.onlyFailed());
+        return normalizationAnalysisTaskService.create(body.toCommand(batchId));
     }
 
     /**
@@ -246,8 +275,7 @@ public class AgentToolController {
     @Operation(summary = "批量应用商品归一化建议", description = "批量确认 pending_batch_approval 的 NORMALIZE suggestions，并写入 product_aliases。")
     @PostMapping("/normalization-suggestions/batch-apply")
     public NormalizationBatchApplyResult applyNormalizationSuggestions(@Valid @RequestBody BatchApplyNormalizationRequest request) {
-        return normalizationSuggestionService.batchApply(request.batchId(), request.action(),
-                request.minConfidence(), request.onlyStatus());
+        return normalizationSuggestionService.batchApply(request.toCommand());
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
+import com.jtxw.familyagent.application.command.BatchApplyNormalizationCommand;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.common.ClockUtils;
@@ -272,7 +274,7 @@ public class NormalizationSuggestionService {
      * @return 批次分析统计结果
      */
     public NormalizationAnalyzeResult analyzeBatch(long batchId, int limit, boolean forceReanalyze) {
-        return analyzeBatch(batchId, limit, forceReanalyze, List.of(), List.of(), false);
+        return analyzeBatch(new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze, List.of(), List.of(), false));
     }
 
     /**
@@ -295,7 +297,8 @@ public class NormalizationSuggestionService {
                                                    List<String> includeKeywords,
                                                    List<String> excludeKeywords,
                                                    boolean onlyFailed) {
-        return analyzeBatch(batchId, limit, forceReanalyze, includeKeywords, excludeKeywords, onlyFailed, null);
+        return analyzeBatch(new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze,
+                includeKeywords, excludeKeywords, onlyFailed));
     }
 
     /**
@@ -320,15 +323,44 @@ public class NormalizationSuggestionService {
                                                    List<String> excludeKeywords,
                                                    boolean onlyFailed,
                                                    NormalizationAnalyzeProgressListener progressListener) {
+        return analyzeBatch(new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze,
+                includeKeywords, excludeKeywords, onlyFailed), progressListener);
+    }
+
+    /**
+     * 分析指定导入批次内的 legacy_fallback 商品。
+     *
+     * <p>该方法只生成 normalization_suggestions 审计记录，最多为低置信或失败样本创建复核项；
+     * 不会把 purchase_records 改为 include，也不会直接写 product_aliases。</p>
+     *
+     * @param command 商品归一化分析命令
+     * @return 批次分析统计结果
+     */
+    public NormalizationAnalyzeResult analyzeBatch(AnalyzeNormalizationCommand command) {
+        return analyzeBatch(command, null);
+    }
+
+    /**
+     * 按关键词筛选后分析指定导入批次内的 legacy_fallback 商品，并通过监听器回传异步任务进度。
+     *
+     * <p>该重载只增加进度通知能力，不改变 normalization_suggestions 的生成、失败重试、
+     * batch-apply 或 review_items 写入规则；监听器异常会被记录并忽略，避免进度写库失败中断主分析流程。</p>
+     *
+     * @param command          商品归一化分析命令
+     * @param progressListener 分析进度监听器，允许为空；为空时不回传进度
+     * @return 批次分析统计结果
+     */
+    public NormalizationAnalyzeResult analyzeBatch(AnalyzeNormalizationCommand command,
+                                                   NormalizationAnalyzeProgressListener progressListener) {
         databaseInitializer.initialize();
         if (!normalizationProperties.getLlm().isEnabled()) {
             throw new IllegalStateException("LLM normalization advisor 未启用");
         }
 
-        CandidateFilter filter = new CandidateFilter(normalizedKeywords(includeKeywords),
-                normalizedKeywords(excludeKeywords), onlyFailed);
-        List<Candidate> candidates = candidates(batchId, forceReanalyze, filter);
-        int analyzeLimit = limit <= 0 ? 100 : limit;
+        CandidateFilter filter = new CandidateFilter(normalizedKeywords(command.includeKeywords()),
+                normalizedKeywords(command.excludeKeywords()), command.onlyFailed());
+        List<Candidate> candidates = candidates(command.batchId(), command.forceReanalyze(), filter);
+        int analyzeLimit = command.limit() <= 0 ? 100 : command.limit();
         List<Candidate> limitedCandidates = candidates.stream()
                 .limit(analyzeLimit)
                 .toList();
@@ -341,7 +373,7 @@ public class NormalizationSuggestionService {
         Map<String, Integer> failureTypeCounts = new LinkedHashMap<>();
         int totalBatches = limitedCandidates.isEmpty() ? 0
                 : (limitedCandidates.size() + batchSize - 1) / batchSize;
-        notifyProgress(progressListener, new NormalizationAnalyzeProgress(batchId, candidates.size(),
+        notifyProgress(progressListener, new NormalizationAnalyzeProgress(command.batchId(), candidates.size(),
                 analyzedCount, autoExcludedCount, pendingBatchApprovalCount, pendingReviewCount, failedCount,
                 0, totalBatches));
 
@@ -356,7 +388,7 @@ public class NormalizationSuggestionService {
             NormalizationProperties.Llm llm = normalizationProperties.getLlm();
             LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, model={}, "
                             + "baseUrlHost={}, timeoutSeconds={}, promptChars={}, requestBytes={}, aliasKeys={}",
-                    batchId, batchIndex, totalBatches, batchCandidates.size(), llm.getModel(),
+                    command.batchId(), batchIndex, totalBatches, batchCandidates.size(), llm.getModel(),
                     baseUrlHost(llm.getBaseUrl()), llm.getRequestTimeoutSeconds(),
                     requestMetrics.promptChars(), requestMetrics.requestBytes(), aliasKeySummary(batchCandidates));
             List<NormalizationAdvisorResult> advisorResults;
@@ -376,7 +408,7 @@ public class NormalizationSuggestionService {
             for (int index = 0; index < batchCandidates.size(); index++) {
                 Candidate candidate = batchCandidates.get(index);
                 NormalizationAdvisorResult advisorResult = advisorResults.get(index);
-                PreparedSuggestion preparedSuggestion = toSuggestion(batchId, candidate.aliasKey(), advisorResult);
+                PreparedSuggestion preparedSuggestion = toSuggestion(command.batchId(), candidate.aliasKey(), advisorResult);
                 String status = preparedSuggestion.status();
                 NormalizationSuggestion suggestion = preparedSuggestion.suggestion();
                 saveOrReplaceFailed(suggestion);
@@ -403,26 +435,26 @@ public class NormalizationSuggestionService {
             if (observation.errorType() != null && !observation.errorType().isBlank()) {
                 LOGGER.info("Normalization LLM batch failed: batchId={}, batchIndex={}/{}, elapsedMs={}, "
                                 + "errorType={}, message={}, httpStatus={}, contentType={}",
-                        batchId, batchIndex, totalBatches, elapsedMs, observation.errorType(),
+                        command.batchId(), batchIndex, totalBatches, elapsedMs, observation.errorType(),
                         abbreviate(observation.errorMessage(), 200), observation.httpStatus(), observation.contentType());
             }
             LOGGER.info("Normalization LLM batch end: batchId={}, batchIndex={}/{}, elapsedMs={}, status={}, "
                             + "httpStatus={}, contentType={}, responseBytes={}, extractedContentChars={}, "
                             + "parsedItems={}, failedCount={}, saveElapsedMs={}, requestBuildElapsedMs={}, "
                             + "llmHttpElapsedMs={}, extractElapsedMs={}, parseElapsedMs={}, totalElapsedMs={}",
-                    batchId, batchIndex, totalBatches, elapsedMs, batchStatus, observation.httpStatus(),
+                    command.batchId(), batchIndex, totalBatches, elapsedMs, batchStatus, observation.httpStatus(),
                     observation.contentType(), observation.responseBytes(), observation.extractedContentChars(),
                     observation.parsedItems(), batchFailedCount, saveElapsedMs, observation.requestBuildElapsedMs(),
                     observation.llmHttpElapsedMs(), observation.extractElapsedMs(), observation.parseElapsedMs(),
                     observation.totalElapsedMs());
-            writeDebugDump(batchId, batchIndex, batchCandidates.size(), requestMetrics, observation,
+            writeDebugDump(command.batchId(), batchIndex, batchCandidates.size(), requestMetrics, observation,
                     elapsedMs, saveElapsedMs);
-            notifyProgress(progressListener, new NormalizationAnalyzeProgress(batchId, candidates.size(),
+            notifyProgress(progressListener, new NormalizationAnalyzeProgress(command.batchId(), candidates.size(),
                     analyzedCount, autoExcludedCount, pendingBatchApprovalCount, pendingReviewCount, failedCount,
                     batchIndex, totalBatches));
         }
         String message = analyzeMessage(candidates.size(), analyzedCount, failureTypeCounts);
-        return new NormalizationAnalyzeResult(batchId, candidates.size(), analyzedCount, autoExcludedCount,
+        return new NormalizationAnalyzeResult(command.batchId(), candidates.size(), analyzedCount, autoExcludedCount,
                 pendingBatchApprovalCount, pendingReviewCount, failedCount, message);
     }
 
@@ -450,16 +482,31 @@ public class NormalizationSuggestionService {
      * @return 批量应用结果
      */
     public NormalizationBatchApplyResult batchApply(long batchId, String action, double minConfidence, String onlyStatus) {
+        return batchApply(new BatchApplyNormalizationCommand(batchId, action, minConfidence, onlyStatus));
+    }
+
+    /**
+     * 批量确认高置信 NORMALIZE 建议并写入 product_aliases。
+     *
+     * <p>该操作只沉淀正向别名并更新 suggestion 状态，不修改历史 purchase_records.decision，
+     * 后续同类商品会通过 product_aliases 的确定性命中进入常规导入链路。</p>
+     *
+     * @param command 归一化建议批量应用命令
+     * @return 批量应用结果
+     */
+    public NormalizationBatchApplyResult batchApply(BatchApplyNormalizationCommand command) {
         databaseInitializer.initialize();
-        if (!"approve_normalize".equalsIgnoreCase(action)) {
+        if (!"approve_normalize".equalsIgnoreCase(command.action())) {
             throw new IllegalArgumentException("当前仅支持 approve_normalize");
         }
-        String status = onlyStatus == null || onlyStatus.isBlank() ? STATUS_PENDING_BATCH_APPROVAL : onlyStatus.trim();
-        List<NormalizationSuggestion> suggestions = normalizationSuggestionRepository.listByBatchIdAndStatus(batchId, status)
+        String status = command.onlyStatus() == null || command.onlyStatus().isBlank()
+                ? STATUS_PENDING_BATCH_APPROVAL : command.onlyStatus().trim();
+        List<NormalizationSuggestion> suggestions = normalizationSuggestionRepository
+                .listByBatchIdAndStatus(command.batchId(), status)
                 .stream()
                 .filter(suggestion -> ACTION_NORMALIZE.equals(suggestion.action()))
                 .filter(suggestion -> PRODUCT_TYPE_REPURCHASE_CONSUMABLE.equals(suggestion.productType()))
-                .filter(suggestion -> suggestion.confidence() >= minConfidence)
+                .filter(suggestion -> suggestion.confidence() >= command.minConfidence())
                 .filter(suggestion -> suggestion.suggestedNormalizedName() != null
                         && !suggestion.suggestedNormalizedName().isBlank())
                 .toList();
@@ -479,7 +526,7 @@ public class NormalizationSuggestionService {
             normalizationSuggestionRepository.updateStatus(suggestion.id(), STATUS_APPROVED);
             appliedCount++;
         }
-        return new NormalizationBatchApplyResult(batchId, suggestions.size(), appliedCount,
+        return new NormalizationBatchApplyResult(command.batchId(), suggestions.size(), appliedCount,
                 "批量应用完成：写入 product_aliases " + appliedCount + " 条；purchase_records.decision 未修改。");
     }
 

@@ -1,13 +1,14 @@
 package com.jtxw.familyagent.interfaces.rest.request;
 
 
+import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
  * @Author: jtxw
  * @Date: 2026/06/08/14:40
- * @Description:
+ * @Description: 历史价格基准线查询请求参数，属于 interfaces.rest.request 层，对应 /get-price-baseline 接口。
  */
 
 @Schema(description = "历史价格基准线查询请求")
@@ -50,5 +51,14 @@ public class GetPriceBaselineRequest {
 
     public void setUnit(String unit) {
         this.unit = unit;
+    }
+
+    /**
+     * 将 REST 请求参数转换为应用层基准线查询。
+     *
+     * @return 历史价格基准线查询
+     */
+    public GetPriceBaselineQuery toQuery() {
+        return new GetPriceBaselineQuery(productName, unit);
     }
 }

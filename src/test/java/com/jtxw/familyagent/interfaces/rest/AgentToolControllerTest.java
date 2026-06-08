@@ -8,11 +8,18 @@ import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.RecordPurchaseApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
+import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
+import com.jtxw.familyagent.application.command.ApplyReviewCommand;
+import com.jtxw.familyagent.application.command.BatchApplyNormalizationCommand;
+import com.jtxw.familyagent.application.command.ImportFileCommand;
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
+import com.jtxw.familyagent.application.query.ComparePriceQuery;
+import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
-import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import org.junit.jupiter.api.Test;
@@ -25,13 +32,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -66,7 +66,7 @@ class AgentToolControllerTest {
 
     @Test
     void comparePriceShouldReturnEvidenceStructure() throws Exception {
-        when(priceAnalysisApplicationService.comparePrice(anyString(), anyDouble(), anyDouble(), anyString()))
+        when(priceAnalysisApplicationService.comparePrice(any(ComparePriceQuery.class)))
                 .thenReturn(priceDecisionResult());
 
         mockMvc.perform(post("/api/tools/compare-price")
@@ -115,7 +115,7 @@ class AgentToolControllerTest {
 
     @Test
     void getPriceBaselineShouldReturnBaselineEvidenceAndWarnings() throws Exception {
-        when(priceAnalysisApplicationService.getPriceBaseline(eq("纸巾"), isNull()))
+        when(priceAnalysisApplicationService.getPriceBaseline(any(GetPriceBaselineQuery.class)))
                 .thenReturn(priceBaselineResult());
 
         mockMvc.perform(post("/api/tools/get-price-baseline")
@@ -218,8 +218,7 @@ class AgentToolControllerTest {
 
     @Test
     void applyNormalizationShouldConfirmReview() throws Exception {
-        when(reviewApplicationService.applyNormalization(eq(12L), eq("confirm"), eq("沐浴露"), eq("L"),
-                eq(true), isNull(), eq("确认")))
+        when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenReturn(new ReviewApplyResult(12L, 100L, "confirm_normalization", "include",
                         "resolved", "归一化已确认"));
 
@@ -241,8 +240,7 @@ class AgentToolControllerTest {
 
     @Test
     void applyNormalizationShouldRejectReview() throws Exception {
-        when(reviewApplicationService.applyNormalization(eq(13L), eq("reject"), isNull(), isNull(),
-                eq(false), eq("猫砂"), eq("误判")))
+        when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenReturn(new ReviewApplyResult(13L, 101L, "reject_normalization", "exclude",
                         "resolved", "归一化已拒绝"));
 
@@ -262,8 +260,7 @@ class AgentToolControllerTest {
 
     @Test
     void applyNormalizationShouldIgnoreReview() throws Exception {
-        when(reviewApplicationService.applyNormalization(eq(14L), eq("ignore"), isNull(), isNull(),
-                eq(false), isNull(), eq("暂不学习")))
+        when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenReturn(new ReviewApplyResult(14L, 102L, "ignore_normalization", "exclude",
                         "resolved", "归一化复核已忽略"));
 
@@ -281,8 +278,7 @@ class AgentToolControllerTest {
 
     @Test
     void analyzeNormalizationShouldPassKeywordFilters() throws Exception {
-        when(normalizationAnalysisTaskService.create(eq(7L), eq(10), eq(false),
-                eq(List.of("主食罐")), eq(List.of("试吃")), eq(true)))
+        when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
                 .thenReturn(new NormalizationAnalysisTaskCreateResult(99L, 7L, "pending",
                         "归一化建议分析任务已创建"));
 
@@ -302,8 +298,7 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.batchId").value(7))
                 .andExpect(jsonPath("$.status").value("pending"));
 
-        verify(normalizationAnalysisTaskService).create(eq(7L), eq(10), eq(false),
-                eq(List.of("主食罐")), eq(List.of("试吃")), eq(true));
+        verify(normalizationAnalysisTaskService).create(any(AnalyzeNormalizationCommand.class));
     }
 
     @Test
@@ -325,8 +320,7 @@ class AgentToolControllerTest {
 
     @Test
     void analyzeNormalizationShouldReturnConflictWhenActiveTaskExists() throws Exception {
-        when(normalizationAnalysisTaskService.create(eq(7L), anyInt(), anyBoolean(),
-                anyList(), anyList(), anyBoolean()))
+        when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
                 .thenThrow(new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试"));
 
         mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
@@ -338,8 +332,7 @@ class AgentToolControllerTest {
 
     @Test
     void applyNormalizationShouldRejectInvalidAction() throws Exception {
-        when(reviewApplicationService.applyNormalization(eq(15L), eq("learn"), isNull(), isNull(),
-                eq(false), isNull(), eq("无效动作")))
+        when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenThrow(new IllegalArgumentException("不支持的商品归一化复核动作：learn"));
 
         mockMvc.perform(post("/api/tools/review-items/15/apply-normalization")

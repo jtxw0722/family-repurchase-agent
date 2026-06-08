@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.interfaces.rest.request;
 
 
+import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.List;
 /**
  * @Author: jtxw
  * @Date: 2026/06/08/14:41
- * @Description:
+ * @Description: 批次商品归一化分析请求参数，属于 interfaces.rest.request 层，对应 /import-batches/{batchId}/analyze-normalization 接口。
  */
 
 @Schema(description = "批次商品归一化分析请求")
@@ -100,5 +101,20 @@ public class AnalyzeNormalizationRequest {
 
     public void setOnlyFailed(boolean onlyFailed) {
         this.onlyFailed = onlyFailed;
+    }
+
+    /**
+     * 将 REST 请求参数转换为应用层分析命令。
+     *
+     * <p>保留原有默认值：limit=100、forceReanalyze=false、
+     * includeKeywords=List.of()、excludeKeywords=List.of()、onlyFailed=false。
+     * setter 中对 null list 转 List.of() 的处理逻辑已通过构造器兜底。</p>
+     *
+     * @param batchId 导入批次 ID，由路径变量传入
+     * @return 商品归一化分析命令
+     */
+    public AnalyzeNormalizationCommand toCommand(long batchId) {
+        return new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze,
+                includeKeywords, excludeKeywords, onlyFailed);
     }
 }

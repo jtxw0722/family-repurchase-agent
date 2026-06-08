@@ -1,5 +1,7 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
+import com.jtxw.familyagent.application.command.ApplyReviewCommand;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
@@ -67,15 +69,28 @@ public class ReviewApplicationService {
      * @return 复核应用结果
      */
     public ReviewApplyResult apply(long reviewId, String action, String note) {
+        return apply(new ApplyReviewCommand(reviewId, action, note));
+    }
+
+    /**
+     * 应用人工复核结果并同步更新购买记录统计决策。
+     *
+     * <p>目前支持 include 和 exclude 两种动作。复核项只能处理一次，
+     * 成功处理后状态会变为 resolved。</p>
+     *
+     * @param command 人工复核应用命令
+     * @return 复核应用结果
+     */
+    public ReviewApplyResult apply(ApplyReviewCommand command) {
         databaseInitializer.initialize();
-        String normalizedAction = normalizeAction(action);
-        ReviewItem reviewItem = reviewItemRepository.findById(reviewId)
-                .orElseThrow(() -> new IllegalArgumentException("复核记录不存在：" + reviewId));
+        String normalizedAction = normalizeAction(command.action());
+        ReviewItem reviewItem = reviewItemRepository.findById(command.reviewId())
+                .orElseThrow(() -> new IllegalArgumentException("复核记录不存在：" + command.reviewId()));
         if (!"pending".equals(reviewItem.status())) {
-            throw new IllegalStateException("复核记录不是 pending 状态，不能重复处理：" + reviewId);
+            throw new IllegalStateException("复核记录不是 pending 状态，不能重复处理：" + command.reviewId());
         }
         if (reviewItem.recordId() == null) {
-            throw new IllegalStateException("复核记录没有关联订单记录：" + reviewId);
+            throw new IllegalStateException("复核记录没有关联订单记录：" + command.reviewId());
         }
 
         String decision = "include".equals(normalizedAction) ? "include" : "exclude";
@@ -91,12 +106,12 @@ public class ReviewApplicationService {
         if (updatedRecordCount == 0) {
             throw new IllegalStateException("关联订单记录不存在：" + reviewItem.recordId());
         }
-        int updatedReviewCount = reviewItemRepository.resolve(reviewId, normalizedAction, note);
+        int updatedReviewCount = reviewItemRepository.resolve(command.reviewId(), normalizedAction, command.note());
         if (updatedReviewCount == 0) {
-            throw new IllegalStateException("复核记录状态已变化，请重新查询后再处理：" + reviewId);
+            throw new IllegalStateException("复核记录状态已变化，请重新查询后再处理：" + command.reviewId());
         }
 
-        return new ReviewApplyResult(reviewId, reviewItem.recordId(), normalizedAction, decision,
+        return new ReviewApplyResult(command.reviewId(), reviewItem.recordId(), normalizedAction, decision,
                 "resolved", "复核已应用，订单统计决策更新为：" + decision);
     }
 
@@ -156,13 +171,28 @@ public class ReviewApplicationService {
                                                 boolean includeInBaseline,
                                                 String rejectedNormalizedName,
                                                 String note) {
-        String normalizedAction = requireText(action, "action 不能为空").toLowerCase(Locale.ROOT);
+        return applyNormalization(new ApplyNormalizationReviewCommand(reviewId, action, normalizedName, targetUnit,
+                includeInBaseline, rejectedNormalizedName, note));
+    }
+
+    /**
+     * 统一应用商品归一化复核动作。
+     *
+     * <p>该方法只处理 PRODUCT_NAME_NORMALIZATION_REVIEW 的确认、拒绝和忽略动作，
+     * 普通 include/exclude 统计决策复核仍由 apply(ApplyReviewCommand) 处理。</p>
+     *
+     * @param command 商品归一化复核应用命令
+     * @return 复核应用结果
+     */
+    public ReviewApplyResult applyNormalization(ApplyNormalizationReviewCommand command) {
+        String normalizedAction = requireText(command.action(), "action 不能为空").toLowerCase(Locale.ROOT);
         // 统一入口只负责动作分发，核心确认/拒绝/忽略逻辑继续复用原有方法。
         return switch (normalizedAction) {
-            case "confirm" -> confirmNormalization(reviewId, normalizedName, targetUnit, includeInBaseline, note);
-            case "reject" -> rejectNormalization(reviewId, rejectedNormalizedName, note);
-            case "ignore" -> ignoreNormalization(reviewId, note);
-            default -> throw new IllegalArgumentException("不支持的商品归一化复核动作：" + action);
+            case "confirm" -> confirmNormalization(command.reviewId(), command.normalizedName(),
+                    command.targetUnit(), command.includeInBaseline(), command.note());
+            case "reject" -> rejectNormalization(command.reviewId(), command.rejectedNormalizedName(), command.note());
+            case "ignore" -> ignoreNormalization(command.reviewId(), command.note());
+            default -> throw new IllegalArgumentException("不支持的商品归一化复核动作：" + command.action());
         };
     }
 

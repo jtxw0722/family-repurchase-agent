@@ -1,12 +1,13 @@
 package com.jtxw.familyagent.interfaces.rest.request;
 
 
+import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * @Author: jtxw
  * @Date: 2026/06/08/14:42
- * @Description:
+ * @Description: 商品归一化复核应用请求参数，属于 interfaces.rest.request 层，对应 /review-items/{id}/apply-normalization 接口。
  */
 
 @Schema(description = "商品归一化复核应用请求")
@@ -117,5 +118,16 @@ public class ApplyNormalizationReviewRequest {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    /**
+     * 将 REST 请求参数转换为应用层归一化复核命令。
+     *
+     * @param reviewId 复核项 ID，由路径变量传入
+     * @return 商品归一化复核应用命令
+     */
+    public ApplyNormalizationReviewCommand toCommand(long reviewId) {
+        return new ApplyNormalizationReviewCommand(reviewId, action, normalizedName, targetUnit,
+                includeInBaseline, rejectedNormalizedName, note);
     }
 }

@@ -1,12 +1,15 @@
 package com.jtxw.familyagent.interfaces.rest.request;
 
 
+import com.jtxw.familyagent.application.command.ImportFileCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
+import java.nio.file.Path;
+
 /**
  * @Author: jtxw
- * @Date: 2026/06/08 14:xx:xx
+ * @Date: 2026/06/08 14:48:11
  * @Description: 本地订单文件导入请求参数。
  */
 @Schema(description = "本地订单文件导入请求")
@@ -49,5 +52,14 @@ public class ImportFileRequest {
 
     public void setOwner(String owner) {
         this.owner = owner;
+    }
+
+    /**
+     * 将 REST 请求参数转换为应用层导入命令。
+     *
+     * @return 文件导入命令，filePath 会被转换为 java.nio.file.Path
+     */
+    public ImportFileCommand toCommand() {
+        return new ImportFileCommand(Path.of(filePath), owner);
     }
 }

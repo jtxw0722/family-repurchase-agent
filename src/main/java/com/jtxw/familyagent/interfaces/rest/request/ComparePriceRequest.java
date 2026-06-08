@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.interfaces.rest.request;
 
 
+import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
@@ -8,7 +9,7 @@ import jakarta.validation.constraints.Positive;
 /**
  * @Author: jtxw
  * @Date: 2026/06/08/14:43
- * @Description:
+ * @Description: 当前价格比较请求参数，属于 interfaces.rest.request 层，对应 /compare-price 接口。
  */
 
 @Schema(description = "当前价格比较请求")
@@ -87,5 +88,14 @@ public class ComparePriceRequest {
 
     public void setUnit(String unit) {
         this.unit = unit;
+    }
+
+    /**
+     * 将 REST 请求参数转换为应用层价格比较查询。
+     *
+     * @return 价格比较查询
+     */
+    public ComparePriceQuery toQuery() {
+        return new ComparePriceQuery(productName, price, quantity, unit);
     }
 }

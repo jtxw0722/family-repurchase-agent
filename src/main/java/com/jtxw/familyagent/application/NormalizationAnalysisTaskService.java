@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
@@ -104,15 +105,30 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
                                                                       List<String> includeKeywords,
                                                                       List<String> excludeKeywords,
                                                                       boolean onlyFailed) {
+        return create(new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze,
+                includeKeywords, excludeKeywords, onlyFailed));
+    }
+
+    /**
+     * 创建商品归一化异步分析任务并提交后台执行。
+     *
+     * <p>同一时间只允许存在一个 pending/running 任务；如果已有 active 任务，本方法抛出冲突异常，
+     * 由 REST 层转换为 409，避免任务堆积和 LLM 并发写库。</p>
+     *
+     * @param command 商品归一化分析命令
+     * @return 异步任务创建结果，包含 taskId、batchId、初始状态和提示信息
+     * @throws NormalizationAnalysisTaskConflictException 已存在 pending/running 任务时抛出
+     */
+    public synchronized NormalizationAnalysisTaskCreateResult create(AnalyzeNormalizationCommand command) {
         databaseInitializer.initialize();
         if (taskRepository.existsActiveTask()) {
             throw new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试");
         }
-        long taskId = taskRepository.create(batchId, limit, forceReanalyze,
-                safeKeywords(includeKeywords), safeKeywords(excludeKeywords), onlyFailed);
-        executorService.submit(() -> runTask(taskId, batchId, limit, forceReanalyze,
-                safeKeywords(includeKeywords), safeKeywords(excludeKeywords), onlyFailed));
-        return new NormalizationAnalysisTaskCreateResult(taskId, batchId, "pending", "归一化建议分析任务已创建");
+        long taskId = taskRepository.create(command.batchId(), command.limit(), command.forceReanalyze(),
+                safeKeywords(command.includeKeywords()), safeKeywords(command.excludeKeywords()), command.onlyFailed());
+        executorService.submit(() -> runTask(taskId, command.batchId(), command.limit(), command.forceReanalyze(),
+                safeKeywords(command.includeKeywords()), safeKeywords(command.excludeKeywords()), command.onlyFailed()));
+        return new NormalizationAnalysisTaskCreateResult(taskId, command.batchId(), "pending", "归一化建议分析任务已创建");
     }
 
     /**

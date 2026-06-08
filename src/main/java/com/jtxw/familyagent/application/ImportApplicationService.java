@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.ImportFileCommand;
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
@@ -110,7 +111,7 @@ public class ImportApplicationService {
      * @return 导入结果
      */
     public ImportResult importCsv(Path file) {
-        return importFile(file, null);
+        return importFile(new ImportFileCommand(file, null));
     }
 
     /**
@@ -121,7 +122,7 @@ public class ImportApplicationService {
      * @return 导入结果
      */
     public ImportResult importCsv(Path file, String ownerOverride) {
-        return importFile(file, ownerOverride);
+        return importFile(new ImportFileCommand(file, ownerOverride));
     }
 
     /**
@@ -132,6 +133,21 @@ public class ImportApplicationService {
      * @return 导入结果
      */
     public ImportResult importFile(Path file, String ownerOverride) {
+        return importFile(new ImportFileCommand(file, ownerOverride));
+    }
+
+    /**
+     * 导入订单文件并写入本地数据库。
+     *
+     * <p>导入流程包括：读取订单文件、商品名称归一化、单位价格计算、重复订单检测、
+     * 订单明细入库，并将金额折算、实付金额为 0 或疑似重复的记录加入待复核列表。</p>
+     *
+     * @param command 文件导入命令
+     * @return 导入结果
+     */
+    public ImportResult importFile(ImportFileCommand command) {
+        Path file = command.file();
+        String ownerOverride = command.ownerOverride();
         databaseInitializer.initialize();
         List<RawPurchaseRecord> rawRecords = importRawRecords(file, ownerOverride);
         long batchId = importBatchRepository.create(file.toString());

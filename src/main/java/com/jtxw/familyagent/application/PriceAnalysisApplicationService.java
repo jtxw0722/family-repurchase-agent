@@ -1,5 +1,7 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.query.ComparePriceQuery;
+import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
@@ -35,14 +37,25 @@ public class PriceAnalysisApplicationService {
     }
 
     public PriceBaselineResult getPriceBaseline(String productName, String unit) {
-        if (productName == null || productName.isBlank()) {
+        return getPriceBaseline(new GetPriceBaselineQuery(productName, unit));
+    }
+
+    /**
+     * 查询商品历史价格基准线。
+     *
+     * @param query 历史价格基准线查询
+     * @return 历史价格基准线，包括历史最低价、中位价、平均价、样本数量和证据
+     * @throws IllegalArgumentException productName 为空时抛出
+     */
+    public PriceBaselineResult getPriceBaseline(GetPriceBaselineQuery query) {
+        if (query.productName() == null || query.productName().isBlank()) {
             throw new IllegalArgumentException("productName 不能为空，必须是非空字符串");
         }
         databaseInitializer.initialize();
-        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(productName, "");
-        String baselineUnit = resolveBaselineUnit(unit, normalization.targetUnit());
+        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(query.productName(), "");
+        String baselineUnit = resolveBaselineUnit(query.unit(), normalization.targetUnit());
         List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalization.normalizedName());
-        return priceDecisionPolicy.baseline(productName, normalization.normalizedName(), baselineUnit, history);
+        return priceDecisionPolicy.baseline(query.productName(), normalization.normalizedName(), baselineUnit, history);
     }
 
     private String resolveBaselineUnit(String requestedUnit, String standardUnit) {
@@ -68,10 +81,24 @@ public class PriceAnalysisApplicationService {
      * @return 价格判断结果
      */
     public PriceDecisionResult comparePrice(String productName, double price, double quantity, String unit) {
+        return comparePrice(new ComparePriceQuery(productName, price, quantity, unit));
+    }
+
+    /**
+     * 比较当前商品价格与历史有效价格样本。
+     *
+     * <p>该方法先归一化商品名称，再查询正式统计口径内的历史单价，
+     * 最后使用确定性价格规则生成判断结果。</p>
+     *
+     * @param query 价格比较查询
+     * @return 价格判断结果
+     */
+    public PriceDecisionResult comparePrice(ComparePriceQuery query) {
         databaseInitializer.initialize();
-        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(productName, "");
+        ProductNameNormalizationResult normalization = productNameNormalizer.normalize(query.productName(), "");
         String normalizedName = normalization.normalizedName();
         List<PurchaseRecord> history = purchaseRecordRepository.listPriceHistoryRecords(normalizedName);
-        return priceDecisionPolicy.decide(productName, normalizedName, price, quantity, unit, history);
+        return priceDecisionPolicy.decide(query.productName(), normalizedName,
+                query.price(), query.quantity(), query.unit(), history);
     }
 }
