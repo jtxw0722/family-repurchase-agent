@@ -12,7 +12,7 @@ import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
-import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import org.junit.jupiter.api.Test;
@@ -140,7 +140,7 @@ class AgentToolControllerTest {
 
     @Test
     void recordPurchaseShouldReturnRecordResult() throws Exception {
-        when(recordPurchaseApplicationService.record(any(RecordPurchaseRequest.class)))
+        when(recordPurchaseApplicationService.record(any(RecordPurchaseCommand.class)))
                 .thenReturn(new RecordPurchaseResult(false, 1, 0, List.of(
                         new RecordPurchaseResult.RecordResult(1001L, "猫砂", "猫砂", 109.9D,
                                 24D, "kg", 4.579167D, "include", false, List.of())
@@ -193,7 +193,7 @@ class AgentToolControllerTest {
 
     @Test
     void recordPurchaseShouldReturnBadRequestForInvalidPurchaseDate() throws Exception {
-        when(recordPurchaseApplicationService.record(any(RecordPurchaseRequest.class)))
+        when(recordPurchaseApplicationService.record(any(RecordPurchaseCommand.class)))
                 .thenThrow(new IllegalArgumentException("purchaseDate 格式错误，请使用 yyyy-MM-dd，例如 2026-06-04。"));
 
         mockMvc.perform(post("/api/tools/record-purchase")

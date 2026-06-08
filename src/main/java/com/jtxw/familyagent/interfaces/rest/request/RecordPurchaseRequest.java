@@ -1,5 +1,6 @@
-package com.jtxw.familyagent.domain.model;
+package com.jtxw.familyagent.interfaces.rest.request;
 
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -11,7 +12,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/04
+ * @Date: 2026/06/08
  * @Description: 手动购买记录录入请求，用于接收 Claude 已抽取好的结构化购买字段。
  */
 @Schema(description = "手动购买记录录入请求")
@@ -22,14 +23,28 @@ public record RecordPurchaseRequest(
 
         @Schema(description = "待录入的购买记录列表", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty
-        List<@Valid Record> records
+        List<@Valid Item> records
 ) {
     /**
-     * @Author: jtxw
-     * @Date: 2026/06/04
-     * @Description: 单条手动购买记录。
+     * 转换为应用层命令对象。
+     *
+     * @return 手动购买记录录入命令
      */
-    public record Record(
+    public RecordPurchaseCommand toCommand() {
+        return new RecordPurchaseCommand(
+                dryRun,
+                records.stream()
+                        .map(Item::toCommandItem)
+                        .toList()
+        );
+    }
+
+    /**
+     * @Author: jtxw
+     * @Date: 2026/06/08
+     * @Description: 单条手动购买记录请求明细。
+     */
+    public record Item(
             @Schema(description = "原始商品名称", example = "猫砂", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotBlank
             String productName,
@@ -72,19 +87,26 @@ public record RecordPurchaseRequest(
             @Schema(description = "是否确认接受偏离历史价格区间的样本", example = "false")
             Boolean confirmOutOfRange
     ) {
-        public Record(String productName,
-                      Double price,
-                      Double quantity,
-                      String unit,
-                      String platform,
-                      String purchaseDate,
-                      String owner,
-                      String shopName,
-                      String sku,
-                      String note,
-                      String sourceText) {
-            this(productName, price, quantity, unit, platform, purchaseDate, owner,
-                    shopName, sku, note, sourceText, false);
+        /**
+         * 转换为应用层单条购买记录命令明细。
+         *
+         * @return 单条购买记录录入命令明细
+         */
+        public RecordPurchaseCommand.Item toCommandItem() {
+            return new RecordPurchaseCommand.Item(
+                    productName,
+                    price,
+                    quantity,
+                    unit,
+                    platform,
+                    purchaseDate,
+                    owner,
+                    shopName,
+                    sku,
+                    note,
+                    sourceText,
+                    confirmOutOfRange
+            );
         }
     }
 }

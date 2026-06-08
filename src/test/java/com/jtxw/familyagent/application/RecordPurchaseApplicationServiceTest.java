@@ -1,38 +1,22 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
-import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
-import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
-import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
-import com.jtxw.familyagent.domain.policy.NormalizationRule;
-import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
-import com.jtxw.familyagent.domain.policy.PriceDecisionThresholds;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
-import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
-import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
-import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
-import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import com.jtxw.familyagent.domain.policy.*;
+import com.jtxw.familyagent.infrastructure.persistence.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
-import java.time.LocalDate;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.offset;
+import static org.assertj.core.api.Assertions.*;
 
 /**
  * @Author: jtxw
@@ -44,7 +28,7 @@ class RecordPurchaseApplicationServiceTest {
     void dryRunShouldNotWriteDatabase() throws Exception {
         Fixture fixture = fixture("dry-run.sqlite");
 
-        RecordPurchaseResult result = fixture.service.record(request(true, catLitterRecord()));
+        RecordPurchaseResult result = fixture.service.record(command(true, catLitterRecord()));
 
         assertThat(result.dryRun()).isTrue();
         assertThat(result.savedCount()).isZero();
@@ -58,7 +42,7 @@ class RecordPurchaseApplicationServiceTest {
     void shouldRecordCatLitterAsIncludedPriceSample() throws Exception {
         Fixture fixture = fixture("cat-litter.sqlite");
 
-        RecordPurchaseResult result = fixture.service.record(request(false, catLitterRecord()));
+        RecordPurchaseResult result = fixture.service.record(command(false, catLitterRecord()));
 
         assertThat(result.savedCount()).isEqualTo(1);
         assertThat(result.reviewCount()).isZero();
@@ -76,7 +60,7 @@ class RecordPurchaseApplicationServiceTest {
     void shouldPersistManualRecordSourceFields() throws Exception {
         Fixture fixture = fixture("source-fields.sqlite");
 
-        fixture.service.record(request(false, catLitterRecord()));
+        fixture.service.record(command(false, catLitterRecord()));
 
         PurchaseRecord record = fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0);
         assertThat(record.shopName()).isEqualTo("京东自营");
@@ -87,12 +71,12 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void shouldTrustExplicitQuantityAndUnitForLaundryBeads() throws Exception {
         Fixture fixture = fixture("laundry-beads.sqlite");
-        RecordPurchaseRequest.Record record = new RecordPurchaseRequest.Record(
+        RecordPurchaseCommand.Item record = new RecordPurchaseCommand.Item(
                 "洗衣凝珠", 45D, 30D, "颗", "MANUAL", "2026-06-04",
-                "jtxw", null, "暂无", null, null
+                "jtxw", null, "暂无", null, null, false
         );
 
-        RecordPurchaseResult result = fixture.service.record(request(false, record));
+        RecordPurchaseResult result = fixture.service.record(command(false, record));
 
         assertThat(result.savedCount()).isEqualTo(1);
         assertThat(result.reviewCount()).isZero();
@@ -106,12 +90,12 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void shouldExcludeAndCreateReviewWhenUnitMismatchCannotBeParsed() throws Exception {
         Fixture fixture = fixture("unit-mismatch.sqlite");
-        RecordPurchaseRequest.Record record = new RecordPurchaseRequest.Record(
+        RecordPurchaseCommand.Item record = new RecordPurchaseCommand.Item(
                 "猫砂", 109.9D, 1D, "件", "JD", "2026-06-04",
-                "jtxw", null, "暂无", null, null
+                "jtxw", null, "暂无", null, null, false
         );
 
-        RecordPurchaseResult result = fixture.service.record(request(false, record));
+        RecordPurchaseResult result = fixture.service.record(command(false, record));
 
         assertThat(result.savedCount()).isEqualTo(1);
         assertThat(result.reviewCount()).isEqualTo(1);
@@ -126,9 +110,9 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void shouldMarkSecondSameManualRecordAsDuplicate() throws Exception {
         Fixture fixture = fixture("duplicate.sqlite");
-        fixture.service.record(request(false, catLitterRecord()));
+        fixture.service.record(command(false, catLitterRecord()));
 
-        RecordPurchaseResult second = fixture.service.record(request(false, catLitterRecord()));
+        RecordPurchaseResult second = fixture.service.record(command(false, catLitterRecord()));
 
         assertThat(second.savedCount()).isEqualTo(1);
         assertThat(second.reviewCount()).isEqualTo(1);
@@ -144,7 +128,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("future-date.sqlite");
         String futureDate = LocalDate.now().plusDays(1).toString();
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWith("JD", futureDate, "6kg*4包")));
 
         assertThat(result.savedCount()).isEqualTo(1);
@@ -163,7 +147,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("future-date-dry-run.sqlite");
         String futureDate = LocalDate.now().plusDays(1).toString();
 
-        RecordPurchaseResult result = fixture.service.record(request(true,
+        RecordPurchaseResult result = fixture.service.record(command(true,
                 catLitterRecordWith("JD", futureDate, "6kg*4包")));
 
         assertThat(result.dryRun()).isTrue();
@@ -189,7 +173,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("out-of-range-insufficient-history.sqlite");
         seedCatLitterHistory(fixture, 2);
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("include");
@@ -202,7 +186,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("out-of-range-low.sqlite");
         seedCatLitterHistory(fixture, 3);
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
@@ -224,7 +208,7 @@ class RecordPurchaseApplicationServiceTest {
                 "test.csv", null, null, null, "2026-04-01 00:00:00"
         ));
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
@@ -237,7 +221,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("out-of-range-high.sqlite");
         seedCatLitterHistory(fixture, 3);
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 80D, 10D, false)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
@@ -253,7 +237,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("out-of-range-dry-run.sqlite");
         seedCatLitterHistory(fixture, 3);
 
-        RecordPurchaseResult result = fixture.service.record(request(true,
+        RecordPurchaseResult result = fixture.service.record(command(true,
                 catLitterRecordWithPrice("2026-05-10", 30D, 10D, false)));
 
         assertThat(result.dryRun()).isTrue();
@@ -272,7 +256,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("out-of-range-confirmed.sqlite");
         seedCatLitterHistory(fixture, 3);
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 30D, 10D, true)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("include");
@@ -286,7 +270,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("confirm-does-not-bypass-future.sqlite");
         String futureDate = LocalDate.now().plusDays(1).toString();
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice(futureDate, 30D, 10D, true)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
@@ -299,10 +283,10 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void confirmOutOfRangeShouldNotBypassDuplicateRisk() throws Exception {
         Fixture fixture = fixture("confirm-does-not-bypass-duplicate.sqlite");
-        fixture.service.record(request(false,
+        fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 55D, 10D, false)));
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 55D, 10D, true)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
@@ -315,12 +299,12 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void confirmOutOfRangeShouldNotBypassUnitMismatchRisk() throws Exception {
         Fixture fixture = fixture("confirm-does-not-bypass-unit-mismatch.sqlite");
-        RecordPurchaseRequest.Record record = new RecordPurchaseRequest.Record(
+        RecordPurchaseCommand.Item record = new RecordPurchaseCommand.Item(
                 "猫砂", 109.9D, 1D, "件", "JD", "2026-05-10",
                 "jtxw", null, "暂无", null, null, true
         );
 
-        RecordPurchaseResult result = fixture.service.record(request(false, record));
+        RecordPurchaseResult result = fixture.service.record(command(false, record));
 
         assertThat(result.records().get(0).decision()).isEqualTo("exclude");
         assertThat(result.records().get(0).reviewRequired()).isTrue();
@@ -334,7 +318,7 @@ class RecordPurchaseApplicationServiceTest {
         Fixture fixture = fixture("within-range.sqlite");
         seedCatLitterHistory(fixture, 3);
 
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWithPrice("2026-05-10", 55D, 10D, false)));
 
         assertThat(result.records().get(0).decision()).isEqualTo("include");
@@ -366,11 +350,11 @@ class RecordPurchaseApplicationServiceTest {
     @Test
     void shouldDefaultBlankSkuToUnavailableText() throws Exception {
         Fixture nullSkuFixture = fixture("null-sku.sqlite");
-        nullSkuFixture.service.record(request(false, catLitterRecordWith("JD", "2026-06-04", null)));
+        nullSkuFixture.service.record(command(false, catLitterRecordWith("JD", "2026-06-04", null)));
         assertThat(nullSkuFixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0).sku()).isEqualTo("暂无");
 
         Fixture blankSkuFixture = fixture("blank-sku.sqlite");
-        blankSkuFixture.service.record(request(false, catLitterRecordWith("JD", "2026-06-04", "   ")));
+        blankSkuFixture.service.record(command(false, catLitterRecordWith("JD", "2026-06-04", "   ")));
         assertThat(blankSkuFixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0).sku()).isEqualTo("暂无");
     }
 
@@ -386,7 +370,7 @@ class RecordPurchaseApplicationServiceTest {
     void shouldRejectInvalidPurchaseDate() throws Exception {
         Fixture fixture = fixture("invalid-date.sqlite");
 
-        assertThatThrownBy(() -> fixture.service.record(request(false,
+        assertThatThrownBy(() -> fixture.service.record(command(false,
                 catLitterRecordWith("JD", "2021-02-30 13:45:20", "6kg*4包"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("purchaseDate 格式错误");
@@ -394,7 +378,7 @@ class RecordPurchaseApplicationServiceTest {
 
     private void assertStoredPlatform(String dbName, String inputPlatform, String expectedPlatform) throws Exception {
         Fixture fixture = fixture(dbName);
-        fixture.service.record(request(false, catLitterRecordWith(inputPlatform, "2026-06-04", "6kg*4包")));
+        fixture.service.record(command(false, catLitterRecordWith(inputPlatform, "2026-06-04", "6kg*4包")));
 
         assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0).platform())
                 .isEqualTo(expectedPlatform);
@@ -402,7 +386,7 @@ class RecordPurchaseApplicationServiceTest {
 
     private void assertStoredOwner(String dbName, String inputOwner, String expectedOwner) throws Exception {
         Fixture fixture = fixture(dbName);
-        fixture.service.record(request(false, catLitterRecordWith("JD", "2026-06-04", "6kg*4包", inputOwner)));
+        fixture.service.record(command(false, catLitterRecordWith("JD", "2026-06-04", "6kg*4包", inputOwner)));
 
         assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0).owner())
                 .isEqualTo(expectedOwner);
@@ -410,7 +394,7 @@ class RecordPurchaseApplicationServiceTest {
 
     private void assertStoredOrderTime(String dbName, String inputDate, String expectedOrderTime) throws Exception {
         Fixture fixture = fixture(dbName);
-        fixture.service.record(request(false, catLitterRecordWith("JD", inputDate, "6kg*4包")));
+        fixture.service.record(command(false, catLitterRecordWith("JD", inputDate, "6kg*4包")));
 
         assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂").get(0).orderTime())
                 .isEqualTo(expectedOrderTime);
@@ -418,7 +402,7 @@ class RecordPurchaseApplicationServiceTest {
 
     private void assertStoredDecision(String dbName, String inputDate, String expectedDecision) throws Exception {
         Fixture fixture = fixture(dbName);
-        RecordPurchaseResult result = fixture.service.record(request(false,
+        RecordPurchaseResult result = fixture.service.record(command(false,
                 catLitterRecordWith("JD", inputDate, "6kg*4包")));
 
         assertThat(result.records().get(0).decision()).isEqualTo(expectedDecision);
@@ -426,31 +410,31 @@ class RecordPurchaseApplicationServiceTest {
         assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).hasSize(1);
     }
 
-    private RecordPurchaseRequest request(boolean dryRun, RecordPurchaseRequest.Record... records) {
-        return new RecordPurchaseRequest(dryRun, List.of(records));
+    private RecordPurchaseCommand command(boolean dryRun, RecordPurchaseCommand.Item... records) {
+        return new RecordPurchaseCommand(dryRun, List.of(records));
     }
 
-    private RecordPurchaseRequest.Record catLitterRecord() {
+    private RecordPurchaseCommand.Item catLitterRecord() {
         return catLitterRecordWith("JD", "2026-06-04", "6kg*4包");
     }
 
-    private RecordPurchaseRequest.Record catLitterRecordWith(String platform, String purchaseDate, String sku) {
+    private RecordPurchaseCommand.Item catLitterRecordWith(String platform, String purchaseDate, String sku) {
         return catLitterRecordWith(platform, purchaseDate, sku, "jtxw");
     }
 
-    private RecordPurchaseRequest.Record catLitterRecordWith(String platform, String purchaseDate, String sku, String owner) {
-        return new RecordPurchaseRequest.Record(
+    private RecordPurchaseCommand.Item catLitterRecordWith(String platform, String purchaseDate, String sku, String owner) {
+        return new RecordPurchaseCommand.Item(
                 "猫砂", 109.9D, 24D, "kg", platform, purchaseDate,
                 owner, "京东自营", sku, "手动录入",
-                "昨天在京东买了猫砂，109.9 元，6kg*4 包，京东自营。"
+                "昨天在京东买了猫砂，109.9 元，6kg*4 包，京东自营。", false
         );
     }
 
-    private RecordPurchaseRequest.Record catLitterRecordWithPrice(String purchaseDate,
+    private RecordPurchaseCommand.Item catLitterRecordWithPrice(String purchaseDate,
                                                                   double price,
                                                                   double quantity,
                                                                   boolean confirmOutOfRange) {
-        return new RecordPurchaseRequest.Record(
+        return new RecordPurchaseCommand.Item(
                 "猫砂", price, quantity, "kg", "JD", purchaseDate,
                 "jtxw", "京东自营", quantity + "kg", "手动录入",
                 "历史区间防御测试。", confirmOutOfRange
@@ -460,7 +444,7 @@ class RecordPurchaseApplicationServiceTest {
     private void seedCatLitterHistory(Fixture fixture, int sampleCount) {
         double[] prices = {40D, 50D, 60D};
         for (int i = 0; i < sampleCount; i++) {
-            fixture.service.record(request(false,
+            fixture.service.record(command(false,
                     catLitterRecordWithPrice("2026-05-0" + (i + 1), prices[i], 10D, false)));
         }
     }

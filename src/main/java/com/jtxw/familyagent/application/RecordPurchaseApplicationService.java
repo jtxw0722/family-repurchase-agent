@@ -1,16 +1,10 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
-import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.RecordPurchaseResult;
-import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
-import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
-import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizationResult;
-import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
-import com.jtxw.familyagent.domain.policy.QuantityUnitParseResult;
-import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
+import com.jtxw.familyagent.domain.policy.*;
 import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
@@ -22,11 +16,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @Author: jtxw
@@ -90,9 +80,21 @@ public class RecordPurchaseApplicationService {
                 reviewItemRepository, legacyReviewProperties());
     }
 
-    public RecordPurchaseResult record(RecordPurchaseRequest request) {
-        validate(request);
-        boolean dryRun = request.dryRun();
+    /**
+     * 录入手动或自然语言抽取后的结构化购买记录。
+     *
+     * <p>该方法是 record-purchase 用例的应用层入口，负责完成命令校验、数据库初始化、
+     * 导入批次创建、逐条购买记录预处理、记录保存、复核项创建和结果汇总。</p>
+     *
+     * <p>当 dryRun 为 true 时，仅执行校验、归一化、单价计算、去重判断和复核原因收集，
+     * 不创建导入批次、不写入购买记录、不创建复核项。</p>
+     *
+     * @param command 手动购买记录录入命令，不能为空，且 dryRun 和 records 必须有效
+     * @return 手动购买记录录入结果，包括是否 dryRun、成功保存数量、复核数量和逐条处理结果
+     */
+    public RecordPurchaseResult record(RecordPurchaseCommand command) {
+        validate(command);
+        boolean dryRun = command.dryRun();
         databaseInitializer.initialize();
 
         String sourceFile = SOURCE_PREFIX + ":" + ClockUtils.nowText();
@@ -102,7 +104,7 @@ public class RecordPurchaseApplicationService {
         int savedCount = 0;
         int reviewCount = 0;
 
-        for (RecordPurchaseRequest.Record input : request.records()) {
+        for (RecordPurchaseCommand.Item input : command.records()) {
             PreparedManualRecord prepared = prepare(input, batchId, sourceFile, currentBatchFingerprints, dryRun);
             Long recordId = null;
             if (!dryRun) {
@@ -129,17 +131,34 @@ public class RecordPurchaseApplicationService {
             ));
         }
 
-        if (!dryRun && batchId != null) {
-            importBatchRepository.complete(batchId, request.records().size(), savedCount, reviewCount);
+        if (!dryRun) {
+            importBatchRepository.complete(batchId, command.records().size(), savedCount, reviewCount);
         }
         return new RecordPurchaseResult(dryRun, savedCount, reviewCount, results);
     }
 
-    private PreparedManualRecord prepare(RecordPurchaseRequest.Record input,
+    /**
+     * 预处理单条手动购买记录。
+     *
+     * <p>该方法负责将应用层命令中的单条输入转换为可保存的购买记录候选对象，
+     * 并在转换过程中完成商品名称归一化、规格兜底、单位换算、单价计算、批内/历史去重、
+     * 未来日期识别、价格区间异常识别和复核原因收集。</p>
+     *
+     * <p>该方法只返回准备结果，不直接写入数据库，也不直接创建复核项。
+     * 是否保存记录和创建复核项由 {@link #record(RecordPurchaseCommand)} 统一控制。</p>
+     *
+     * @param input                    单条手动购买记录录入命令明细
+     * @param batchId                  当前导入批次 ID；dryRun 场景下为空
+     * @param sourceFile               本次手动录入生成的来源标识
+     * @param currentBatchFingerprints 当前批次内已处理记录的去重指纹集合
+     * @param dryRun                   是否只预览不写入数据库
+     * @return 预处理后的购买记录和对应复核原因
+     */
+    private PreparedManualRecord prepare(RecordPurchaseCommand.Item input,
                                          Long batchId,
                                          String sourceFile,
-                                        Set<String> currentBatchFingerprints,
-                                        boolean dryRun) {
+                                         Set<String> currentBatchFingerprints,
+                                         boolean dryRun) {
         String productName = input.productName().trim();
         String sku = resolveSku(input.sku());
         ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(productName, sku);
@@ -259,14 +278,24 @@ public class RecordPurchaseApplicationService {
         return true;
     }
 
-    private void validate(RecordPurchaseRequest request) {
-        if (request == null) {
+    /**
+     * 校验手动购买记录录入命令。
+     *
+     * <p>该方法只做应用服务入口层面的基础校验，确保命令对象、dryRun 标记和 records 列表存在。
+     * 单条记录中的商品名称、价格、数量、单位等字段校验由 REST 请求 DTO 的 Jakarta Validation
+     * 以及后续业务处理逻辑共同承担。</p>
+     *
+     * @param command 手动购买记录录入命令
+     * @throws IllegalArgumentException 当命令为空、dryRun 为空或 records 为空时抛出
+     */
+    private void validate(RecordPurchaseCommand command) {
+        if (command == null) {
             throw new IllegalArgumentException("请求不能为空");
         }
-        if (request.dryRun() == null) {
+        if (command.dryRun() == null) {
             throw new IllegalArgumentException("dryRun 必填");
         }
-        if (request.records() == null || request.records().isEmpty()) {
+        if (command.records() == null || command.records().isEmpty()) {
             throw new IllegalArgumentException("records 必填且不能为空");
         }
     }

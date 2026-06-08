@@ -1,19 +1,14 @@
 package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
-import com.jtxw.familyagent.domain.model.RecordPurchaseRequest;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.domain.policy.*;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
-import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
-import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import com.jtxw.familyagent.infrastructure.persistence.*;
+import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -36,7 +31,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void confirmNormalizationShouldWriteAliasAndUpdatePurchaseRecord() throws Exception {
         Fixture fixture = fixture("confirm-normalization.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
 
         ReviewApplyResult result = fixture.reviewService().confirmNormalization(
@@ -58,7 +53,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void rejectNormalizationShouldWriteNegativeAlias() throws Exception {
         Fixture fixture = fixture("reject-normalization.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
 
         ReviewApplyResult result = fixture.reviewService().rejectNormalization(review.id(), "沐浴露",
@@ -78,7 +73,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void negativeAliasShouldAutoExcludeWithoutNormalizationReviewOnNextImport() throws Exception {
         Fixture fixture = fixture("negative-alias-next-import.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
         fixture.reviewService().rejectNormalization(review.id(), "沐浴露", "人工确认不是沐浴露");
 
@@ -102,7 +97,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void confirmNormalizationShouldNotIncludeWhenOtherPendingReviewExists() throws Exception {
         Fixture fixture = fixture("confirm-cannot-bypass-other-pending.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
         fixture.reviewItemRepository().create(review.recordId(), "ZERO_PAYMENT", "测试用额外待复核项");
 
@@ -115,7 +110,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void confirmNormalizationShouldNotIncludeWhenOtherReviewWasExcluded() throws Exception {
         Fixture fixture = fixture("confirm-cannot-bypass-excluded-review.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail normalizationReview = fixture.reviewItemRepository().listPendingDetails().get(0);
         fixture.reviewItemRepository().create(normalizationReview.recordId(), "ZERO_PAYMENT", "测试用已排除风险");
         ReviewItemDetail extraReview = fixture.reviewItemRepository().listPendingDetails().stream()
@@ -136,7 +131,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void confirmNormalizationShouldNotIncludeWhenTargetUnitDiffersFromRecordUnit() throws Exception {
         Fixture fixture = fixture("confirm-target-unit-mismatch.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
 
         assertThatThrownBy(() -> fixture.reviewService().confirmNormalization(
@@ -148,7 +143,7 @@ class NormalizationLearningIntegrationTest {
     @Test
     void confirmedAliasShouldAvoidNormalizationReviewOnNextImport() throws Exception {
         Fixture fixture = fixture("confirmed-alias-next-import.sqlite");
-        fixture.recordService().record(request(false, bodyWashRecord("2026-05-01")));
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
         fixture.reviewService().confirmNormalization(review.id(), "沐浴露", "L", false, "确认别名");
 
@@ -165,14 +160,14 @@ class NormalizationLearningIntegrationTest {
                 .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
     }
 
-    private RecordPurchaseRequest request(boolean dryRun, RecordPurchaseRequest.Record... records) {
-        return new RecordPurchaseRequest(dryRun, List.of(records));
+    private RecordPurchaseCommand command(boolean dryRun, RecordPurchaseCommand.Item... records) {
+        return new RecordPurchaseCommand(dryRun, List.of(records));
     }
 
-    private RecordPurchaseRequest.Record bodyWashRecord(String purchaseDate) {
-        return new RecordPurchaseRequest.Record(
+    private RecordPurchaseCommand.Item bodyWashRecord(String purchaseDate) {
+        return new RecordPurchaseCommand.Item(
                 "舒肤佳沐浴露清香型720ml", 39.9D, 0.72D, "L", "JD", purchaseDate,
-                "jtxw", "京东自营", "家庭装", "手动录入", "买了舒肤佳沐浴露。"
+                "jtxw", "京东自营", "家庭装", "手动录入", "买了舒肤佳沐浴露。", false
         );
     }
 

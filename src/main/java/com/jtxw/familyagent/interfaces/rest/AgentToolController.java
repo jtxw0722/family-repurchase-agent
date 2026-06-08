@@ -3,6 +3,7 @@ package com.jtxw.familyagent.interfaces.rest;
 import com.jtxw.familyagent.application.*;
 import com.jtxw.familyagent.domain.model.*;
 import com.jtxw.familyagent.interfaces.rest.request.*;
+import com.jtxw.familyagent.interfaces.rest.request.RecordPurchaseRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -105,7 +106,7 @@ public class AgentToolController {
     @Operation(summary = "录入购买记录", description = "录入 Claude 已抽取好的结构化购买记录，并由后端完成归一化、单价计算、去重、入库或复核。")
     @PostMapping("/record-purchase")
     public RecordPurchaseResult recordPurchase(@Valid @RequestBody RecordPurchaseRequest request) {
-        return recordPurchaseApplicationService.record(request);
+        return recordPurchaseApplicationService.record(request.toCommand());
     }
 
     /**
