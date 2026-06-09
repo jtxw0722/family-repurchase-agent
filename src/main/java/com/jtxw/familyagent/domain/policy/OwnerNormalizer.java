@@ -12,6 +12,11 @@ import java.util.Locale;
 @Component
 public class OwnerNormalizer {
     /**
+     * ASCII 字符边界，低于该值的字符按半角字符处理。
+     */
+    private static final int ASCII_BOUNDARY = 128;
+
+    /**
      * 将 owner 归一到稳定的存储标识。
      *
      * @param owner 原始 owner
@@ -22,7 +27,7 @@ public class OwnerNormalizer {
             return "jtxw";
         }
         String normalized = owner.trim();
-        if (normalized.chars().allMatch(ch -> ch < 128)) {
+        if (normalized.chars().allMatch(ch -> ch < ASCII_BOUNDARY)) {
             return normalized.toLowerCase(Locale.ROOT);
         }
         return normalized;
