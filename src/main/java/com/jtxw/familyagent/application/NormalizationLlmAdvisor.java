@@ -1058,8 +1058,12 @@ public class NormalizationLlmAdvisor {
             if (!text.contains(keyword)) {
                 continue;
             }
-            if ("包".equals(keyword) && (containsAny(text, PACKAGING_KEYWORDS) || text.contains("面包"))) {
-                continue;
+            boolean isPackagingKeyword = "包".equals(keyword);
+            if (isPackagingKeyword) {
+                boolean isPackagingContext = containsAny(text, PACKAGING_KEYWORDS) || text.contains("面包");
+                if (isPackagingContext) {
+                    continue;
+                }
             }
             return true;
         }

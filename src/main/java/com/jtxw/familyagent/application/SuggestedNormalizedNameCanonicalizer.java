@@ -116,9 +116,12 @@ public class SuggestedNormalizedNameCanonicalizer {
                 return "猫零食";
             }
         }
-        if (containsAny(normalizedName, CAT_MAIN_CAN_NAMES)
-                && (containsAny(context, CAT_MAIN_CAN_CONTEXT) || normalizedName.contains("猫"))) {
-            return "猫主食罐";
+        boolean isMainCanName = containsAny(normalizedName, CAT_MAIN_CAN_NAMES);
+        if (isMainCanName) {
+            boolean hasMainCanContext = containsAny(context, CAT_MAIN_CAN_CONTEXT) || normalizedName.contains("猫");
+            if (hasMainCanContext) {
+                return "猫主食罐";
+            }
         }
         if (containsAny(context, CAT_STICK_NAMES)) {
             return "猫条";
