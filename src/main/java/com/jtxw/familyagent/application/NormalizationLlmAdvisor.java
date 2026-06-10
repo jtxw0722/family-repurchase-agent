@@ -24,7 +24,7 @@ import java.util.*;
  * @Description: 商品归一化 LLM Advisor，负责批量调用 LLM 并校验结构化建议结果。
  */
 @Service
-public class NormalizationLlmAdvisor {
+public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
     /**
      * LLM 允许返回的动作集合，其他值会被兜底为 REVIEW。
      */
@@ -184,6 +184,7 @@ public class NormalizationLlmAdvisor {
      * @param requests 待分析商品列表，只包含允许传给 LLM 的隐私安全字段
      * @return 与输入顺序一致的结构化归一化建议列表
      */
+    @Override
     public List<NormalizationAdvisorResult> analyzeBatch(List<NormalizationAdvisorRequest> requests) {
         return analyzeBatchWithObservation(requests).results();
     }
@@ -196,9 +197,10 @@ public class NormalizationLlmAdvisor {
      * @param requests 待分析商品列表
      * @return LLM 建议结果和本次调用的观测指标
      */
-    public LlmBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
+    @Override
+    public NormalizationAdviceBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
         if (requests == null || requests.isEmpty()) {
-            return new LlmBatchAnalysis(List.of(), LlmBatchObservation.empty());
+            return new NormalizationAdviceBatchAnalysis(List.of(), NormalizationAdviceObservation.empty());
         }
         NormalizationProperties.Llm llm = normalizationProperties.getLlm();
         if (!llm.isEnabled()) {
@@ -223,7 +225,7 @@ public class NormalizationLlmAdvisor {
         boolean llmHttpStarted = false;
         long httpStartNanos = 0L;
         LlmHttpResponse httpResponse = null;
-        LlmRequestMetrics requestMetrics = null;
+        NormalizationAdviceRequestMetrics requestMetrics = null;
         String extractedContent = "";
         try {
             requestMetrics = requestMetrics(requests);
@@ -240,7 +242,7 @@ public class NormalizationLlmAdvisor {
             long parseStartNanos = System.nanoTime();
             List<NormalizationAdvisorResult> results = parseBatchContent(extractedContent, requests);
             parseElapsedMs = elapsedMs(parseStartNanos);
-            return new LlmBatchAnalysis(results, new LlmBatchObservation(
+            return new NormalizationAdviceBatchAnalysis(results, new NormalizationAdviceObservation(
                     requestMetrics.promptChars(), requestMetrics.requestBytes(), requestMetrics.requestBody(),
                     requestBuildElapsedMs, llmHttpElapsedMs, extractElapsedMs, parseElapsedMs, elapsedMs(totalStartNanos),
                     httpResponse.httpStatus(), httpResponse.contentType(), httpResponse.responseBytes(),
@@ -257,7 +259,7 @@ public class NormalizationLlmAdvisor {
                     .map(request -> failedResult(request.productName(), request.sku(),
                             classifyException(e)))
                     .toList();
-            return new LlmBatchAnalysis(failedResults, new LlmBatchObservation(
+            return new NormalizationAdviceBatchAnalysis(failedResults, new NormalizationAdviceObservation(
                     requestMetrics == null ? 0 : requestMetrics.promptChars(),
                     requestMetrics == null ? 0 : requestMetrics.requestBytes(),
                     requestMetrics == null ? null : requestMetrics.requestBody(),
@@ -278,7 +280,9 @@ public class NormalizationLlmAdvisor {
      * @return 请求体字符串和体积指标
      * @throws JsonProcessingException extraBodyJson 或请求体序列化失败时抛出
      */
-    public LlmRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests) throws JsonProcessingException {
+    @Override
+    public NormalizationAdviceRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests)
+            throws JsonProcessingException {
         NormalizationProperties.Llm llm = normalizationProperties.getLlm();
         String systemPrompt = systemPrompt();
         String userPrompt = userPrompt(requests);
@@ -293,7 +297,7 @@ public class NormalizationLlmAdvisor {
         }
         mergeExtraBodyJson(request, llm.getExtraBodyJson());
         String requestBody = objectMapper.writeValueAsString(request);
-        return new LlmRequestMetrics(systemPrompt.length() + userPrompt.length(),
+        return new NormalizationAdviceRequestMetrics(systemPrompt.length() + userPrompt.length(),
                 requestBody.getBytes(StandardCharsets.UTF_8).length, requestBody);
     }
 
@@ -1105,35 +1109,6 @@ public class NormalizationLlmAdvisor {
     }
 
     private record ClassificationCorrection(String action, String productType, boolean reviewRequired, String reason) {
-    }
-
-    public record LlmRequestMetrics(int promptChars, int requestBytes, String requestBody) {
-    }
-
-    public record LlmBatchAnalysis(List<NormalizationAdvisorResult> results, LlmBatchObservation observation) {
-    }
-
-    public record LlmBatchObservation(int promptChars,
-                                      int requestBytes,
-                                      String requestBody,
-                                      long requestBuildElapsedMs,
-                                      long llmHttpElapsedMs,
-                                      long extractElapsedMs,
-                                      long parseElapsedMs,
-                                      long totalElapsedMs,
-                                      int httpStatus,
-                                      String contentType,
-                                      int responseBytes,
-                                      int extractedContentChars,
-                                      int parsedItems,
-                                      String errorType,
-                                      String errorMessage,
-                                      String responseBody,
-                                      String extractedContent) {
-        public static LlmBatchObservation empty() {
-            return new LlmBatchObservation(0, 0, null, 0L, 0L, 0L, 0L, 0L,
-                    0, "", 0, 0, 0, null, null, null, null);
-        }
     }
 
     private record LlmHttpResponse(int httpStatus, String contentType, int responseBytes, String body) {

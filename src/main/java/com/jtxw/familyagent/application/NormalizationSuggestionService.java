@@ -214,9 +214,9 @@ public class NormalizationSuggestionService {
      */
     private final NormalizationRagContextRetriever ragContextRetriever;
     /**
-     * LLM Advisor，负责批量生成结构化归一化建议。
+     * 商品归一化建议能力，负责批量生成结构化归一化建议。
      */
-    private final NormalizationLlmAdvisor llmAdvisor;
+    private final ProductNormalizationAdvisor productNormalizationAdvisor;
     /**
      * LLM 建议名称归并器，防止自由文本直接成为最终 normalizedName。
      */
@@ -242,7 +242,7 @@ public class NormalizationSuggestionService {
                                           ProductNegativeAliasRepository productNegativeAliasRepository,
                                           NormalizationSuggestionRepository normalizationSuggestionRepository,
                                           NormalizationRagContextRetriever ragContextRetriever,
-                                          NormalizationLlmAdvisor llmAdvisor,
+                                          ProductNormalizationAdvisor productNormalizationAdvisor,
                                           SuggestedNormalizedNameCanonicalizer suggestedNormalizedNameCanonicalizer,
                                           SuggestedTargetUnitCanonicalizer suggestedTargetUnitCanonicalizer,
                                           NormalizationProperties normalizationProperties,
@@ -255,7 +255,7 @@ public class NormalizationSuggestionService {
         this.productNegativeAliasRepository = productNegativeAliasRepository;
         this.normalizationSuggestionRepository = normalizationSuggestionRepository;
         this.ragContextRetriever = ragContextRetriever;
-        this.llmAdvisor = llmAdvisor;
+        this.productNormalizationAdvisor = productNormalizationAdvisor;
         this.suggestedNormalizedNameCanonicalizer = suggestedNormalizedNameCanonicalizer;
         this.suggestedTargetUnitCanonicalizer = suggestedTargetUnitCanonicalizer;
         this.normalizationProperties = normalizationProperties;
@@ -384,7 +384,7 @@ public class NormalizationSuggestionService {
             List<NormalizationAdvisorRequest> advisorRequests = batchCandidates.stream()
                     .map(Candidate::toAdvisorRequest)
                     .toList();
-            NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics = requestMetrics(advisorRequests);
+            NormalizationAdviceRequestMetrics requestMetrics = requestMetrics(advisorRequests);
             NormalizationProperties.Llm llm = normalizationProperties.getLlm();
             LOGGER.info("Normalization LLM batch start: batchId={}, batchIndex={}/{}, batchSize={}, model={}, "
                             + "baseUrlHost={}, timeoutSeconds={}, promptChars={}, requestBytes={}, aliasKeys={}",
@@ -392,9 +392,10 @@ public class NormalizationSuggestionService {
                     baseUrlHost(llm.getBaseUrl()), llm.getRequestTimeoutSeconds(),
                     requestMetrics.promptChars(), requestMetrics.requestBytes(), aliasKeySummary(batchCandidates));
             List<NormalizationAdvisorResult> advisorResults;
-            NormalizationLlmAdvisor.LlmBatchObservation observation;
+            NormalizationAdviceObservation observation;
             try {
-                NormalizationLlmAdvisor.LlmBatchAnalysis analysis = llmAdvisor.analyzeBatchWithObservation(advisorRequests);
+                NormalizationAdviceBatchAnalysis analysis =
+                        productNormalizationAdvisor.analyzeBatchWithObservation(advisorRequests);
                 advisorResults = analysis.results();
                 observation = analysis.observation();
             } catch (Exception e) {
@@ -704,20 +705,20 @@ public class NormalizationSuggestionService {
         return text.length() <= maxLength ? text : text.substring(0, maxLength) + "...";
     }
 
-    private NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests) {
+    private NormalizationAdviceRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests) {
         try {
-            return llmAdvisor.requestMetrics(requests);
+            return productNormalizationAdvisor.requestMetrics(requests);
         } catch (Exception e) {
             LOGGER.warn("Normalization LLM request metrics build failed: errorType={}, message={}",
                     errorType(classifyException(e)), abbreviate(sanitizeError(errorMessage(e)), 200));
-            return new NormalizationLlmAdvisor.LlmRequestMetrics(0, 0, null);
+            return new NormalizationAdviceRequestMetrics(0, 0, null);
         }
     }
 
-    private NormalizationLlmAdvisor.LlmBatchObservation failedObservation(Exception e,
-                                                                         NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics,
-                                                                         long batchStartNanos) {
-        return new NormalizationLlmAdvisor.LlmBatchObservation(
+    private NormalizationAdviceObservation failedObservation(Exception e,
+                                                            NormalizationAdviceRequestMetrics requestMetrics,
+                                                            long batchStartNanos) {
+        return new NormalizationAdviceObservation(
                 requestMetrics.promptChars(),
                 requestMetrics.requestBytes(),
                 requestMetrics.requestBody(),
@@ -741,8 +742,8 @@ public class NormalizationSuggestionService {
     private void writeDebugDump(long batchId,
                                 int batchIndex,
                                 int batchSize,
-                                NormalizationLlmAdvisor.LlmRequestMetrics requestMetrics,
-                                NormalizationLlmAdvisor.LlmBatchObservation observation,
+                                NormalizationAdviceRequestMetrics requestMetrics,
+                                NormalizationAdviceObservation observation,
                                 long elapsedMs,
                                 long saveElapsedMs) {
         NormalizationProperties.Llm llm = normalizationProperties.getLlm();
@@ -793,14 +794,14 @@ public class NormalizationSuggestionService {
     }
 
     private Map<String, Object> debugRequest(NormalizationProperties.Llm llm,
-                                             NormalizationLlmAdvisor.LlmBatchObservation observation) {
+                                             NormalizationAdviceObservation observation) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("body", llm.isDebugLogFullPrompt() ? observation.requestBody() : null);
         return request;
     }
 
     private Map<String, Object> debugResponse(NormalizationProperties.Llm llm,
-                                              NormalizationLlmAdvisor.LlmBatchObservation observation) {
+                                              NormalizationAdviceObservation observation) {
         Map<String, Object> response = new LinkedHashMap<>();
         if (!llm.isDebugLogFullResponse()) {
             response.put("body", null);

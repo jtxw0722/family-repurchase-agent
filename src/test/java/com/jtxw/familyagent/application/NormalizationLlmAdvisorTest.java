@@ -35,6 +35,11 @@ class NormalizationLlmAdvisorTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void shouldImplementProductNormalizationAdvisor() {
+        assertThat(advisor).isInstanceOf(ProductNormalizationAdvisor.class);
+    }
+
+    @Test
     void shouldParseJsonArrayForMultipleProducts() throws Exception {
         List<NormalizationAdvisorResult> results = advisor.parseBatchContent("""
                 [
@@ -606,7 +611,7 @@ class NormalizationLlmAdvisorTest {
             properties.getLlm().setRequestTimeoutSeconds(1);
             NormalizationLlmAdvisor timeoutAdvisor = new NormalizationLlmAdvisor(properties, objectMapper);
 
-            NormalizationLlmAdvisor.LlmBatchAnalysis analysis =
+            NormalizationAdviceBatchAnalysis analysis =
                     timeoutAdvisor.analyzeBatchWithObservation(requests("猫条三文鱼口味"));
 
             assertThat(analysis.results().get(0).failed()).isTrue();

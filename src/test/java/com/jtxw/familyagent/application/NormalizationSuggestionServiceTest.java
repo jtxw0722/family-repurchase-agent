@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
@@ -1293,11 +1294,15 @@ class NormalizationSuggestionServiceTest {
                 importService, suggestionService);
     }
 
-    private static class StubAdvisor extends NormalizationLlmAdvisor {
+    private static class StubAdvisor implements ProductNormalizationAdvisor {
         /**
          * 按调用顺序返回的模拟 LLM 结果队列。
          */
         private final Queue<NormalizationAdvisorResult> results = new ArrayDeque<>();
+        /**
+         * 请求指标构建代理，用于复用真实 prompt 渲染和请求体构建逻辑。
+         */
+        private final NormalizationLlmAdvisor requestMetricsAdvisor;
         /**
          * 批次级失败标记队列，用于模拟单个 LLM batch 失败。
          */
@@ -1316,7 +1321,7 @@ class NormalizationSuggestionServiceTest {
         private String responseBody = "{\"stub\":\"response\"}";
 
         StubAdvisor(NormalizationProperties normalizationProperties, ObjectMapper objectMapper) {
-            super(normalizationProperties, objectMapper);
+            this.requestMetricsAdvisor = new NormalizationLlmAdvisor(normalizationProperties, objectMapper);
         }
 
         void add(NormalizationAdvisorResult result) {
@@ -1345,16 +1350,22 @@ class NormalizationSuggestionServiceTest {
         }
 
         @Override
-        public LlmBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
+        public NormalizationAdviceRequestMetrics requestMetrics(List<NormalizationAdvisorRequest> requests)
+                throws JsonProcessingException {
+            return requestMetricsAdvisor.requestMetrics(requests);
+        }
+
+        @Override
+        public NormalizationAdviceBatchAnalysis analyzeBatchWithObservation(List<NormalizationAdvisorRequest> requests) {
             callCount++;
             if (!batchExceptions.isEmpty()) {
                 throw batchExceptions.remove();
             }
-            LlmRequestMetrics requestMetrics;
+            NormalizationAdviceRequestMetrics requestMetrics;
             try {
                 requestMetrics = requestMetrics(requests);
             } catch (Exception e) {
-                requestMetrics = new LlmRequestMetrics(0, 0, null);
+                requestMetrics = new NormalizationAdviceRequestMetrics(0, 0, null);
             }
             if (!failedBatches.isEmpty() && failedBatches.remove()) {
                 List<NormalizationAdvisorResult> failedResults = requests.stream()
@@ -1362,21 +1373,21 @@ class NormalizationSuggestionServiceTest {
                                 null, null, "UNKNOWN", null, "UNKNOWN", 0.5D, true,
                                 "批量 JSON 解析失败", List.of("批量 JSON 解析失败"), true))
                         .toList();
-                return new LlmBatchAnalysis(failedResults, observation(requestMetrics, 0, "json_parse_error",
+                return new NormalizationAdviceBatchAnalysis(failedResults, observation(requestMetrics, 0, "json_parse_error",
                         "批量 JSON 解析失败"));
             }
             List<NormalizationAdvisorResult> batchResults = new ArrayList<>();
             for (int i = 0; i < requests.size(); i++) {
                 batchResults.add(results.remove());
             }
-            return new LlmBatchAnalysis(batchResults, observation(requestMetrics, batchResults.size(), null, null));
+            return new NormalizationAdviceBatchAnalysis(batchResults, observation(requestMetrics, batchResults.size(), null, null));
         }
 
-        private LlmBatchObservation observation(LlmRequestMetrics requestMetrics,
-                                                int parsedItems,
-                                                String errorType,
-                                                String errorMessage) {
-            return new LlmBatchObservation(requestMetrics.promptChars(), requestMetrics.requestBytes(),
+        private NormalizationAdviceObservation observation(NormalizationAdviceRequestMetrics requestMetrics,
+                                                           int parsedItems,
+                                                           String errorType,
+                                                           String errorMessage) {
+            return new NormalizationAdviceObservation(requestMetrics.promptChars(), requestMetrics.requestBytes(),
                     requestMetrics.requestBody(), 1L, 2L, 3L, 4L, 10L, 200, "application/json",
                     responseBody.getBytes(StandardCharsets.UTF_8).length, responseBody.length(), parsedItems,
                     errorType, errorMessage, responseBody, responseBody);
