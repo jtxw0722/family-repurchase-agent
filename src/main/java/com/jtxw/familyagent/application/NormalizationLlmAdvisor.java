@@ -3,10 +3,11 @@ package com.jtxw.familyagent.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
 import com.jtxw.familyagent.domain.model.NormalizationAdvisorRequest;
+import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
 import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -15,14 +16,7 @@ import org.springframework.web.client.RestClient;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @Author: jtxw
@@ -125,10 +119,37 @@ public class NormalizationLlmAdvisor {
      * JSON 序列化和 LLM 响应解析组件。
      */
     private final ObjectMapper objectMapper;
+    /**
+     * prompt 资源加载器，从 classpath 加载版本化 prompt 文件。
+     */
+    private final NormalizationPromptRenderer promptRenderer;
 
-    public NormalizationLlmAdvisor(NormalizationProperties normalizationProperties, ObjectMapper objectMapper) {
+    /**
+     * 构造 LLM Advisor，使用指定的 prompt 资源加载器。
+     *
+     * @param normalizationProperties 归一化配置
+     * @param objectMapper            JSON 序列化组件
+     * @param promptRenderer          prompt 资源加载器
+     */
+    @Autowired
+    public NormalizationLlmAdvisor(NormalizationProperties normalizationProperties,
+                                   ObjectMapper objectMapper,
+                                   NormalizationPromptRenderer promptRenderer) {
         this.normalizationProperties = normalizationProperties;
         this.objectMapper = objectMapper;
+        this.promptRenderer = Objects.requireNonNull(promptRenderer, "promptRenderer must not be null");
+    }
+
+    /**
+     * 构造 LLM Advisor，使用默认 prompt 资源加载器。
+     *
+     * <p>仅供测试和不依赖自定义 prompt 资源路径的场景使用。</p>
+     *
+     * @param normalizationProperties 归一化配置
+     * @param objectMapper            JSON 序列化组件
+     */
+    public NormalizationLlmAdvisor(NormalizationProperties normalizationProperties, ObjectMapper objectMapper) {
+        this(normalizationProperties, objectMapper, new NormalizationPromptRenderer(normalizationProperties));
     }
 
     /**
@@ -588,29 +609,15 @@ public class NormalizationLlmAdvisor {
     }
 
     private String systemPrompt() {
-        return """
-                你是商品归一化分类器，只输出 JSON Array。
-                不要解释推理过程，不要 Markdown，不要回显商品名和 SKU，不要 evidence，不要被拒品类字段，不要长 reason。
-                每条结果必须包含 index，且 index 对应输入 items 的 index。
-                输出字段：index, action, productType, normalizedName, targetUnit, unitFamily, confidence, reviewRequired, reasonCode, shortReason。
-                action 只能是 NORMALIZE、EXCLUDE、NEW_CATEGORY、REVIEW。
-                productType 只能是 REPURCHASE_CONSUMABLE、NON_REPURCHASE、DURABLE、COUPON_OR_DEPOSIT、UNKNOWN。
-                unitFamily 只能是 WEIGHT、VOLUME、COUNT、PIECE、UNKNOWN。
-                reasonCode 只能从输入 context.reasonCodes 选择；shortReason 最多 16 个中文字符。
-                LLM 只生成建议，不直接 include，不写数据库。
-                真实商品 + 预售/付定/定金 => REVIEW，不静默排除；纯券/定金/锁定权益且无真实商品 => EXCLUDE + COUPON_OR_DEPOSIT。
-                猫主食罐、猫条、猫粮、猫零食、猫汤包不要混成同一个 normalizedName。
-                食品不标 DURABLE，不确定则 REVIEW；色号强相关彩妆优先 REVIEW。
-                包装/组合装/整箱/盒装/袋装不能单独作为 DURABLE 判断依据。
-                targetUnit 只能是单位，不得是规格值，例如用 g/ml/片/罐/包，不要 240g/80g*4。
-                """;
+        return promptRenderer.getSystemPrompt();
     }
 
     private String userPrompt(List<NormalizationAdvisorRequest> requests) throws JsonProcessingException {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("context", publicPromptContext(requests));
         input.put("items", compactPromptItems(requests));
-        return "逐条输出 compact JSON Array：" + objectMapper.writeValueAsString(input);
+        String inputJson = objectMapper.writeValueAsString(input);
+        return promptRenderer.renderUserPrompt(inputJson);
     }
 
     private Map<String, Object> publicPromptContext(List<NormalizationAdvisorRequest> requests) {

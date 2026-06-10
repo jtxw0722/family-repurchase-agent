@@ -88,6 +88,10 @@ public class NormalizationProperties {
          */
         private String promptVersion = "normalization-v1";
         /**
+         * prompt 资源文件在 classpath 中的基础路径，包含 system.md 和 user-template.md。
+         */
+        private String promptResourcePath = "prompts/normalization/v1";
+        /**
          * 请求超时时间，单位秒。
          */
         private int requestTimeoutSeconds = 30;
@@ -190,6 +194,14 @@ public class NormalizationProperties {
 
         public void setPromptVersion(String promptVersion) {
             this.promptVersion = promptVersion;
+        }
+
+        public String getPromptResourcePath() {
+            return promptResourcePath;
+        }
+
+        public void setPromptResourcePath(String promptResourcePath) {
+            this.promptResourcePath = promptResourcePath;
         }
 
         public int getRequestTimeoutSeconds() {

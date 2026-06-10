@@ -29,6 +29,8 @@ family-agent:
       base-url: https://token-plan-cn.xiaomimimo.com/v1
       # Prompt 版本号，用于审计和排查
       prompt-version: normalization-v1
+      # Prompt 资源文件 classpath 路径，包含 system.md 和 user-template.md
+      prompt-resource-path: prompts/normalization/v1
 
       # LLM 最大输出 token 数；0 表示不传 max_tokens
       max-tokens: 0
