@@ -6,14 +6,11 @@ import com.jtxw.familyagent.domain.model.NormalizationAdvisorRequest;
 import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
 import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -166,8 +163,6 @@ class NormalizationLlmAdvisorTest {
         assertThat(result.results()).hasSize(1);
         assertThat(result.results().get(0).failed()).isFalse();
         assertThat(result.results().get(0).suggestedNormalizedName()).isEqualTo("猫条");
-        assertThat(result.contentType()).contains("application/json");
-        assertThat(result.accept()).contains("application/json");
         assertThat(result.requestBody()).doesNotContain("Authorization", "Bearer", "test-key", "sk-");
     }
 
@@ -588,42 +583,30 @@ class NormalizationLlmAdvisorTest {
 
     @Test
     void shouldMeasureHttpElapsedWhenReadTimeoutHappens() throws Exception {
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/chat/completions", exchange -> {
-            try (exchange) {
-                exchange.getRequestBody().readAllBytes();
-                Thread.sleep(1500L);
-                byte[] responseBody = "{\"choices\":[{\"message\":{\"content\":\"[]\"}}]}"
-                        .getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, responseBody.length);
-                exchange.getResponseBody().write(responseBody);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
-        server.start();
-        try {
-            NormalizationProperties properties = new NormalizationProperties();
-            properties.getLlm().setEnabled(true);
-            properties.getLlm().setApiKey("test-key");
-            properties.getLlm().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-            properties.getLlm().setRequestTimeoutSeconds(1);
-            NormalizationLlmAdvisor timeoutAdvisor = new NormalizationLlmAdvisor(properties, objectMapper);
+        NormalizationProperties properties = llmEnabledProperties();
+        NormalizationLlmAdvisor timeoutAdvisor = new NormalizationLlmAdvisor(
+                properties,
+                objectMapper,
+                new NormalizationPromptRenderer(properties),
+                request -> {
+                    try {
+                        Thread.sleep(20L);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    throw new RuntimeException("Read timed out");
+                });
 
-            NormalizationAdviceBatchAnalysis analysis =
-                    timeoutAdvisor.analyzeBatchWithObservation(requests("猫条三文鱼口味"));
+        NormalizationAdviceBatchAnalysis analysis =
+                timeoutAdvisor.analyzeBatchWithObservation(requests("猫条三文鱼口味"));
 
-            assertThat(analysis.results().get(0).failed()).isTrue();
-            assertThat(analysis.observation().errorType()).isEqualTo("timeout_error");
-            assertThat(analysis.observation().llmHttpElapsedMs()).isGreaterThan(0L);
-            assertThat(analysis.observation().requestBuildElapsedMs())
-                    .isLessThan(analysis.observation().llmHttpElapsedMs());
-            assertThat(analysis.observation().totalElapsedMs())
-                    .isGreaterThanOrEqualTo(analysis.observation().llmHttpElapsedMs());
-        } finally {
-            server.stop(0);
-        }
+        assertThat(analysis.results().get(0).failed()).isTrue();
+        assertThat(analysis.observation().errorType()).isEqualTo("timeout_error");
+        assertThat(analysis.observation().llmHttpElapsedMs()).isGreaterThan(0L);
+        assertThat(analysis.observation().requestBuildElapsedMs())
+                .isLessThan(analysis.observation().llmHttpElapsedMs());
+        assertThat(analysis.observation().totalElapsedMs())
+                .isGreaterThanOrEqualTo(analysis.observation().llmHttpElapsedMs());
     }
 
     private List<NormalizationAdvisorRequest> requests(String... productNames) {
@@ -645,32 +628,24 @@ class NormalizationLlmAdvisorTest {
     private LlmHttpResult analyzeWithMockResponse(String responseContentType,
                                                   byte[] responseBody,
                                                   int statusCode) throws Exception {
-        AtomicReference<String> requestContentType = new AtomicReference<>("");
-        AtomicReference<String> requestAccept = new AtomicReference<>("");
-        AtomicReference<String> requestBody = new AtomicReference<>("");
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/chat/completions", exchange -> {
-            requestContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
-            requestAccept.set(exchange.getRequestHeaders().getFirst("Accept"));
-            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            exchange.getResponseHeaders().set("Content-Type", responseContentType);
-            exchange.sendResponseHeaders(statusCode, responseBody.length);
-            try (exchange; var response = exchange.getResponseBody()) {
-                response.write(responseBody);
-            }
-        });
-        server.start();
-        try {
-            NormalizationProperties properties = new NormalizationProperties();
-            properties.getLlm().setEnabled(true);
-            properties.getLlm().setApiKey("test-key");
-            properties.getLlm().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-            NormalizationLlmAdvisor httpAdvisor = new NormalizationLlmAdvisor(properties, new ObjectMapper());
-            List<NormalizationAdvisorResult> results = httpAdvisor.analyzeBatch(requests("猫条三文鱼口味"));
-            return new LlmHttpResult(results, requestContentType.get(), requestAccept.get(), requestBody.get());
-        } finally {
-            server.stop(0);
-        }
+        String responseText = new String(responseBody, StandardCharsets.UTF_8);
+        NormalizationProperties properties = llmEnabledProperties();
+        CapturingLlmClient llmClient = new CapturingLlmClient(responseContentType, responseBody, responseText, statusCode);
+        NormalizationLlmAdvisor httpAdvisor = new NormalizationLlmAdvisor(
+                properties,
+                new ObjectMapper(),
+                new NormalizationPromptRenderer(properties),
+                llmClient);
+        List<NormalizationAdvisorResult> results = httpAdvisor.analyzeBatch(requests("猫条三文鱼口味"));
+        return new LlmHttpResult(results, llmClient.requestBody());
+    }
+
+    private NormalizationProperties llmEnabledProperties() {
+        NormalizationProperties properties = new NormalizationProperties();
+        properties.getLlm().setEnabled(true);
+        properties.getLlm().setApiKey("test-key");
+        properties.getLlm().setBaseUrl("http://127.0.0.1:1");
+        return properties;
     }
 
     private String chatCompletionResponse(String content) throws Exception {
@@ -687,9 +662,53 @@ class NormalizationLlmAdvisorTest {
                 """;
     }
 
-    private record LlmHttpResult(List<NormalizationAdvisorResult> results,
-                                 String contentType,
-                                 String accept,
-                                 String requestBody) {
+    private record LlmHttpResult(List<NormalizationAdvisorResult> results, String requestBody) {
+    }
+
+    private static class CapturingLlmClient implements LlmClient {
+        /**
+         * 模拟响应 Content-Type。
+         */
+        private final String contentType;
+        /**
+         * 模拟响应体字节数组。
+         */
+        private final byte[] responseBody;
+        /**
+         * 模拟响应文本。
+         */
+        private final String responseText;
+        /**
+         * 模拟 HTTP 状态码。
+         */
+        private final int statusCode;
+        /**
+         * 捕获的请求体 JSON。
+         */
+        private String requestBody;
+
+        CapturingLlmClient(String contentType, byte[] responseBody, String responseText, int statusCode) {
+            this.contentType = contentType;
+            this.responseBody = responseBody;
+            this.responseText = responseText;
+            this.statusCode = statusCode;
+        }
+
+        @Override
+        public LlmClientResponse chatCompletion(LlmClientRequest request) {
+            this.requestBody = request.requestBody();
+            if (statusCode < 200 || statusCode >= 300) {
+                throw new LlmClientException(statusCode, contentType, responseBody.length, responseText,
+                        "LLM HTTP 响应异常：" + statusCode + "；响应：" + responseText);
+            }
+            if (responseBody.length == 0 || responseText.isBlank()) {
+                throw new IllegalStateException("LLM 返回空响应");
+            }
+            return new LlmClientResponse(statusCode, contentType, responseBody.length, responseText);
+        }
+
+        String requestBody() {
+            return requestBody;
+        }
     }
 }
