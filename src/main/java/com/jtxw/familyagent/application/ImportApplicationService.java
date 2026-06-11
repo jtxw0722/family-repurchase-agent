@@ -92,6 +92,7 @@ public class ImportApplicationService {
     private final DatabaseInitializer databaseInitializer;
     private final CsvPurchaseImporter csvPurchaseImporter;
     private final ExcelPurchaseImporter excelPurchaseImporter;
+    private final OrderAmountAllocationPolicy orderAmountAllocationPolicy;
     private final DuplicateDetectionPolicy duplicateDetectionPolicy;
     private final PaymentAdjustmentPolicy paymentAdjustmentPolicy;
     private final OwnerNormalizer ownerNormalizer;
@@ -108,6 +109,7 @@ public class ImportApplicationService {
     public ImportApplicationService(DatabaseInitializer databaseInitializer,
                                     CsvPurchaseImporter csvPurchaseImporter,
                                     ExcelPurchaseImporter excelPurchaseImporter,
+                                    OrderAmountAllocationPolicy orderAmountAllocationPolicy,
                                     DuplicateDetectionPolicy duplicateDetectionPolicy,
                                     PaymentAdjustmentPolicy paymentAdjustmentPolicy,
                                     OwnerNormalizer ownerNormalizer,
@@ -122,6 +124,7 @@ public class ImportApplicationService {
         this.databaseInitializer = databaseInitializer;
         this.csvPurchaseImporter = csvPurchaseImporter;
         this.excelPurchaseImporter = excelPurchaseImporter;
+        this.orderAmountAllocationPolicy = orderAmountAllocationPolicy;
         this.duplicateDetectionPolicy = duplicateDetectionPolicy;
         this.paymentAdjustmentPolicy = paymentAdjustmentPolicy;
         this.ownerNormalizer = ownerNormalizer;
@@ -148,10 +151,30 @@ public class ImportApplicationService {
                                     ImportBatchRepository importBatchRepository,
                                     PurchaseRecordRepository purchaseRecordRepository,
                                     ReviewItemRepository reviewItemRepository) {
-        this(databaseInitializer, csvPurchaseImporter, excelPurchaseImporter, duplicateDetectionPolicy,
-                paymentAdjustmentPolicy, ownerNormalizer, purchaseTimeNormalizer, productNameNormalizer,
+        this(databaseInitializer, csvPurchaseImporter, excelPurchaseImporter, new OrderAmountAllocationPolicy(),
+                duplicateDetectionPolicy, paymentAdjustmentPolicy, ownerNormalizer, purchaseTimeNormalizer, productNameNormalizer,
                 quantityUnitParser, unitPriceCalculator, importBatchRepository, purchaseRecordRepository,
                 reviewItemRepository, legacyReviewProperties());
+    }
+
+    public ImportApplicationService(DatabaseInitializer databaseInitializer,
+                                    CsvPurchaseImporter csvPurchaseImporter,
+                                    ExcelPurchaseImporter excelPurchaseImporter,
+                                    DuplicateDetectionPolicy duplicateDetectionPolicy,
+                                    PaymentAdjustmentPolicy paymentAdjustmentPolicy,
+                                    OwnerNormalizer ownerNormalizer,
+                                    PurchaseTimeNormalizer purchaseTimeNormalizer,
+                                    LearningProductNameNormalizer productNameNormalizer,
+                                    QuantityUnitParser quantityUnitParser,
+                                    UnitPriceCalculator unitPriceCalculator,
+                                    ImportBatchRepository importBatchRepository,
+                                    PurchaseRecordRepository purchaseRecordRepository,
+                                    ReviewItemRepository reviewItemRepository,
+                                    NormalizationProperties normalizationProperties) {
+        this(databaseInitializer, csvPurchaseImporter, excelPurchaseImporter, new OrderAmountAllocationPolicy(),
+                duplicateDetectionPolicy, paymentAdjustmentPolicy, ownerNormalizer, purchaseTimeNormalizer,
+                productNameNormalizer, quantityUnitParser, unitPriceCalculator, importBatchRepository,
+                purchaseRecordRepository, reviewItemRepository, normalizationProperties);
     }
 
     /**
@@ -202,7 +225,7 @@ public class ImportApplicationService {
         Path file = command.file();
         String ownerOverride = command.ownerOverride();
         databaseInitializer.initialize();
-        List<RawPurchaseRecord> rawRecords = importRawRecords(file, ownerOverride);
+        List<RawPurchaseRecord> rawRecords = orderAmountAllocationPolicy.allocate(importRawRecords(file, ownerOverride));
         long batchId = importBatchRepository.create(file.toString());
 
         ImportWorkflowResult workflowResult = importRecords(file, batchId, rawRecords);
@@ -365,8 +388,8 @@ public class ImportApplicationService {
     /**
      * 构造最终入库的购买记录。
      *
-     * <p>根据 duplicate、normalizationReviewRequired、negativeAliasExcluded 决定 decision；
-     * 根据 duplicate 决定 dedupe 状态。疑似重复和低置信归一化的记录默认排除出价格基准。</p>
+     * <p>根据 duplicate、normalizationReviewRequired、amountReviewRequired、negativeAliasExcluded 决定 decision；
+     * 根据 duplicate 决定 dedupe 状态。疑似重复、低置信归一化和金额不可信的记录默认排除出价格基准。</p>
      *
      * @param batchId                     导入批次 ID
      * @param normalizedOrderTime         标准化后的订单时间
@@ -400,7 +423,7 @@ public class ImportApplicationService {
                                                boolean negativeAliasExcluded,
                                                ProductNameNormalizationResult nameResult,
                                                Path file) {
-        String decision = duplicate || normalizationReviewRequired || negativeAliasExcluded
+        String decision = duplicate || normalizationReviewRequired || amountResult.reviewRequired() || negativeAliasExcluded
                 ? DECISION_EXCLUDE : DECISION_INCLUDE;
         String dedupeStatus = duplicate ? DEDUPE_STATUS_DUPLICATE : DEDUPE_STATUS_UNIQUE;
         return new PurchaseRecord(

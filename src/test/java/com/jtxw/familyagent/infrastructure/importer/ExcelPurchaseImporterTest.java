@@ -32,6 +32,7 @@ class ExcelPurchaseImporterTest {
         assertThat(records).hasSize(1);
         RawPurchaseRecord record = records.get(0);
         assertThat(record.orderTime()).isEqualTo("2026-01-23 02:32:45");
+        assertThat(record.orderGroupKey()).isEqualTo("1");
         assertThat(record.platform()).isEqualTo("taobao");
         assertThat(record.owner()).isEqualTo("jtxw");
         assertThat(record.productName()).isEqualTo("乳铁蛋白粉");

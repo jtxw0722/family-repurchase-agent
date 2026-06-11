@@ -2,6 +2,7 @@ package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -29,10 +30,18 @@ public class ExcelPurchaseImporter {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final OrderImportMapper orderImportMapper;
+    private final ChineseOrderExportRowNormalizer chineseOrderExportRowNormalizer;
     private final DataFormatter dataFormatter = new DataFormatter();
 
     public ExcelPurchaseImporter(OrderImportMapper orderImportMapper) {
+        this(orderImportMapper, new ChineseOrderExportRowNormalizer());
+    }
+
+    @Autowired
+    public ExcelPurchaseImporter(OrderImportMapper orderImportMapper,
+                                 ChineseOrderExportRowNormalizer chineseOrderExportRowNormalizer) {
         this.orderImportMapper = orderImportMapper;
+        this.chineseOrderExportRowNormalizer = chineseOrderExportRowNormalizer;
     }
 
     /**
@@ -54,13 +63,20 @@ public class ExcelPurchaseImporter {
             }
             List<String> headers = readHeaders(headerRow);
             OrderImportMapper.ImportSchema schema = orderImportMapper.detectSchema(new java.util.LinkedHashSet<>(headers));
-            List<RawPurchaseRecord> records = new ArrayList<>();
+            List<Map<String, String>> valueRows = new ArrayList<>();
             for (int rowIndex = sheet.getFirstRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 Row row = sheet.getRow(rowIndex);
                 if (row == null || isBlankRow(row, headers.size())) {
                     continue;
                 }
-                RawPurchaseRecord rawRecord = orderImportMapper.map(schema, toValueMap(headers, row), file, ownerOverride);
+                valueRows.add(toValueMap(headers, row));
+            }
+            if (OrderImportMapper.ImportSchema.CHINESE_ORDER_EXPORT.equals(schema)) {
+                valueRows = chineseOrderExportRowNormalizer.normalize(valueRows);
+            }
+            List<RawPurchaseRecord> records = new ArrayList<>();
+            for (Map<String, String> valueRow : valueRows) {
+                RawPurchaseRecord rawRecord = orderImportMapper.map(schema, valueRow, file, ownerOverride);
                 if (rawRecord != null) {
                     records.add(rawRecord);
                 }

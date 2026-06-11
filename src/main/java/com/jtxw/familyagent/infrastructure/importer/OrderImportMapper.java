@@ -5,6 +5,8 @@ import com.jtxw.familyagent.domain.policy.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
@@ -12,11 +14,27 @@ import java.util.Set;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/17/17:26
+ * @Date: 2026/06/11 17:19:22
  * @Description: 订单导入字段映射器，统一 CSV 和 Excel 的表头识别、字段转换和 owner 解析。
  */
 @Component
 public class OrderImportMapper {
+    /**
+     * 标准订单模板字段：订单编号。
+     */
+    private static final String STANDARD_HEADER_ORDER_ID = "order_id";
+    /**
+     * 标准订单模板字段：订单号。
+     */
+    private static final String STANDARD_HEADER_ORDER_NO = "order_no";
+    /**
+     * 标准订单模板字段：主订单编号。
+     */
+    private static final String STANDARD_HEADER_MAIN_ORDER_ID = "main_order_id";
+    /**
+     * 标准订单模板字段：子订单编号。
+     */
+    private static final String STANDARD_HEADER_SUB_ORDER_ID = "sub_order_id";
     /**
      * 标准订单模板字段：下单时间。
      */
@@ -78,6 +96,22 @@ public class OrderImportMapper {
      * 中文订单模板字段：订单提交时间。
      */
     private static final String CHINESE_HEADER_ORDER_TIME = "订单提交时间";
+    /**
+     * 中文订单模板字段：订单编号。
+     */
+    private static final String CHINESE_HEADER_ORDER_ID = "订单编号";
+    /**
+     * 中文订单模板字段：订单号。
+     */
+    private static final String CHINESE_HEADER_ORDER_NO = "订单号";
+    /**
+     * 中文订单模板字段：主订单编号。
+     */
+    private static final String CHINESE_HEADER_MAIN_ORDER_ID = "主订单编号";
+    /**
+     * 中文订单模板字段：子订单编号。
+     */
+    private static final String CHINESE_HEADER_SUB_ORDER_ID = "子订单编号";
     /**
      * 中文订单模板字段：订单状态。
      */
@@ -270,21 +304,28 @@ public class OrderImportMapper {
      * @return 原始订单记录
      */
     private RawPurchaseRecord readStandardRecord(Map<String, String> values, Path file, String ownerOverride) {
+        String orderTime = get(values, STANDARD_HEADER_ORDER_TIME);
+        String platform = get(values, STANDARD_HEADER_PLATFORM);
+        String owner = resolveOwner(get(values, STANDARD_HEADER_OWNER), file, ownerOverride);
+        Double totalAmount = parseDouble(get(values, STANDARD_HEADER_TOTAL_AMOUNT));
+        Double paidAmount = parseDouble(get(values, STANDARD_HEADER_PAID_AMOUNT));
         return buildRecord(
-                get(values, STANDARD_HEADER_ORDER_TIME),
-                get(values, STANDARD_HEADER_PLATFORM),
-                resolveOwner(get(values, STANDARD_HEADER_OWNER), file, ownerOverride),
+                orderTime,
+                platform,
+                owner,
+                resolveOrderGroupKey(values, file, platform, owner, orderTime, paidAmount == null ? totalAmount : paidAmount),
                 get(values, STANDARD_HEADER_PRODUCT_NAME),
                 get(values, STANDARD_HEADER_SKU),
                 get(values, STANDARD_HEADER_CATEGORY),
                 get(values, STANDARD_HEADER_SUB_CATEGORY),
                 parseDouble(get(values, STANDARD_HEADER_QUANTITY)),
                 get(values, STANDARD_HEADER_UNIT),
-                parseDouble(get(values, STANDARD_HEADER_TOTAL_AMOUNT)),
+                totalAmount,
                 parseDouble(get(values, STANDARD_HEADER_PRODUCT_AMOUNT)),
-                parseDouble(get(values, STANDARD_HEADER_PAID_AMOUNT)),
+                paidAmount,
                 parseDouble(get(values, STANDARD_HEADER_SHIPPING_FEE)),
-                getOrDefault(values, STANDARD_HEADER_CURRENCY, DEFAULT_CURRENCY)
+                getOrDefault(values, STANDARD_HEADER_CURRENCY, DEFAULT_CURRENCY),
+                false
         );
     }
 
@@ -304,22 +345,29 @@ public class OrderImportMapper {
         if (!TRADE_STATUS_SUCCESS.equals(get(values, CHINESE_HEADER_ORDER_STATUS))) {
             return null;
         }
+        String orderTime = get(values, CHINESE_HEADER_ORDER_TIME);
+        String platform = inferPlatform(get(values, CHINESE_HEADER_PRODUCT_LINK));
+        String owner = resolveOwner("", file, ownerOverride);
+        Double purchaseQuantity = parseDouble(get(values, CHINESE_HEADER_QUANTITY));
+        Double lineProductAmount = multiplyAmount(parseDouble(get(values, CHINESE_HEADER_PRODUCT_AMOUNT)), purchaseQuantity);
         Double paidAmount = parseDouble(get(values, CHINESE_HEADER_PAID_AMOUNT));
         return buildRecord(
-                get(values, CHINESE_HEADER_ORDER_TIME),
-                inferPlatform(get(values, CHINESE_HEADER_PRODUCT_LINK)),
-                resolveOwner("", file, ownerOverride),
+                orderTime,
+                platform,
+                owner,
+                resolveOrderGroupKey(values, file, platform, owner, orderTime, paidAmount),
                 get(values, CHINESE_HEADER_PRODUCT_NAME),
                 get(values, CHINESE_HEADER_MODEL_STYLE),
                 "",
                 "",
-                parseDouble(get(values, CHINESE_HEADER_QUANTITY)),
+                purchaseQuantity,
                 DEFAULT_UNIT_PIECE,
                 paidAmount,
-                parseDouble(get(values, CHINESE_HEADER_PRODUCT_AMOUNT)),
+                lineProductAmount,
                 paidAmount,
                 parseDouble(get(values, CHINESE_HEADER_SHIPPING_FEE)),
-                DEFAULT_CURRENCY
+                DEFAULT_CURRENCY,
+                true
         );
     }
 
@@ -332,6 +380,7 @@ public class OrderImportMapper {
      * @param orderTime     下单时间
      * @param platform      平台标识
      * @param owner         订单归属人
+     * @param orderGroupKey 订单分组键
      * @param productName   商品名称
      * @param sku           商品规格
      * @param category      品类
@@ -343,11 +392,13 @@ public class OrderImportMapper {
      * @param paidAmount    实付金额
      * @param shippingFee   运费
      * @param currency      币种
+     * @param paidAmountIncludesShipping 实付金额是否已经包含运费
      * @return 原始订单记录
      */
     private RawPurchaseRecord buildRecord(String orderTime,
                                           String platform,
                                           String owner,
+                                          String orderGroupKey,
                                           String productName,
                                           String sku,
                                           String category,
@@ -358,17 +409,101 @@ public class OrderImportMapper {
                                           Double productAmount,
                                           Double paidAmount,
                                           Double shippingFee,
-                                          String currency) {
+                                          String currency,
+                                          boolean paidAmountIncludesShipping) {
         ProductRuleMatchResult ruleMatch = productRuleMatcher.match(productName);
         ProductSpecParseResult spec = productSpecParser.parse(sku, productName, ruleMatch);
         Double resolvedQuantity = spec.parsed() ? spec.quantity() : quantity;
         String resolvedUnit = spec.parsed() ? spec.unit() : unit;
         return new RawPurchaseRecord(
-                orderTime, platform, owner, productName, sku, category, subCategory, resolvedQuantity, resolvedUnit,
+                orderTime, platform, owner, orderGroupKey, productName, sku, category, subCategory, resolvedQuantity, resolvedUnit,
                 totalAmount, productAmount == null ? totalAmount : productAmount, paidAmount == null ? totalAmount : paidAmount,
                 shippingFee, currency, spec.reviewRequired(), spec.reviewRequired() ? SPEC_REVIEW_REASON_MULTIPACK_TIMES : null,
-                spec.reviewRequired() ? "规格包含多次/次卡乘数，已按总重量折算，请人工确认是否为多次发货权益。" : null
+                spec.reviewRequired() ? "规格包含多次/次卡乘数，已按总重量折算，请人工确认是否为多次发货权益。" : null,
+                paidAmountIncludesShipping, null, false, null, null
         );
+    }
+
+    /**
+     * 将中文淘宝导出的单件商品金额乘以购买件数，得到当前商品行金额。
+     *
+     * @param unitProductAmount 单件商品金额，单位为元
+     * @param purchaseQuantity  淘宝订单购买件数
+     * @return 当前商品行金额，单位为元
+     */
+    private Double multiplyAmount(Double unitProductAmount, Double purchaseQuantity) {
+        if (unitProductAmount == null) {
+            return null;
+        }
+        BigDecimal amount = BigDecimal.valueOf(unitProductAmount);
+        BigDecimal quantity = purchaseQuantity == null ? BigDecimal.ONE : BigDecimal.valueOf(purchaseQuantity);
+        return amount.multiply(quantity).setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /**
+     * 解析订单分组键，优先使用原始文件中的订单编号类字段。
+     *
+     * <p>如果文件没有订单编号，则退化为弱分组 key：platform + owner + sourceFile + orderTime + orderPaidAmount。
+     * 该兜底 key 可能把同一时间同一金额的不同订单误归为一组，后续应优先接入稳定订单编号。</p>
+     *
+     * @param values          当前行字段值
+     * @param file            来源文件路径
+     * @param platform        平台标识
+     * @param owner           订单归属人
+     * @param orderTime       下单时间
+     * @param orderPaidAmount 订单级实付金额
+     * @return 可用于同一订单内多商品行分组的 key
+     */
+    private String resolveOrderGroupKey(Map<String, String> values,
+                                        Path file,
+                                        String platform,
+                                        String owner,
+                                        String orderTime,
+                                        Double orderPaidAmount) {
+        String explicitOrderKey = firstNonBlank(
+                get(values, CHINESE_HEADER_MAIN_ORDER_ID),
+                get(values, STANDARD_HEADER_MAIN_ORDER_ID),
+                get(values, CHINESE_HEADER_ORDER_ID),
+                get(values, CHINESE_HEADER_ORDER_NO),
+                get(values, STANDARD_HEADER_ORDER_ID),
+                get(values, STANDARD_HEADER_ORDER_NO),
+                get(values, CHINESE_HEADER_SUB_ORDER_ID),
+                get(values, STANDARD_HEADER_SUB_ORDER_ID)
+        );
+        if (explicitOrderKey != null) {
+            return explicitOrderKey;
+        }
+        return String.join("|",
+                safeKeyPart(platform),
+                safeKeyPart(owner),
+                safeKeyPart(file.toString()),
+                safeKeyPart(orderTime),
+                orderPaidAmount == null ? "" : orderPaidAmount.toString());
+    }
+
+    /**
+     * 返回第一个非空文本。
+     *
+     * @param values 候选文本列表
+     * @return 第一个非空文本；全部为空时返回 null
+     */
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 将分组 key 的空片段归一为空字符串。
+     *
+     * @param value 原始片段
+     * @return 非空片段
+     */
+    private String safeKeyPart(String value) {
+        return value == null ? "" : value;
     }
 
     /**

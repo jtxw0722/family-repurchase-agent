@@ -4,6 +4,7 @@ import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -24,9 +25,17 @@ import java.util.Map;
 @Component
 public class CsvPurchaseImporter {
     private final OrderImportMapper orderImportMapper;
+    private final ChineseOrderExportRowNormalizer chineseOrderExportRowNormalizer;
 
     public CsvPurchaseImporter(OrderImportMapper orderImportMapper) {
+        this(orderImportMapper, new ChineseOrderExportRowNormalizer());
+    }
+
+    @Autowired
+    public CsvPurchaseImporter(OrderImportMapper orderImportMapper,
+                               ChineseOrderExportRowNormalizer chineseOrderExportRowNormalizer) {
         this.orderImportMapper = orderImportMapper;
+        this.chineseOrderExportRowNormalizer = chineseOrderExportRowNormalizer;
     }
 
     /**
@@ -57,9 +66,16 @@ public class CsvPurchaseImporter {
                      .get()
                      .parse(reader)) {
             OrderImportMapper.ImportSchema schema = orderImportMapper.detectSchema(parser.getHeaderMap().keySet());
-            List<RawPurchaseRecord> records = new ArrayList<>();
+            List<Map<String, String>> valueRows = new ArrayList<>();
             for (CSVRecord record : parser) {
-                RawPurchaseRecord rawRecord = orderImportMapper.map(schema, toValueMap(record, parser.getHeaderMap()), file, ownerOverride);
+                valueRows.add(toValueMap(record, parser.getHeaderMap()));
+            }
+            if (OrderImportMapper.ImportSchema.CHINESE_ORDER_EXPORT.equals(schema)) {
+                valueRows = chineseOrderExportRowNormalizer.normalize(valueRows);
+            }
+            List<RawPurchaseRecord> records = new ArrayList<>();
+            for (Map<String, String> valueRow : valueRows) {
+                RawPurchaseRecord rawRecord = orderImportMapper.map(schema, valueRow, file, ownerOverride);
                 if (rawRecord != null) {
                     records.add(rawRecord);
                 }

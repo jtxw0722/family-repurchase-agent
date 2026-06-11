@@ -2,6 +2,7 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
+import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.domain.policy.*;
@@ -67,6 +68,187 @@ class ImportSpecIntegrationTest {
         assertThat(result.baseline().sampleSize()).isGreaterThan(0);
         assertThat(result.evidence().excludedReasons())
                 .noneMatch(reason -> reason.contains("单位不一致") && reason.contains("13"));
+    }
+
+    @Test
+    void shouldAllocateOrderPaidAmountBeforeCalculatingCatLitterUnitPrice() throws Exception {
+        Fixture fixture = fixture("cat-litter-order-allocation.sqlite");
+        Path file = fixture.file("allocated-orders.csv");
+        Files.writeString(file, """
+                order_id,order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,product_amount,paid_amount,shipping_fee,currency
+                T20260611001,2026-05-01 10:00:00,taobao,jtxw,混合猫砂 15kg,15kg,宠物用品,猫砂,1,件,320.84,78.85,320.84,0,CNY
+                T20260611001,2026-05-01 10:00:00,taobao,jtxw,卫生巾 10片,10片,日用品,卫生巾,1,件,320.84,241.99,320.84,0,CNY
+                """, StandardCharsets.UTF_8);
+
+        fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂");
+        assertThat(records).hasSize(1);
+        PurchaseRecord record = records.get(0);
+        assertThat(record.totalAmount()).isEqualTo(78.85D);
+        assertThat(record.paidAmount()).isEqualTo(78.85D);
+        assertThat(record.shippingFee()).isZero();
+        assertThat(record.amountSource()).isEqualTo(OrderAmountAllocationPolicy.SOURCE_ALLOCATED_ORDER_AMOUNT);
+        assertThat(record.quantity()).isEqualTo(15D);
+        assertThat(record.unit()).isEqualTo("kg");
+        assertThat(record.unitPrice()).isCloseTo(5.256667D, offset(0.000001D));
+        assertThat(record.unitPrice()).isNotCloseTo(21.3893D, offset(0.0001D));
+    }
+
+    @Test
+    void shouldImportChineseContinuationRowsAndAllocateCatLitterLineAmount() throws Exception {
+        Fixture fixture = fixture("chinese-cat-litter-continuation.sqlite");
+        Path file = fixture.file("chinese-cat-litter.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                T1,2025-08-07 22:28:15,交易成功,尾巴生活旗舰店,尾巴生活植物木薯豆腐猫砂,https://item.taobao.com/item.htm?id=1,15kg,1,78.85,320.84,0
+                ,,,,尾巴生活彩虹泥主食餐盒,,,1,241.99,,
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        assertThat(fixture.purchaseRecordRepository.listByBatchId(result.batchId())).hasSize(2);
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂");
+        assertThat(records).hasSize(1);
+        PurchaseRecord catLitter = records.get(0);
+        assertThat(catLitter.totalAmount()).isEqualTo(78.85D);
+        assertThat(catLitter.paidAmount()).isEqualTo(78.85D);
+        assertThat(catLitter.quantity()).isEqualTo(15D);
+        assertThat(catLitter.unit()).isEqualTo("kg");
+        assertThat(catLitter.unitPrice()).isCloseTo(5.256667D, offset(0.000001D));
+        assertThat(catLitter.unitPrice()).isNotCloseTo(21.3893D, offset(0.0001D));
+    }
+
+    @Test
+    void shouldImportSanitaryPadContinuationRowsAndExcludeNewMemberGift() throws Exception {
+        Fixture fixture = fixture("chinese-sanitary-continuation.sqlite");
+        Path file = fixture.file("chinese-sanitary.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                T2,2025-08-07 22:30:00,交易成功,护舒宝旗舰店,护舒宝纯棉卫生巾,https://item.taobao.com/item.htm?id=1,44片,1,29.90,207.71,0
+                ,,,,护舒宝防漏考拉安睡裤,,,1,129.90,,
+                ,,,,护舒宝考拉呼呼超长夜用卫生巾,,,1,47.90,,
+                ,,,,【新会礼】飘柔指定回购券,,,1,0.01,,
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listByBatchId(result.batchId());
+        assertThat(records).hasSize(4);
+        PurchaseRecord firstSanitaryPad = records.stream()
+                .filter(record -> record.productName().contains("纯棉卫生巾"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(firstSanitaryPad.totalAmount()).isNotEqualTo(207.71D);
+        assertThat(firstSanitaryPad.totalAmount()).isCloseTo(29.90D, offset(0.01D));
+        if ("include".equals(firstSanitaryPad.decision())) {
+            assertThat(firstSanitaryPad.totalAmount()).isNotEqualTo(207.71D);
+        }
+        PurchaseRecord newMemberGift = records.stream()
+                .filter(record -> record.productName().contains("新会礼"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(newMemberGift.decision()).isEqualTo("exclude");
+        assertThat(newMemberGift.amountSource())
+                .isEqualTo(OrderAmountAllocationPolicy.SOURCE_ORDER_AMOUNT_ALLOCATION_FALLBACK);
+    }
+
+    @Test
+    void shouldNotAddShippingTwiceForChineseTempoTissueOrder() throws Exception {
+        Fixture fixture = fixture("chinese-tempo-shipping.sqlite");
+        Path file = fixture.file("chinese-tempo.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                T3,2025-08-07 22:40:00,交易成功,Tempo旗舰店,Tempo纸巾,https://item.taobao.com/item.htm?id=1,80抽,1,9.90,52.61,9.90
+                ,,,,Tempo纸巾补充装,,,1,12.90,,
+                ,,,,Tempo纸巾家庭装,,,1,19.90,,
+                ,,,,【新会礼】Tempo回购券,,,1,0.01,,
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listByBatchId(result.batchId());
+        assertThat(records).hasSize(4);
+        assertThat(records)
+                .extracting(PurchaseRecord::totalAmount)
+                .allMatch(amount -> amount <= 52.61D);
+        PurchaseRecord firstTempo = records.stream()
+                .filter(record -> record.productName().equals("Tempo纸巾"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(firstTempo.totalAmount()).isNotEqualTo(62.51D);
+        assertThat(firstTempo.totalAmount()).isCloseTo(12.20D, offset(0.01D));
+        assertThat(firstTempo.totalAmount()).isEqualTo(firstTempo.paidAmount());
+    }
+
+    @Test
+    void shouldUseChineseLineProductAmountMultipliedByPurchaseQuantity() throws Exception {
+        Fixture fixture = fixture("chinese-product-amount-quantity.sqlite");
+        Path file = fixture.file("chinese-quantity.csv");
+        Files.writeString(file, """
+                订单号,订单提交时间,订单状态,店铺名称,商品名称,商品链接,型号款式,商品数量,商品金额,实付金额,运费
+                T4,2025-08-08 10:00:00,交易成功,护舒宝旗舰店,护舒宝卫生巾,https://item.taobao.com/item.htm?id=4,32片,3,45.88,137.63,0
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listByBatchId(result.batchId());
+        assertThat(records).hasSize(1);
+        PurchaseRecord record = records.get(0);
+        assertThat(record.productAmount()).isEqualTo(137.64D);
+        assertThat(record.totalAmount()).isEqualTo(137.63D);
+        assertThat(record.quantity()).isEqualTo(96D);
+        assertThat(record.unitPrice()).isCloseTo(1.433646D, offset(0.000001D));
+        assertThat(record.amountSource()).isNotEqualTo(PaymentAdjustmentPolicy.SOURCE_ORDER_AMOUNT_ANOMALY_FALLBACK);
+    }
+
+    @Test
+    void shouldExcludeSingleLineOrderAmountAnomalyFromPriceHistory() throws Exception {
+        Fixture fixture = fixture("single-line-amount-anomaly.sqlite");
+        Path file = fixture.file("single-line-anomaly.csv");
+        Files.writeString(file, """
+                order_id,order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,product_amount,paid_amount,shipping_fee,currency
+                A1,2025-08-07 22:28:15,taobao,jtxw,尾巴生活植物木薯豆腐猫砂,15kg,宠物用品,猫砂,1,件,320.84,78.85,320.84,0,CNY
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listByBatchId(result.batchId());
+        assertThat(records).hasSize(1);
+        assertThat(records.get(0).decision()).isEqualTo("exclude");
+        assertThat(records.get(0).amountSource())
+                .isEqualTo(PaymentAdjustmentPolicy.SOURCE_ORDER_AMOUNT_ANOMALY_FALLBACK);
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains(PaymentAdjustmentPolicy.REASON_ORDER_AMOUNT_ANOMALY);
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).isEmpty();
+    }
+
+    @Test
+    void shouldExcludeAmountFallbackRecordsAndCreateReviewItem() throws Exception {
+        Fixture fixture = fixture("amount-allocation-fallback.sqlite");
+        Path file = fixture.file("amount-fallback-orders.csv");
+        Files.writeString(file, """
+                order_id,order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,product_amount,paid_amount,shipping_fee,currency
+                T20260611002,2026-05-01 11:00:00,taobao,jtxw,赠品礼包,赠品,其他,赠品,1,件,150,50,150,0,CNY
+                T20260611002,2026-05-01 11:00:00,taobao,jtxw,邮费补拍,邮费,其他,邮费,1,件,150,100,150,0,CNY
+                """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listByBatchId(result.batchId());
+        assertThat(records).hasSize(2);
+        assertThat(records)
+                .extracting(PurchaseRecord::decision)
+                .containsOnly("exclude");
+        assertThat(records)
+                .extracting(PurchaseRecord::amountSource)
+                .containsOnly(OrderAmountAllocationPolicy.SOURCE_ORDER_AMOUNT_ALLOCATION_FALLBACK);
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains(OrderAmountAllocationPolicy.REASON_ORDER_AMOUNT_ALLOCATION);
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords(records.get(0).normalizedName()))
+                .isEmpty();
     }
 
     @Test
@@ -261,6 +443,8 @@ class ImportSpecIntegrationTest {
 
     private static List<NormalizationRule> testRules() {
         return List.of(
+                new NormalizationRule("test_sanitary_pad", "卫生巾", "片",
+                        List.of("卫生巾", "护舒宝"), 900),
                 new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
                         List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100),
                 new NormalizationRule("test_laundry_supplies", "洗衣用品", "件",
