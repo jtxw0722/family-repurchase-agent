@@ -18,7 +18,14 @@ public class PaymentAdjustmentPolicy {
     public static final String SOURCE_ORDER_AMOUNT_ANOMALY_FALLBACK = "order_amount_anomaly_fallback";
     public static final String REASON_PAYMENT_ADJUSTMENT = "PAYMENT_ADJUSTMENT";
     public static final String REASON_ORDER_AMOUNT_ANOMALY = "ORDER_AMOUNT_ANOMALY_REVIEW";
-    private static final BigDecimal AMOUNT_ANOMALY_TOLERANCE = new BigDecimal("0.01");
+    /**
+     * 金额异常最低容差，用于容忍平台展示、四舍五入和优惠拆分产生的小额差异。
+     */
+    private static final BigDecimal MIN_AMOUNT_ANOMALY_TOLERANCE = new BigDecimal("0.10");
+    /**
+     * 金额异常百分比容差，用于容忍商品金额 2% 以内的展示误差。
+     */
+    private static final BigDecimal AMOUNT_ANOMALY_RATIO = new BigDecimal("0.02");
 
     /**
      * 根据原始金额字段确定用于统计和单价计算的金额。
@@ -62,6 +69,13 @@ public class PaymentAdjustmentPolicy {
         return new PaymentAdjustmentResult(record.totalAmount(), SOURCE_PAID_AMOUNT, false, null, null);
     }
 
+    /**
+     * 判断实付金额是否明显大于商品金额和运费之和。
+     *
+     * <p>使用动态容差：取最低 0.10 元和商品金额 2% 的较大值，
+     * 容忍平台展示、四舍五入、优惠拆分等小额差异，
+     * 仅在差额超过动态阈值时判定为订单级金额异常。</p>
+     */
     private boolean isAbnormallyGreaterThanLineAmount(RawPurchaseRecord record) {
         if (!isPositive(record.productAmount()) || record.paidAmount() == null) {
             return false;
@@ -69,8 +83,22 @@ public class PaymentAdjustmentPolicy {
         BigDecimal paidAmount = BigDecimal.valueOf(record.paidAmount());
         BigDecimal productAmount = BigDecimal.valueOf(record.productAmount());
         BigDecimal shippingFee = record.shippingFee() == null ? BigDecimal.ZERO : BigDecimal.valueOf(record.shippingFee());
-        BigDecimal lineUpperBound = productAmount.add(shippingFee).add(AMOUNT_ANOMALY_TOLERANCE);
-        return paidAmount.compareTo(lineUpperBound) > 0;
+        BigDecimal difference = paidAmount.subtract(productAmount).subtract(shippingFee);
+        BigDecimal dynamicTolerance = amountAnomalyTolerance(productAmount);
+        return difference.compareTo(dynamicTolerance) > 0;
+    }
+
+    /**
+     * 计算金额异常动态容差，取最低容差和商品金额百分比容差的较大值。
+     *
+     * @param productAmount 商品金额
+     * @return 动态容差值
+     */
+    private BigDecimal amountAnomalyTolerance(BigDecimal productAmount) {
+        BigDecimal ratioTolerance = productAmount.multiply(AMOUNT_ANOMALY_RATIO);
+        return ratioTolerance.compareTo(MIN_AMOUNT_ANOMALY_TOLERANCE) > 0
+                ? ratioTolerance
+                : MIN_AMOUNT_ANOMALY_TOLERANCE;
     }
 
     private boolean isZero(Double value) {
