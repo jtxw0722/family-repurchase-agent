@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.infrastructure.persistence;
 
+import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -94,6 +96,88 @@ public class ReviewItemRepository {
                 WHERE ri.status = 'pending'
                 ORDER BY ri.id
                 """, detailRowMapper());
+    }
+
+    /**
+     * 根据查询条件筛选复核项及其关联订单摘要。
+     *
+     * <p>支持按状态、批次、归属人、复核原因码、统计决策和来源文件筛选，
+     * 并使用分页参数控制返回数量。所有用户输入均通过参数绑定，不拼接 SQL。</p>
+     *
+     * @param query 查询条件
+     * @return 符合条件的复核详情列表
+     */
+    public List<ReviewItemDetail> listDetails(ReviewItemQuery query) {
+        List<Object> params = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    ri.id AS review_id,
+                    ri.record_id AS review_record_id,
+                    ri.reason_code,
+                    ri.reason_message,
+                    ri.status AS review_status,
+                    ri.review_decision,
+                    ri.review_note,
+                    ri.created_at AS review_created_at,
+                    ri.resolved_at,
+                    pr.batch_id,
+                    pr.order_time,
+                    pr.platform,
+                    pr.owner,
+                    pr.product_name,
+                    pr.normalized_name,
+                    pr.sku,
+                    pr.category,
+                    pr.sub_category,
+                    pr.quantity,
+                    pr.unit,
+                    pr.total_amount,
+                    pr.product_amount,
+                    pr.paid_amount,
+                    pr.shipping_fee,
+                    pr.amount_source,
+                    pr.unit_price,
+                    pr.currency,
+                    pr.decision,
+                    pr.is_duplicate,
+                    pr.dedupe_status,
+                    pr.source_file,
+                    pr.created_at AS record_created_at
+                FROM review_items ri
+                LEFT JOIN purchase_records pr ON pr.id = ri.record_id
+                WHERE 1 = 1
+                """);
+
+        if (query.status() != null && !query.status().isBlank()) {
+            sql.append(" AND ri.status = ?");
+            params.add(query.status().trim());
+        }
+        if (query.batchId() != null) {
+            sql.append(" AND pr.batch_id = ?");
+            params.add(query.batchId());
+        }
+        if (query.owner() != null && !query.owner().isBlank()) {
+            sql.append(" AND pr.owner = ?");
+            params.add(query.owner().trim());
+        }
+        if (query.reasonCode() != null && !query.reasonCode().isBlank()) {
+            sql.append(" AND ri.reason_code = ?");
+            params.add(query.reasonCode().trim());
+        }
+        if (query.decision() != null && !query.decision().isBlank()) {
+            sql.append(" AND pr.decision = ?");
+            params.add(query.decision().trim());
+        }
+        if (query.sourceFile() != null && !query.sourceFile().isBlank()) {
+            sql.append(" AND pr.source_file LIKE ?");
+            params.add("%" + query.sourceFile().trim() + "%");
+        }
+
+        sql.append(" ORDER BY ri.created_at ASC, ri.id ASC LIMIT ? OFFSET ?");
+        params.add(query.size());
+        params.add((query.page() - 1) * query.size());
+
+        return jdbcTemplate.query(sql.toString(), detailRowMapper(), params.toArray());
     }
 
     /**

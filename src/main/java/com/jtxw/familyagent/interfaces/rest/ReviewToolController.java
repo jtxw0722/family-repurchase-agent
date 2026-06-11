@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
 import com.jtxw.familyagent.interfaces.rest.request.ApplyNormalizationReviewRequest;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -41,14 +43,34 @@ public class ReviewToolController {
     }
 
     /**
-     * 查询当前待人工复核的异常记录。
+     * 查询复核记录，支持按状态、批次、归属人、复核原因码、统计决策和来源文件筛选。
      *
-     * @return 待复核详情列表，包含复核原因和关联订单信息
+     * <p>不传任何参数时保持旧行为，默认查询 pending 状态的复核项。
+     * 分页参数 page 默认 1，size 默认 100，最大 500。</p>
+     *
+     * @param status     复核项状态筛选，不传时默认 pending
+     * @param batchId    导入批次 ID 筛选
+     * @param owner      订单归属人筛选
+     * @param reasonCode 复核原因码筛选
+     * @param decision   购买记录统计决策筛选
+     * @param sourceFile 来源文件模糊筛选
+     * @param page       页码，默认 1
+     * @param size       每页条数，默认 100，最大 500
+     * @return 符合条件的复核详情列表
      */
-    @Operation(summary = "查看待复核记录", description = "查询当前待人工复核的异常订单记录，并返回关联订单的商品、金额、单价和来源文件等信息。")
+    @Operation(summary = "查看待复核记录", description = "查询当前待人工复核的异常订单记录，支持按状态、批次、归属人、原因码、决策和来源文件筛选，并返回关联订单的商品、金额、单价和来源文件等信息。")
     @GetMapping("/review-items")
-    public List<ReviewItemDetail> listReviewItems() {
-        return reviewApplicationService.listPending();
+    public List<ReviewItemDetail> listReviewItems(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long batchId,
+            @RequestParam(required = false) String owner,
+            @RequestParam(required = false) String reasonCode,
+            @RequestParam(required = false) String decision,
+            @RequestParam(required = false) String sourceFile,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "100") int size) {
+        ReviewItemQuery query = new ReviewItemQuery(status, batchId, owner, reasonCode, decision, sourceFile, page, size);
+        return reviewApplicationService.listReviewItems(query);
     }
 
     /**

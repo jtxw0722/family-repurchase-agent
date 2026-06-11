@@ -2,6 +2,7 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import com.jtxw.familyagent.application.command.ApplyReviewCommand;
+import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
@@ -118,6 +119,34 @@ public class ReviewApplicationService {
     public List<ReviewItemDetail> listPending() {
         databaseInitializer.initialize();
         return reviewItemRepository.listPendingDetails();
+    }
+
+    /**
+     * 根据查询条件筛选复核项。
+     *
+     * <p>支持按状态、批次、归属人、复核原因码、统计决策和来源文件筛选，
+     * 并使用分页参数控制返回数量。查询条件中的分页参数会自动归一化。</p>
+     *
+     * @param query 查询条件
+     * @return 符合条件的复核详情列表
+     */
+    public List<ReviewItemDetail> listReviewItems(ReviewItemQuery query) {
+        databaseInitializer.initialize();
+        ReviewItemQuery normalized = query.normalize();
+        // 不传 status 时保持旧行为，默认查询 pending
+        if (normalized.status() == null || normalized.status().isBlank()) {
+            normalized = new ReviewItemQuery(REVIEW_STATUS_PENDING, normalized.batchId(), normalized.owner(),
+                    normalized.reasonCode(), normalized.decision(), normalized.sourceFile(),
+                    normalized.page(), normalized.size());
+        }
+        // owner 归一化：trim + 小写，保证 JTXW 能命中 jtxw
+        if (normalized.owner() != null && !normalized.owner().isBlank()) {
+            normalized = new ReviewItemQuery(normalized.status(), normalized.batchId(),
+                    normalized.owner().trim().toLowerCase(Locale.ROOT),
+                    normalized.reasonCode(), normalized.decision(), normalized.sourceFile(),
+                    normalized.page(), normalized.size());
+        }
+        return reviewItemRepository.listDetails(normalized);
     }
 
     /**

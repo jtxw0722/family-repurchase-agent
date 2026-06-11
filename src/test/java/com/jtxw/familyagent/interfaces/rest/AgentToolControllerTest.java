@@ -6,8 +6,10 @@ import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
+import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.domain.model.*;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -16,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -266,6 +269,46 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.action").value("ignore_normalization"));
+    }
+
+    @Test
+    void listReviewItemsShouldPassQueryParameters() throws Exception {
+        when(reviewApplicationService.listReviewItems(any(ReviewItemQuery.class)))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/tools/review-items")
+                        .param("status", "pending")
+                        .param("batchId", "3")
+                        .param("owner", "jtxw")
+                        .param("reasonCode", "QUANTITY_UNIT_PARSE_REVIEW")
+                        .param("decision", "exclude")
+                        .param("sourceFile", "order-sample-2.xlsx")
+                        .param("page", "2")
+                        .param("size", "10"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ReviewItemQuery> captor = ArgumentCaptor.forClass(ReviewItemQuery.class);
+        verify(reviewApplicationService).listReviewItems(captor.capture());
+        ReviewItemQuery query = captor.getValue();
+        assertThat(query.status()).isEqualTo("pending");
+        assertThat(query.batchId()).isEqualTo(3L);
+        assertThat(query.owner()).isEqualTo("jtxw");
+        assertThat(query.reasonCode()).isEqualTo("QUANTITY_UNIT_PARSE_REVIEW");
+        assertThat(query.decision()).isEqualTo("exclude");
+        assertThat(query.sourceFile()).isEqualTo("order-sample-2.xlsx");
+        assertThat(query.page()).isEqualTo(2);
+        assertThat(query.size()).isEqualTo(10);
+    }
+
+    @Test
+    void listReviewItemsShouldUseDefaultPageAndSize() throws Exception {
+        when(reviewApplicationService.listReviewItems(any(ReviewItemQuery.class)))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/tools/review-items"))
+                .andExpect(status().isOk());
+
+        verify(reviewApplicationService).listReviewItems(any(ReviewItemQuery.class));
     }
 
     @Test
