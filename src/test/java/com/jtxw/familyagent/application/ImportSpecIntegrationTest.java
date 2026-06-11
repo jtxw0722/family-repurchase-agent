@@ -284,6 +284,72 @@ class ImportSpecIntegrationTest {
     }
 
     @Test
+    void shouldImportTissuePackageSkuAsDrawCountWithoutSpecMultipackReview() throws Exception {
+        Fixture fixture = fixture("tissue-package-sku.sqlite");
+        Path file = fixture.file("tissue-package-sku.csv");
+        Files.writeString(file, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2026-05-02,taobao,jtxw,洁柔无香纸巾face抽纸面巾纸130抽8包家用实惠装整箱卫生餐巾纸,48包,日用品,纸巾,1,件,69.9,CNY
+            """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        PurchaseRecord record = fixture.purchaseRecordRepository.listByBatchId(result.batchId()).get(0);
+        assertThat(record.normalizedName()).isEqualTo("纸巾");
+        assertThat(record.quantity()).isEqualTo(6240D);
+        assertThat(record.unit()).isEqualTo("抽");
+        assertThat(record.decision()).isEqualTo("include");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("SPEC_MULTIPACK_TIMES");
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("纸巾")).hasSize(1);
+    }
+
+    @Test
+    void shouldExcludePackageOnlyTissueReviewFromBaseline() throws Exception {
+        Fixture fixture = fixture("tissue-package-only-review.sqlite");
+        Path file = fixture.file("tissue-package-only.csv");
+        Files.writeString(file, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2026-05-03,taobao,jtxw,Tempo得宝便携式小包纸巾咖啡香手帕纸4层12包,暂无,日用品,纸巾,1,件,12.9,CNY
+            """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        PurchaseRecord record = fixture.purchaseRecordRepository.listByBatchId(result.batchId()).get(0);
+        assertThat(record.normalizedName()).isEqualTo("纸巾");
+        assertThat(record.decision()).isEqualTo("exclude");
+        assertThat(record.unit()).isEqualTo("抽");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("QUANTITY_UNIT_PARSE_REVIEW")
+                .doesNotContain("SPEC_MULTIPACK_TIMES");
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("纸巾")).isEmpty();
+    }
+
+    @Test
+    void shouldExcludeRealTimesCardSpecReviewFromBaseline() throws Exception {
+        Fixture fixture = fixture("cat-litter-times-card-review.sqlite");
+        Path file = fixture.file("cat-litter-times-card.csv");
+        Files.writeString(file, """
+            order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+            2026-05-04,taobao,jtxw,许翠花植物猫砂,原味植物猫砂6次卡（2.5kg*4包*6次）,宠物用品,猫砂,1,件,299,CNY
+            """, StandardCharsets.UTF_8);
+
+        ImportResult result = fixture.importService.importFile(file, "jtxw");
+
+        PurchaseRecord record = fixture.purchaseRecordRepository.listByBatchId(result.batchId()).get(0);
+        assertThat(record.normalizedName()).isEqualTo("猫砂");
+        assertThat(record.quantity()).isEqualTo(60D);
+        assertThat(record.unit()).isEqualTo("kg");
+        assertThat(record.decision()).isEqualTo("exclude");
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .contains("SPEC_MULTIPACK_TIMES");
+        assertThat(fixture.purchaseRecordRepository.listPriceHistoryRecords("猫砂")).isEmpty();
+    }
+
+    @Test
     void shouldImportNeutralCountProductsAndUseSameNormalizationOnQuerySide() throws Exception {
         Fixture fixture = fixture("neutral-count-products.sqlite");
         Path file = fixture.file("neutral-count-orders.csv");

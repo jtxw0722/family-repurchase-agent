@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  */
 @Component
 public class QuantityUnitParser {
-    private static final Set<String> COUNT_UNITS = Set.of("条", "片", "颗", "只", "块", "节");
+    private static final Set<String> COUNT_UNITS = Set.of("条", "片", "颗", "只", "块", "节", "抽");
 
     /**
      * 解析标准数量、单位和单价。
@@ -36,7 +36,7 @@ public class QuantityUnitParser {
                                          String rawUnit) {
         String countUnit = normalizeCountUnit(targetUnit);
         if (countUnit != null) {
-            return parseCountProduct(countUnit, countTermPatterns(countUnit), productName, sku, price, rawQuantity);
+            return parseCountProduct(countUnit, countTermPatterns(countUnit), productName, sku, price, rawQuantity, rawUnit);
         }
         return passThrough(targetUnit, price, rawQuantity, rawUnit);
     }
@@ -49,17 +49,54 @@ public class QuantityUnitParser {
                                                       String productName,
                                                       String sku,
                                                       Double price,
-                                                      Double rawQuantity) {
+                                                      Double rawQuantity,
+                                                      String rawUnit) {
+        ParsedQuantity tissuePackageQuantity = parseTissuePackageQuantity(unit, sku, productName, patterns);
+        if (tissuePackageQuantity.parsed()) {
+            return parsedResult(tissuePackageQuantity.quantity(), unit, price, rawQuantity, rawUnit,
+                    "sku+productName:" + tissuePackageQuantity.evidence());
+        }
         ParsedQuantity skuQuantity = parseOne(sku, patterns);
         if (skuQuantity.parsed()) {
-            return parsedResult(skuQuantity.quantity(), unit, price, rawQuantity, "sku:" + skuQuantity.evidence());
+            return parsedResult(skuQuantity.quantity(), unit, price, rawQuantity, rawUnit, "sku:" + skuQuantity.evidence());
         }
         ParsedQuantity productQuantity = parseOne(productName, patterns);
         if (productQuantity.parsed()) {
-            return parsedResult(productQuantity.quantity(), unit, price, rawQuantity,
+            return parsedResult(productQuantity.quantity(), unit, price, rawQuantity, rawUnit,
                     "productName:" + productQuantity.evidence());
         }
         return new QuantityUnitParseResult(null, unit, null, 0.2D, "no explicit " + unit + " count", true);
+    }
+
+    /**
+     * 纸巾 SKU 可能只有“48包”，标题提供“130抽8包”的每包抽数。
+     *
+     * <p>此类包装数量不是多次权益，应该折算为抽数；若没有每包抽数，则交由后续低置信复核处理。</p>
+     *
+     * @param unit        目标数量单位
+     * @param sku         商品 SKU 文本
+     * @param productName 商品标题文本
+     * @param patterns    当前单位对应的解析模式
+     * @return 解析出的纸巾抽数；无法解析时返回未解析
+     */
+    private ParsedQuantity parseTissuePackageQuantity(String unit,
+                                                      String sku,
+                                                      String productName,
+                                                      CountTermPatterns patterns) {
+        if (!"抽".equals(unit)) {
+            return ParsedQuantity.notParsed();
+        }
+        if (productName == null || productName.isBlank()) {
+            return ParsedQuantity.notParsed();
+        }
+        ParsedPackage packageOnly = parsePackageOnly(sku, patterns);
+        ParsedQuantity productQuantity = parseWithPattern(normalizeText(productName), patterns.multiplicationPattern(), true);
+        if (packageOnly.parsed() && productQuantity.parsed()) {
+            double drawsPerPack = productQuantity.quantity() / productQuantity.multiplier();
+            return new ParsedQuantity(true, drawsPerPack * packageOnly.packageCount(),
+                    packageOnly.evidence() + "+" + productQuantity.evidence());
+        }
+        return ParsedQuantity.notParsed();
     }
 
     /**
@@ -70,8 +107,9 @@ public class QuantityUnitParser {
                                                  String unit,
                                                  Double price,
                                                  Double rawQuantity,
+                                                 String rawUnit,
                                                  String evidence) {
-        double totalQuantity = baseQuantity * orderQuantity(rawQuantity);
+        double totalQuantity = baseQuantity * orderQuantity(rawQuantity, rawUnit, unit);
         Double unitPrice = price != null && totalQuantity > 0D ? price / totalQuantity : null;
         return new QuantityUnitParseResult(totalQuantity, unit, unitPrice, 0.98D, evidence, false);
     }
@@ -95,13 +133,18 @@ public class QuantityUnitParser {
     }
 
     private ParsedQuantity parseWithPattern(String normalized, Pattern pattern, boolean requireMultiplier) {
+        if (normalized == null || normalized.isBlank()) {
+            return ParsedQuantity.notParsed();
+        }
         Matcher matcher = pattern.matcher(normalized);
         double total = 0D;
+        double totalMultiplier = 0D;
         StringBuilder evidence = new StringBuilder();
         while (matcher.find()) {
             double count = Double.parseDouble(matcher.group(1));
             double multiplier = requireMultiplier ? Double.parseDouble(matcher.group(2)) : 1D;
             total += count * multiplier;
+            totalMultiplier += multiplier;
             if (!evidence.isEmpty()) {
                 evidence.append("+");
             }
@@ -110,15 +153,33 @@ public class QuantityUnitParser {
         if (total <= 0D) {
             return ParsedQuantity.notParsed();
         }
-        return new ParsedQuantity(true, total, evidence.toString());
+        return new ParsedQuantity(true, total, totalMultiplier, evidence.toString());
     }
 
     private CountTermPatterns countTermPatterns(String unit) {
         String quotedUnit = Pattern.quote(unit);
         Pattern multiplicationPattern = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*" + quotedUnit
-                + "\\s*[xX*×]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:包|盒|袋|组)");
+                + "\\s*[xX*×]?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:包|盒|袋|组)");
         Pattern singlePattern = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*" + quotedUnit);
-        return new CountTermPatterns(multiplicationPattern, singlePattern);
+        Pattern packageOnlyPattern = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(?:包|盒|袋|组)");
+        return new CountTermPatterns(multiplicationPattern, singlePattern, packageOnlyPattern);
+    }
+
+    /**
+     * 解析只有包装数、没有目标单位数量的 SKU。
+     *
+     * @param text SKU 文本
+     * @return 包装数解析结果
+     */
+    private ParsedPackage parsePackageOnly(String text, CountTermPatterns patterns) {
+        if (text == null || text.isBlank()) {
+            return ParsedPackage.notParsed();
+        }
+        Matcher matcher = patterns.packageOnlyPattern().matcher(normalizeText(text));
+        if (!matcher.find()) {
+            return ParsedPackage.notParsed();
+        }
+        return new ParsedPackage(true, Double.parseDouble(matcher.group(1)), matcher.group());
     }
 
     private String normalizeCountUnit(String targetUnit) {
@@ -141,7 +202,10 @@ public class QuantityUnitParser {
         return new QuantityUnitParseResult(rawQuantity, rawUnit, null, 0.3D, "raw quantity unavailable", false);
     }
 
-    private double orderQuantity(Double rawQuantity) {
+    private double orderQuantity(Double rawQuantity, String rawUnit, String targetUnit) {
+        if (rawUnit != null && rawUnit.equals(targetUnit)) {
+            return 1D;
+        }
         return rawQuantity == null || rawQuantity <= 0D ? 1D : rawQuantity;
     }
 
@@ -159,12 +223,22 @@ public class QuantityUnitParser {
                 .replace('｜', '|');
     }
 
-    private record ParsedQuantity(boolean parsed, double quantity, String evidence) {
+    private record ParsedQuantity(boolean parsed, double quantity, double multiplier, String evidence) {
         static ParsedQuantity notParsed() {
-            return new ParsedQuantity(false, 0D, "");
+            return new ParsedQuantity(false, 0D, 0D, "");
+        }
+
+        ParsedQuantity(boolean parsed, double quantity, String evidence) {
+            this(parsed, quantity, 1D, evidence);
         }
     }
 
-    private record CountTermPatterns(Pattern multiplicationPattern, Pattern singlePattern) {
+    private record ParsedPackage(boolean parsed, double packageCount, String evidence) {
+        static ParsedPackage notParsed() {
+            return new ParsedPackage(false, 0D, "");
+        }
+    }
+
+    private record CountTermPatterns(Pattern multiplicationPattern, Pattern singlePattern, Pattern packageOnlyPattern) {
     }
 }

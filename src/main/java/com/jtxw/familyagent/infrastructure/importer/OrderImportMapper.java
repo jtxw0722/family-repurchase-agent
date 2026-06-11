@@ -203,6 +203,10 @@ public class OrderImportMapper {
      * 规格复核原因码：多包装或次卡乘数需要人工确认。
      */
     private static final String SPEC_REVIEW_REASON_MULTIPACK_TIMES = "SPEC_MULTIPACK_TIMES";
+    /**
+     * 规格复核原因码：普通包装数量无法可靠折算为标准单位。
+     */
+    private static final String SPEC_REVIEW_REASON_QUANTITY_UNIT_PARSE = "QUANTITY_UNIT_PARSE_REVIEW";
 
     private final ProductSpecParser productSpecParser;
     private final ProductRuleMatcher productRuleMatcher;
@@ -415,13 +419,43 @@ public class OrderImportMapper {
         ProductSpecParseResult spec = productSpecParser.parse(sku, productName, ruleMatch);
         Double resolvedQuantity = spec.parsed() ? spec.quantity() : quantity;
         String resolvedUnit = spec.parsed() ? spec.unit() : unit;
+        String specReviewReasonCode = resolveSpecReviewReasonCode(spec);
         return new RawPurchaseRecord(
                 orderTime, platform, owner, orderGroupKey, productName, sku, category, subCategory, resolvedQuantity, resolvedUnit,
                 totalAmount, productAmount == null ? totalAmount : productAmount, paidAmount == null ? totalAmount : paidAmount,
-                shippingFee, currency, spec.reviewRequired(), spec.reviewRequired() ? SPEC_REVIEW_REASON_MULTIPACK_TIMES : null,
-                spec.reviewRequired() ? "规格包含多次/次卡乘数，已按总重量折算，请人工确认是否为多次发货权益。" : null,
+                shippingFee, currency, spec.reviewRequired(), specReviewReasonCode,
+                spec.reviewRequired() ? specReviewMessage(specReviewReasonCode) : null,
                 paidAmountIncludesShipping, null, false, null, null
         );
+    }
+
+    /**
+     * 根据规格解析结果选择复核原因。
+     *
+     * <p>已解析出数量但需要复核，表示命中次卡、月卡或分次发货等多次权益；
+     * 未解析出数量但需要复核，表示普通包装规格缺少可靠标准数量。</p>
+     *
+     * @param spec 规格解析结果，不允许为空
+     * @return 复核原因编码；不需要复核时返回 null
+     */
+    private String resolveSpecReviewReasonCode(ProductSpecParseResult spec) {
+        if (!spec.reviewRequired()) {
+            return null;
+        }
+        return spec.parsed() ? SPEC_REVIEW_REASON_MULTIPACK_TIMES : SPEC_REVIEW_REASON_QUANTITY_UNIT_PARSE;
+    }
+
+    /**
+     * 生成规格复核提示文案。
+     *
+     * @param reasonCode 规格复核原因编码
+     * @return 写入 review_items 的提示文案
+     */
+    private String specReviewMessage(String reasonCode) {
+        if (SPEC_REVIEW_REASON_MULTIPACK_TIMES.equals(reasonCode)) {
+            return "规格包含次卡或分次发货语义，已按总数量折算，请人工确认是否为多次发货权益。";
+        }
+        return "规格只有包装数量，缺少每包标准数量，需人工确认后再纳入价格基准。";
     }
 
     /**

@@ -63,6 +63,27 @@ class ProductSpecParserTest {
     }
 
     @Test
+    void shouldParseTissuePackageSkuWithTitleDrawCount() {
+        ProductSpecParseResult result = parser.parse("48包",
+                "洁柔无香纸巾face抽纸面巾纸130抽8包家用实惠装整箱卫生餐巾纸");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(6240D);
+        assertThat(result.unit()).isEqualTo("抽");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
+    void shouldParseTissueDrawCountWithoutExplicitMultiplySign() {
+        ProductSpecParseResult result = parser.parse("暂无", "某品牌原生木浆抽纸100抽20包");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(2000D);
+        assertThat(result.unit()).isEqualTo("抽");
+        assertThat(result.reviewRequired()).isFalse();
+    }
+
+    @Test
     void shouldNotParseDimensionsAsDrawCountSpecs() {
         ProductSpecParseResult result = parser.parse("", "维达超韧抽纸 3层4包（195×133mm）");
 
@@ -75,6 +96,16 @@ class ProductSpecParserTest {
         ProductSpecParseResult result = parser.parse("", "维达超韧抽纸 24包");
 
         assertThat(result.parsed()).isFalse();
+        assertThat(result.reviewRequired()).isTrue();
+    }
+
+    @Test
+    void shouldKeepRealCatLitterTimesCardReview() {
+        ProductSpecParseResult result = parser.parse("2.5kg*4包*6次", "猫砂次卡");
+
+        assertThat(result.parsed()).isTrue();
+        assertThat(result.quantity()).isEqualTo(60D);
+        assertThat(result.unit()).isEqualTo("kg");
         assertThat(result.reviewRequired()).isTrue();
     }
 

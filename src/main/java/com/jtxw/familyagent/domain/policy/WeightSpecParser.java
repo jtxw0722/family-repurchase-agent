@@ -51,15 +51,46 @@ public class WeightSpecParser implements UnitSpecParser {
             double multiplier = Double.parseDouble(multiplierMatcher.group(1));
             String multiplierUnit = multiplierMatcher.group(2) == null ? "" : multiplierMatcher.group(2);
             quantityKg *= multiplier;
-            if (multiplierUnit.contains("次") || multiplierUnit.contains("卡")) {
+            if (isMultiDeliveryMultiplier(multiplierUnit)) {
                 reviewRequired = true;
             }
         }
 
-        if (normalized.contains("次卡") || normalized.contains("多次发货")) {
+        if (containsMultiDeliveryTerm(normalized)) {
             reviewRequired = true;
         }
         return ProductSpecParseResult.parsed(quantityKg, "kg", reviewRequired);
+    }
+
+    /**
+     * 判断乘法尾部单位是否表达多次权益。
+     *
+     * <p>包、盒、提、抽等普通包装单位不属于多次权益；只有“次”或“次卡”等履约次数才需要人工复核。</p>
+     *
+     * @param multiplierUnit 乘法表达式中数字后的单位文本
+     * @return 是否属于多次权益单位
+     */
+    private boolean isMultiDeliveryMultiplier(String multiplierUnit) {
+        if (multiplierUnit == null || multiplierUnit.isBlank()) {
+            return false;
+        }
+        return multiplierUnit.contains("次");
+    }
+
+    /**
+     * 判断完整规格文本是否包含明确多次发货或权益卡语义。
+     *
+     * @param normalized 已归一化符号的规格文本
+     * @return 是否包含多次权益语义
+     */
+    private boolean containsMultiDeliveryTerm(String normalized) {
+        return normalized.contains("次卡")
+                || normalized.contains("多次发货")
+                || normalized.contains("分次发货")
+                || normalized.contains("按月发")
+                || normalized.contains("月卡")
+                || normalized.contains("季卡")
+                || normalized.contains("年卡");
     }
 
     private String normalizeText(String text) {

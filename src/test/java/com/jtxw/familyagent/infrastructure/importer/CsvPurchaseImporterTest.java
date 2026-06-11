@@ -68,6 +68,21 @@ class CsvPurchaseImporterTest {
     }
 
     @Test
+    void shouldNotFlagTissuePackageCountAsMultiDeliverySpec() throws Exception {
+        Path file = testFile("tissue-package.csv");
+        Files.writeString(file, """
+                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
+                2026-05-01,taobao,jtxw,Tempo得宝便携式小包纸巾咖啡香手帕纸4层12包,暂无,日用品,纸巾,1,件,12.9,CNY
+                """, StandardCharsets.UTF_8);
+
+        RawPurchaseRecord record = importer().importFile(file).get(0);
+
+        assertThat(record.specReviewRequired()).isTrue();
+        assertThat(record.specReviewReasonCode()).isEqualTo("QUANTITY_UNIT_PARSE_REVIEW");
+        assertThat(record.specReviewReasonCode()).isNotEqualTo("SPEC_MULTIPACK_TIMES");
+    }
+
+    @Test
     void shouldImportChineseOrderExportTemplate() throws Exception {
         Path file = testFile("orders-chinese.csv");
         Files.writeString(file, """

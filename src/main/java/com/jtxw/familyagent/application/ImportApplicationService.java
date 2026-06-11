@@ -388,8 +388,8 @@ public class ImportApplicationService {
     /**
      * 构造最终入库的购买记录。
      *
-     * <p>根据 duplicate、normalizationReviewRequired、amountReviewRequired、negativeAliasExcluded 决定 decision；
-     * 根据 duplicate 决定 dedupe 状态。疑似重复、低置信归一化和金额不可信的记录默认排除出价格基准。</p>
+     * <p>根据 duplicate、normalizationReviewRequired、amountReviewRequired、negativeAliasExcluded 和规格复核决定 decision；
+     * 根据 duplicate 决定 dedupe 状态。疑似重复、低置信归一化、金额不可信和规格待确认的记录默认排除出价格基准。</p>
      *
      * @param batchId                     导入批次 ID
      * @param normalizedOrderTime         标准化后的订单时间
@@ -423,7 +423,8 @@ public class ImportApplicationService {
                                                boolean negativeAliasExcluded,
                                                ProductNameNormalizationResult nameResult,
                                                Path file) {
-        String decision = duplicate || normalizationReviewRequired || amountResult.reviewRequired() || negativeAliasExcluded
+        String decision = duplicate || normalizationReviewRequired || amountResult.reviewRequired()
+                || negativeAliasExcluded || raw.specReviewRequired()
                 ? DECISION_EXCLUDE : DECISION_INCLUDE;
         String dedupeStatus = duplicate ? DEDUPE_STATUS_DUPLICATE : DEDUPE_STATUS_UNIQUE;
         return new PurchaseRecord(
@@ -485,7 +486,7 @@ public class ImportApplicationService {
             // 金额折算会影响单价和价格统计，必须保留人工确认入口
             reviewItemRepository.create(recordId, amountResult.reviewReasonCode(), amountResult.reviewReasonMessage());
             reviewCount++;
-        } else if (raw.specReviewRequired()) {
+        } else if (shouldCreateRawSpecReview(raw, quantityResult)) {
             reviewItemRepository.create(recordId, raw.specReviewReasonCode(), raw.specReviewReasonMessage());
             reviewCount++;
         } else if (totalAmount != null && totalAmount == 0D) {
@@ -497,6 +498,24 @@ public class ImportApplicationService {
         }
 
         return new ReviewCreationResult(reviewCount, duplicateCount);
+    }
+
+    /**
+     * 判断是否需要额外创建导入阶段规格复核项。
+     *
+     * <p>普通包装数量无法解析时，应用层数量解析已经会创建 QUANTITY_UNIT_PARSE_REVIEW；
+     * 这里避免重复创建同类复核项。真正的次卡/分次发货复核仍由 raw spec review 创建。</p>
+     *
+     * @param raw            原始购买记录
+     * @param quantityResult 应用层数量解析结果
+     * @return 是否需要创建导入阶段规格复核项
+     */
+    private boolean shouldCreateRawSpecReview(RawPurchaseRecord raw, QuantityUnitParseResult quantityResult) {
+        if (!raw.specReviewRequired()) {
+            return false;
+        }
+        return !(quantityResult.needReview()
+                && REVIEW_REASON_QUANTITY_UNIT_PARSE.equals(raw.specReviewReasonCode()));
     }
 
     /**
