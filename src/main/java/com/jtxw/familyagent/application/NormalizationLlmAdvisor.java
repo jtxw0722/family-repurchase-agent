@@ -17,31 +17,10 @@ import java.util.*;
 /**
  * @Author: jtxw
  * @Date: 2026/06/06 17:58:26
- * @Description: 商品归一化 LLM Advisor，负责批量调用 LLM 并校验结构化建议结果。
+ * @Description: 商品归一化 LLM Advisor，负责构建请求、调用 LLM、提取模型输出并协调结构化建议解析。
  */
 @Service
 public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
-    /**
-     * LLM 允许返回的动作集合，其他值会被兜底为 REVIEW。
-     */
-    private static final Set<String> ALLOWED_ACTIONS = Set.of("NORMALIZE", "EXCLUDE", "NEW_CATEGORY", "REVIEW");
-    /**
-     * LLM 允许返回的商品类型集合，其他值会被兜底为 UNKNOWN。
-     */
-    private static final Set<String> ALLOWED_PRODUCT_TYPES = Set.of(
-            "REPURCHASE_CONSUMABLE", "NON_REPURCHASE", "DURABLE", "COUPON_OR_DEPOSIT", "UNKNOWN");
-    /**
-     * LLM 允许返回的单位族集合，其他值会被兜底为 UNKNOWN。
-     */
-    private static final Set<String> ALLOWED_UNIT_FAMILIES = Set.of("WEIGHT", "VOLUME", "COUNT", "PIECE", "UNKNOWN");
-    /**
-     * LLM reasonCode 展示文案映射；只用于压缩后的原因入库，不参与业务分类决策。
-     */
-    private static final Map<String, String> REASON_CODE_MESSAGES = reasonCodeMessages();
-    /**
-     * compact schema 中 shortReason 的最大保存长度，避免长推理文本进入建议表。
-     */
-    private static final int SHORT_REASON_MAX_LENGTH = 24;
     /**
      * 兼容旧 schema 时 reason 的最大保存长度，避免旧模型输出长段解释。
      */
@@ -119,6 +98,10 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
      * LLM 原始调用客户端，负责发送 HTTP 请求并返回未解析响应。
      */
     private final LlmClient llmClient;
+    /**
+     * LLM 输出解析器，负责 JSON Array、DTO 转换和基础 schema-like 校验。
+     */
+    private final LlmNormalizationOutputParser outputParser;
 
     /**
      * 构造 LLM Advisor，使用指定的 prompt 资源加载器和 LLM 客户端。
@@ -127,16 +110,38 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
      * @param objectMapper            JSON 序列化组件
      * @param promptRenderer          prompt 资源加载器
      * @param llmClient               LLM 原始调用客户端
+     * @param outputParser            LLM 输出解析器
      */
     @Autowired
     public NormalizationLlmAdvisor(NormalizationProperties normalizationProperties,
                                    ObjectMapper objectMapper,
                                    NormalizationPromptRenderer promptRenderer,
-                                   LlmClient llmClient) {
+                                   LlmClient llmClient,
+                                   LlmNormalizationOutputParser outputParser) {
         this.normalizationProperties = normalizationProperties;
         this.objectMapper = objectMapper;
         this.promptRenderer = Objects.requireNonNull(promptRenderer, "promptRenderer must not be null");
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
+        this.outputParser = Objects.requireNonNull(outputParser, "outputParser must not be null");
+    }
+
+    /**
+     * 构造 LLM Advisor，使用指定的 prompt 资源加载器和 LLM 客户端。
+     *
+     * <p>仅供单元测试显式注入测试客户端时使用。</p>
+     *
+     * @param normalizationProperties 归一化配置
+     * @param objectMapper            JSON 序列化组件
+     * @param promptRenderer          prompt 资源加载器
+     * @param llmClient               LLM 原始调用客户端
+     */
+    public NormalizationLlmAdvisor(NormalizationProperties normalizationProperties,
+                                   ObjectMapper objectMapper,
+                                   NormalizationPromptRenderer promptRenderer,
+                                   LlmClient llmClient) {
+        this(normalizationProperties, objectMapper, promptRenderer, llmClient,
+                new LlmNormalizationOutputParser(objectMapper,
+                        new LlmNormalizationItemValidator(normalizationProperties)));
     }
 
     /**
@@ -151,7 +156,9 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         this(normalizationProperties, objectMapper, new NormalizationPromptRenderer(normalizationProperties),
                 request -> {
                     throw new IllegalStateException("LLM client 未配置");
-                });
+                },
+                new LlmNormalizationOutputParser(objectMapper,
+                        new LlmNormalizationItemValidator(normalizationProperties)));
     }
 
     /**
@@ -340,6 +347,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         throw new IllegalStateException("LLM 响应缺少模型输出内容");
     }
 
+    /**
+     * 移除模型或代理服务包裹在 JSON 外层的 Markdown 代码块标记。
+     *
+     * @param content 原始模型输出或 SSE data 内容
+     * @return 去除代码块围栏后的文本；未使用代码块时原样返回 trim 后内容
+     */
     private String stripJsonFence(String content) {
         String trimmedContent = content.trim();
         if (!trimmedContent.startsWith("```")) {
@@ -349,6 +362,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return withoutOpeningFence.replaceFirst("\\s*```$", "").trim();
     }
 
+    /**
+     * 判断原始响应是否包含 SSE data 行。
+     *
+     * @param responseText HTTP 原始响应文本
+     * @return 只要任意一行以 data: 开头即返回 true
+     */
     private boolean hasSseData(String responseText) {
         for (String line : responseText.split("\\R")) {
             if (line.trim().startsWith("data:")) {
@@ -358,6 +377,16 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return false;
     }
 
+    /**
+     * 从 SSE 响应中提取模型输出文本。
+     *
+     * <p>兼容两类流式返回：Chat Completions delta.content 增量拼接，以及代理服务在 data 行中返回完整
+     * JSON Array / message.content / Responses API 内容。若没有可用 data JSON 内容，则抛出异常并由批量入口降级。</p>
+     *
+     * @param responseText 包含 data 行的 SSE 响应文本
+     * @return 拼接后的模型输出 JSON Array 文本，或最后一次完整内容
+     * @throws JsonProcessingException 单个 data 行不是合法 JSON 时抛出
+     */
     private String extractSseModelOutput(String responseText) throws JsonProcessingException {
         StringBuilder streamContent = new StringBuilder();
         String lastFullContent = "";
@@ -400,21 +429,48 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         throw new IllegalStateException("LLM SSE 响应缺少 data JSON 内容");
     }
 
+    /**
+     * 判断 JSON 根节点是否已经是可交给输出解析器处理的模型结果结构。
+     *
+     * @param root 原始响应根节点
+     * @return 如果是数组或包含 results/items/suggestions 数组包装则返回 true
+     */
     private boolean isDirectModelOutput(JsonNode root) {
         return root.isArray() || root.path("results").isArray()
                 || root.path("items").isArray() || root.path("suggestions").isArray();
     }
 
+    /**
+     * 提取 Chat Completions 非流式响应中的 message.content。
+     *
+     * @param root Chat Completions 响应根节点
+     * @return content 文本；字段不存在或不是文本时返回空字符串
+     */
     private String chatCompletionContent(JsonNode root) {
         JsonNode content = root.path("choices").path(0).path("message").path("content");
         return content.isTextual() ? content.asText() : "";
     }
 
+    /**
+     * 提取 Chat Completions 流式响应单个 data 片段中的 delta.content。
+     *
+     * @param root 单个 SSE data JSON 根节点
+     * @return 增量 content 文本；字段不存在或不是文本时返回空字符串
+     */
     private String chatCompletionDeltaContent(JsonNode root) {
         JsonNode content = root.path("choices").path(0).path("delta").path("content");
         return content.isTextual() ? content.asText() : "";
     }
 
+    /**
+     * 提取 Responses API 响应中的输出文本。
+     *
+     * <p>优先兼容 output_text 快捷字段；没有该字段时遍历 output[].content[]，
+     * 拼接 text 或 output_text 字段，保留不同 Responses API 形态的兼容性。</p>
+     *
+     * @param root Responses API 响应根节点
+     * @return 可交给输出解析器处理的模型输出文本；没有可用文本时返回空字符串
+     */
     private String responsesApiContent(JsonNode root) {
         JsonNode outputText = root.path("output_text");
         if (outputText.isTextual() && !outputText.asText().isBlank()) {
@@ -440,6 +496,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return contentBuilder.toString();
     }
 
+    /**
+     * 提取 Responses API content 单元中的文本字段。
+     *
+     * @param contentItem output[].content[] 中的单个节点
+     * @return text 或 output_text 字段文本；两者都不存在时返回空字符串
+     */
     private String responseContentText(JsonNode contentItem) {
         JsonNode text = contentItem.path("text");
         if (text.isTextual()) {
@@ -465,109 +527,37 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
      */
     List<NormalizationAdvisorResult> parseBatchContent(String content, List<NormalizationAdvisorRequest> requests)
             throws JsonProcessingException {
-        JsonNode root = objectMapper.readTree(stripJsonFence(content));
-        JsonNode arrayNode = resultArray(root);
-        if (!arrayNode.isArray()) {
-            throw new IllegalStateException("LLM 输出不是 JSON Array");
-        }
-        if (containsCompactIndex(arrayNode) || looksLikeCompactSchema(arrayNode)) {
-            return parseIndexedResults(arrayNode, requests);
-        }
-        return parseSequentialResults(arrayNode, requests);
+        return outputParser.parseBatchContent(content, requests, this::applyBusinessCorrection);
     }
 
-    private List<NormalizationAdvisorResult> parseIndexedResults(JsonNode arrayNode,
-                                                                 List<NormalizationAdvisorRequest> requests) {
-        List<NormalizationAdvisorResult> results = new ArrayList<>();
-        for (NormalizationAdvisorRequest request : requests) {
-            results.add(null);
-        }
-        Set<Integer> usedIndexes = new HashSet<>();
-        for (JsonNode itemNode : arrayNode) {
-            int requestIndex = requestIndex(itemNode.path("index"));
-            if (requestIndex < 0 || requestIndex >= requests.size() || usedIndexes.contains(requestIndex)) {
-                continue;
-            }
-            // compact schema 必须由 index 回填原始商品，避免模型顺序漂移时把 A 商品建议写到 B 商品。
-            usedIndexes.add(requestIndex);
-            NormalizationAdvisorRequest request = requests.get(requestIndex);
-            results.set(requestIndex, validate(itemNode, request.productName(), request.sku()));
-        }
-        for (int index = 0; index < requests.size(); index++) {
-            if (results.get(index) == null) {
-                NormalizationAdvisorRequest request = requests.get(index);
-                results.set(index, failedResult(request.productName(), request.sku(), "LLM 未返回该商品的有效 index 结果"));
-            }
-        }
-        return results;
-    }
-
-    private List<NormalizationAdvisorResult> parseSequentialResults(JsonNode arrayNode,
-                                                                    List<NormalizationAdvisorRequest> requests) {
-        List<NormalizationAdvisorResult> results = new ArrayList<>();
-        for (int index = 0; index < requests.size(); index++) {
-            NormalizationAdvisorRequest request = requests.get(index);
-            if (index >= arrayNode.size()) {
-                results.add(failedResult(request.productName(), request.sku(), "LLM 输出数量少于请求数量"));
-                continue;
-            }
-            results.add(validate(arrayNode.get(index), request.productName(), request.sku()));
-        }
-        return results;
-    }
-
-    private boolean containsCompactIndex(JsonNode arrayNode) {
-        for (JsonNode itemNode : arrayNode) {
-            if (!itemNode.path("index").isMissingNode()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean looksLikeCompactSchema(JsonNode arrayNode) {
-        for (JsonNode itemNode : arrayNode) {
-            if (!itemNode.path("normalizedName").isMissingNode()
-                    || !itemNode.path("reasonCode").isMissingNode()
-                    || !itemNode.path("shortReason").isMissingNode()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private int requestIndex(JsonNode indexNode) {
-        if (!indexNode.canConvertToInt()) {
-            return -1;
-        }
-        int oneBasedIndex = indexNode.asInt();
-        return oneBasedIndex - 1;
-    }
-
-    private JsonNode resultArray(JsonNode root) {
-        if (root.isArray()) {
-            return root;
-        }
-        if (root.path("results").isArray()) {
-            return root.path("results");
-        }
-        if (root.path("items").isArray()) {
-            return root.path("items");
-        }
-        if (root.path("suggestions").isArray()) {
-            return root.path("suggestions");
-        }
-        return root;
-    }
-
+    /**
+     * 判断当前 provider 是否走 OpenAI-compatible 请求协议。
+     *
+     * @param provider 配置中的 LLM provider
+     * @return openai 或 openai-compatible 时返回 true
+     */
     private boolean isOpenAiCompatibleProvider(String provider) {
         return "openai".equalsIgnoreCase(provider) || "openai-compatible".equalsIgnoreCase(provider);
     }
 
+    /**
+     * 获取系统 prompt。
+     *
+     * @return prompt 资源加载器提供的系统提示词
+     */
     private String systemPrompt() {
         return promptRenderer.getSystemPrompt();
     }
 
+    /**
+     * 构建用户 prompt。
+     *
+     * <p>仅放入公开规则、公开提示词和压缩后的商品条目，不携带订单金额、店铺、owner、来源文件等隐私字段。</p>
+     *
+     * @param requests 当前批次待分析商品
+     * @return 渲染后的用户 prompt
+     * @throws JsonProcessingException prompt 输入 JSON 序列化失败时抛出
+     */
     private String userPrompt(List<NormalizationAdvisorRequest> requests) throws JsonProcessingException {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("context", publicPromptContext(requests));
@@ -576,14 +566,28 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return promptRenderer.renderUserPrompt(inputJson);
     }
 
+    /**
+     * 构建可发送给 LLM 的公开上下文。
+     *
+     * @param requests 当前批次待分析商品
+     * @return 包含规则摘要、公开提示词和 reasonCode 集合的上下文
+     */
     private Map<String, Object> publicPromptContext(List<NormalizationAdvisorRequest> requests) {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("rules", publicRules(requests));
         context.put("hints", publicHints());
-        context.put("reasonCodes", REASON_CODE_MESSAGES.keySet());
+        context.put("reasonCodes", LlmNormalizationItemValidator.reasonCodes());
         return context;
     }
 
+    /**
+     * 从批次 RAG 上下文中提取可公开发送的规则摘要。
+     *
+     * <p>最多保留 10 条去重后的压缩规则，避免 prompt 过长，也避免把原始冗余描述直接发送给模型。</p>
+     *
+     * @param requests 当前批次待分析商品
+     * @return 压缩后的规则摘要列表
+     */
     private List<String> publicRules(List<NormalizationAdvisorRequest> requests) {
         Set<String> rules = new LinkedHashSet<>();
         for (NormalizationAdvisorRequest request : requests) {
@@ -603,6 +607,11 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return new ArrayList<>(rules);
     }
 
+    /**
+     * 构建可公开发送给 LLM 的领域提示词。
+     *
+     * @return 按业务主题分组的关键词提示，用于辅助模型区分复购消耗品、耐用品、券/定金等边界
+     */
     private Map<String, List<String>> publicHints() {
         Map<String, List<String>> hints = new LinkedHashMap<>();
         hints.put("catMainFood", List.of("猫主食罐", "主食罐", "猫罐头", "湿粮", "餐盒", "一餐一杯"));
@@ -615,6 +624,15 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return hints;
     }
 
+    /**
+     * 将批次商品压缩为 prompt item 列表。
+     *
+     * <p>每个 item 使用 1-based index 作为回填锚点，只包含名称、SKU、电商分类和压缩别名，
+     * 由输出解析器按 index 对齐结果，降低模型乱序输出带来的写错商品风险。</p>
+     *
+     * @param requests 当前批次待分析商品
+     * @return 可序列化到 user prompt 的商品条目列表
+     */
     private List<Map<String, Object>> compactPromptItems(List<NormalizationAdvisorRequest> requests) {
         List<Map<String, Object>> items = new ArrayList<>();
         for (int index = 0; index < requests.size(); index++) {
@@ -631,6 +649,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return items;
     }
 
+    /**
+     * 向 prompt item 中添加压缩后的正向和负向别名证据。
+     *
+     * @param item    当前 prompt item
+     * @param context 本地 RAG 上下文；为空时不添加别名
+     */
     private void addItemAliases(Map<String, Object> item, NormalizationRagContext context) {
         if (context == null) {
             return;
@@ -645,6 +669,16 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         }
     }
 
+    /**
+     * 压缩别名证据。
+     *
+     * <p>正向别名保留 alias 到标准品类和目标单位的关系，负向别名保留 alias 到拒绝品类的关系；
+     * 每类最多保留 3 条，避免 prompt 因历史证据过多而膨胀。</p>
+     *
+     * @param aliases  原始别名证据
+     * @param positive true 表示正向别名，false 表示负向别名
+     * @return 压缩后的别名证据列表
+     */
     private List<String> compactAliases(List<String> aliases, boolean positive) {
         if (aliases == null || aliases.isEmpty()) {
             return List.of();
@@ -656,6 +690,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
                 .toList();
     }
 
+    /**
+     * 压缩正向别名证据。
+     *
+     * @param alias 原始正向别名文本
+     * @return alias=>normalizedName/targetUnit 格式；无法解析时返回截断后的原文
+     */
     private String compactPositiveAlias(String alias) {
         String text = safeText(alias).replace("正向别名：", "");
         String normalizedName = between(text, "=>", "，targetUnit=");
@@ -667,6 +707,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return aliasName.trim() + "=>" + normalizedName.trim() + "/" + targetUnit.trim();
     }
 
+    /**
+     * 压缩负向别名证据。
+     *
+     * @param alias 原始负向别名文本
+     * @return alias!=>rejectedName 格式；无法解析时返回截断后的原文
+     */
     private String compactNegativeAlias(String alias) {
         String text = safeText(alias).replace("负向别名：", "");
         String aliasName = before(text, "，拒绝品类=");
@@ -677,6 +723,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return aliasName.trim() + "!=>" + rejectedName.trim();
     }
 
+    /**
+     * 压缩规则摘要。
+     *
+     * @param ruleSummary 原始规则摘要文本
+     * @return ruleId=normalizedName/standardUnit/unitFamily 格式；无法解析时返回截断后的原文
+     */
     private String compactRuleSummary(String ruleSummary) {
         String text = safeText(ruleSummary).replace("规则：", "");
         String ruleId = before(text, "，");
@@ -689,69 +741,47 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return ruleId.trim() + "=" + normalizedName.trim() + "/" + standardUnit.trim() + "/" + unitFamily.trim();
     }
 
-    private NormalizationAdvisorResult validate(JsonNode root, String fallbackProductName, String fallbackSku) {
-        String rawProductName = text(root, "rawProductName", fallbackProductName);
-        String sku = text(root, "sku", fallbackSku);
-        String action = allowed(text(root, "action", "REVIEW"), ALLOWED_ACTIONS, "REVIEW");
-        String productType = allowed(text(root, "productType", "UNKNOWN"), ALLOWED_PRODUCT_TYPES, "UNKNOWN");
-        String unitFamily = allowed(text(root, "unitFamily", "UNKNOWN"), ALLOWED_UNIT_FAMILIES, "UNKNOWN");
-        double confidence = confidence(root.path("confidence"));
-        boolean reviewRequired = root.path("reviewRequired").isMissingNode() || root.path("reviewRequired").asBoolean(true);
-        String suggestedNormalizedName = firstText(root, "normalizedName", "suggestedNormalizedName");
-        String rejectedNormalizedName = nullableText(root, "rejectedNormalizedName");
-        String reasonCode = nullableText(root, "reasonCode");
-        String shortReason = nullableText(root, "shortReason");
-        String reason = displayReason(root);
-        List<String> evidence = List.of();
-
-        ClassificationCorrection correction = correction(rawProductName, sku, suggestedNormalizedName,
-                action, productType, reviewRequired, reason);
-        action = correction.action();
-        productType = correction.productType();
-        reviewRequired = correction.reviewRequired();
-        reason = correction.reason();
-
-        if ("NORMALIZE".equals(action) && isBlank(suggestedNormalizedName)) {
-            action = "REVIEW";
-            reviewRequired = true;
-            reason = reason + "；NORMALIZE 缺少 suggestedNormalizedName，已降级 REVIEW";
-        }
-        if ("EXCLUDE".equals(action) && "UNKNOWN".equals(productType)
-                && confidence < normalizationProperties.getLlm().getReviewConfidenceThreshold()) {
-            action = "REVIEW";
-            reviewRequired = true;
-            reason = reason + "；EXCLUDE 商品类型未知且置信度不足，已降级 REVIEW";
-        }
-        return new NormalizationAdvisorResult(rawProductName, sku, action, suggestedNormalizedName,
-                rejectedNormalizedName, productType, nullableText(root, "targetUnit"), unitFamily, confidence,
-                reviewRequired, reason, evidence, reasonCode, shortReason, false);
+    /**
+     * 对解析器产出的建议结果执行业务纠偏。
+     *
+     * <p>P4 后基础字段校验已下沉到 parser / validator，本方法只保留 Advisor 原有的业务安全兜底：
+     * 对券/定金、猫食品、食品、色号彩妆、个人护理和耐用品关键词进行纠偏，避免明显误分类直接入库。</p>
+     *
+     * @param result 已完成基础字段校验的建议结果
+     * @return 应用业务纠偏后的建议结果
+     */
+    private NormalizationAdvisorResult applyBusinessCorrection(NormalizationAdvisorResult result) {
+        ClassificationCorrection correction = correction(result.rawProductName(), result.sku(),
+                result.suggestedNormalizedName(), result.action(), result.productType(),
+                result.reviewRequired(), result.reason());
+        return new NormalizationAdvisorResult(result.rawProductName(), result.sku(), correction.action(),
+                result.suggestedNormalizedName(), result.rejectedNormalizedName(), correction.productType(),
+                result.targetUnit(), result.unitFamily(), result.confidence(), correction.reviewRequired(),
+                correction.reason(), result.evidence(), result.reasonCode(), result.shortReason(), result.failed());
     }
 
-    private String displayReason(JsonNode root) {
-        String reasonCode = nullableText(root, "reasonCode");
-        String shortReason = nullableText(root, "shortReason");
-        if (!isBlank(reasonCode)) {
-            String message = REASON_CODE_MESSAGES.get(reasonCode.trim().toUpperCase(Locale.ROOT));
-            if (message != null) {
-                return message;
-            }
-            return isBlank(shortReason) ? "需要人工复核" : truncate(shortReason, SHORT_REASON_MAX_LENGTH);
-        }
-        if (!isBlank(shortReason)) {
-            return truncate(shortReason, SHORT_REASON_MAX_LENGTH);
-        }
-        String legacyReason = nullableText(root, "reason");
-        if (!isBlank(legacyReason)) {
-            return truncate(legacyReason, LEGACY_REASON_MAX_LENGTH);
-        }
-        return "需要人工复核";
-    }
-
+    /**
+     * 创建批次级失败时的单条兜底结果。
+     *
+     * @param productName 原始商品名称
+     * @param sku         商品规格或 SKU
+     * @param reason      失败原因，已由异常分类逻辑归一化
+     * @return failed=true 的 REVIEW 建议
+     */
     private NormalizationAdvisorResult failedResult(String productName, String sku, String reason) {
         return new NormalizationAdvisorResult(productName, sku, "REVIEW", null, null, "UNKNOWN",
                 null, "UNKNOWN", 0.5D, true, reason, List.of(reason), true);
     }
 
+    /**
+     * 将 LLM 调用链路异常归类为稳定的错误类型和可展示原因。
+     *
+     * <p>该分类用于建议结果 reason 和观测指标 errorType；错误文本会先脱敏，避免 API Key 或 Bearer Token
+     * 出现在 debug dump、日志或持久化结果中。</p>
+     *
+     * @param e LLM 调用、输出抽取或解析过程中抛出的异常
+     * @return errorType：脱敏错误信息 格式的分类结果
+     */
     private String classifyException(Exception e) {
         String message = errorMessage(e);
         String lowerMessage = message.toLowerCase(Locale.ROOT);
@@ -774,16 +804,35 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return "unknown_error：" + sanitizeError(message);
     }
 
+    /**
+     * 从异常分类结果中提取观测指标使用的错误类型。
+     *
+     * @param e LLM 调用链路异常
+     * @return timeout_error、http_error、json_parse_error 等稳定错误类型
+     */
     private String errorType(Exception e) {
         String classified = classifyException(e);
         int splitIndex = classified.indexOf('：');
         return splitIndex <= 0 ? "unknown_error" : classified.substring(0, splitIndex);
     }
 
+    /**
+     * 提取异常消息。
+     *
+     * @param e LLM 调用链路异常
+     * @return 异常消息；消息为空时返回异常类名
+     */
     private String errorMessage(Exception e) {
         return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 
+    /**
+     * 提取失败观测中的 HTTP 状态码。
+     *
+     * @param e              LLM 调用链路异常
+     * @param clientResponse 已收到的客户端响应；请求未完成时可能为空
+     * @return LlmClientException 中的状态码优先，否则返回响应状态码或 0
+     */
     private int httpStatus(Exception e, LlmClientResponse clientResponse) {
         if (e instanceof LlmClientException clientException) {
             return clientException.httpStatus();
@@ -791,6 +840,13 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return clientResponse == null ? 0 : clientResponse.httpStatus();
     }
 
+    /**
+     * 提取失败观测中的响应 Content-Type。
+     *
+     * @param e              LLM 调用链路异常
+     * @param clientResponse 已收到的客户端响应；请求未完成时可能为空
+     * @return LlmClientException 中的 Content-Type 优先，否则返回响应 Content-Type 或空字符串
+     */
     private String contentType(Exception e, LlmClientResponse clientResponse) {
         if (e instanceof LlmClientException clientException) {
             return clientException.contentType();
@@ -798,6 +854,13 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return clientResponse == null ? "" : clientResponse.contentType();
     }
 
+    /**
+     * 提取失败观测中的响应体字节数。
+     *
+     * @param e              LLM 调用链路异常
+     * @param clientResponse 已收到的客户端响应；请求未完成时可能为空
+     * @return LlmClientException 中的响应字节数优先，否则返回响应字节数或 0
+     */
     private int responseBytes(Exception e, LlmClientResponse clientResponse) {
         if (e instanceof LlmClientException clientException) {
             return clientException.responseBytes();
@@ -805,6 +868,13 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return clientResponse == null ? 0 : clientResponse.responseBytes();
     }
 
+    /**
+     * 提取失败观测中的响应体。
+     *
+     * @param e              LLM 调用链路异常
+     * @param clientResponse 已收到的客户端响应；请求未完成时可能为空
+     * @return LlmClientException 中的响应体优先，否则返回客户端响应体或 null
+     */
     private String responseBody(Exception e, LlmClientResponse clientResponse) {
         if (e instanceof LlmClientException clientException) {
             return clientException.responseBody();
@@ -812,10 +882,22 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return clientResponse == null ? null : clientResponse.body();
     }
 
+    /**
+     * 计算阶段耗时。
+     *
+     * @param startNanos 阶段开始时间，来源于 System.nanoTime()
+     * @return 当前时刻到开始时刻的毫秒数
+     */
     private long elapsedMs(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000;
     }
 
+    /**
+     * 脱敏错误信息。
+     *
+     * @param message 原始异常消息
+     * @return 替换 Bearer Token 和 sk- 前缀密钥后的安全文本
+     */
     private String sanitizeError(String message) {
         if (message == null) {
             return "";
@@ -824,6 +906,16 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
                 .replaceAll("sk-[A-Za-z0-9_\\-]+", "sk-***");
     }
 
+    /**
+     * 校验并合并 LLM request body 扩展字段。
+     *
+     * <p>extraBodyJson 只允许作为 provider 个性化参数进入请求体，不能覆盖 model、messages、stream
+     * 等核心字段，也不能携带密钥或鉴权信息；JSON 语法或结构非法时抛出异常，由批量入口统一降级。</p>
+     *
+     * @param request       待发送给 LLM 的请求体
+     * @param extraBodyJson 配置中的扩展 JSON object
+     * @throws JsonProcessingException JSON 解析失败时抛出
+     */
     private void mergeExtraBodyJson(Map<String, Object> request, String extraBodyJson) throws JsonProcessingException {
         if (extraBodyJson == null || extraBodyJson.isBlank()) {
             return;
@@ -848,6 +940,14 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         }
     }
 
+    /**
+     * 递归校验 extraBodyJson 中是否包含敏感鉴权信息。
+     *
+     * <p>字段名按片段匹配 authorization、api_key、token、secret 等敏感词；
+     * 文本值按 Bearer 和 sk- 片段匹配，避免扩展参数被写入 debug dump 后泄露密钥。</p>
+     *
+     * @param root extraBodyJson 当前校验节点
+     */
     private void validateExtraBodyJson(JsonNode root) {
         if (root.isObject()) {
             for (Map.Entry<String, JsonNode> field : root.properties()) {
@@ -875,54 +975,6 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
                 }
             }
         }
-    }
-
-    private String allowed(String value, Set<String> allowedValues, String fallback) {
-        if (value == null) {
-            return fallback;
-        }
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
-        return allowedValues.contains(normalized) ? normalized : fallback;
-    }
-
-    private double confidence(JsonNode node) {
-        if (!node.isNumber()) {
-            return 0.5D;
-        }
-        double value = node.asDouble();
-        return value < 0D || value > 1D ? 0.5D : value;
-    }
-
-    private List<String> evidence(JsonNode node) {
-        if (!node.isArray()) {
-            return List.of();
-        }
-        List<String> values = new ArrayList<>();
-        for (JsonNode item : node) {
-            if (!item.asText("").isBlank()) {
-                values.add(item.asText());
-            }
-        }
-        return values;
-    }
-
-    private String text(JsonNode root, String fieldName, String fallback) {
-        String value = nullableText(root, fieldName);
-        return isBlank(value) ? safeText(fallback) : value;
-    }
-
-    private String nullableText(JsonNode root, String fieldName) {
-        JsonNode node = root.path(fieldName);
-        if (node.isMissingNode() || node.isNull()) {
-            return null;
-        }
-        String value = node.asText();
-        return value == null || value.isBlank() ? null : value.trim();
-    }
-
-    private String firstText(JsonNode root, String firstFieldName, String secondFieldName) {
-        String firstValue = nullableText(root, firstFieldName);
-        return isBlank(firstValue) ? nullableText(root, secondFieldName) : firstValue;
     }
 
     private boolean isBlank(String value) {
@@ -958,6 +1010,22 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return safeText.substring(0, maxLength);
     }
 
+    /**
+     * 根据本地关键词规则对 LLM 分类结果做业务纠偏。
+     *
+     * <p>该方法不负责基础字段合法性校验，只处理项目内已知的高风险误判：
+     * 定金/券与真实复购品混淆、猫食品被排除、食品被误标耐用品、色号彩妆需要复核、
+     * 个人护理消耗品被误标耐用品，以及包装词被误当作耐用品依据。</p>
+     *
+     * @param productName             原始商品名称
+     * @param sku                     商品规格或 SKU
+     * @param suggestedNormalizedName LLM 建议的标准品类名称
+     * @param action                  LLM 建议动作
+     * @param productType             LLM 判断的商品类型
+     * @param reviewRequired          LLM 是否要求人工复核
+     * @param reason                  当前原因文本
+     * @return 纠偏后的动作、商品类型、复核标记和原因
+     */
     private ClassificationCorrection correction(String productName,
                                                 String sku,
                                                 String suggestedNormalizedName,
@@ -1009,6 +1077,12 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
         return new ClassificationCorrection(action, productType, reviewRequired, reason);
     }
 
+    /**
+     * 判断文本中是否存在明确的复购消耗品信号。
+     *
+     * @param text 商品名、SKU 和建议品类拼接后的文本
+     * @return 命中宠物食品、个人护理、美妆护肤或色号彩妆关键词时返回 true
+     */
     private boolean containsRepurchaseConsumableSignal(String text) {
         return containsAny(text, CAT_FOOD_KEYWORDS)
                 || containsAny(text, PERSONAL_CARE_KEYWORDS)
@@ -1016,6 +1090,14 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
                 || containsAny(text, COLOR_MAKEUP_KEYWORDS);
     }
 
+    /**
+     * 判断文本中是否存在明确的耐用品信号。
+     *
+     * <p>“包”是高歧义关键词；当它出现在包装或面包上下文中时不作为耐用品依据。</p>
+     *
+     * @param text 原始商品名称和 SKU 拼接后的文本
+     * @return 命中耐用品关键词且未被包装上下文排除时返回 true
+     */
     private boolean containsDurableSignal(String text) {
         for (String keyword : DURABLE_KEYWORDS) {
             if (!text.contains(keyword)) {
@@ -1040,24 +1122,6 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
             }
         }
         return false;
-    }
-
-    private static Map<String, String> reasonCodeMessages() {
-        Map<String, String> messages = new LinkedHashMap<>();
-        messages.put("CAT_MAIN_FOOD", "猫主食罐消耗品");
-        messages.put("CAT_SNACK", "猫零食消耗品");
-        messages.put("CAT_SOUP_AMBIGUOUS", "猫汤包归类需复核");
-        messages.put("PERSONAL_CARE", "个人护理消耗品");
-        messages.put("COLOR_COSMETIC_REVIEW", "色号彩妆需复核");
-        messages.put("FOOD_REVIEW", "食品是否纳入需复核");
-        messages.put("DURABLE_CLOTHING", "服饰耐用品排除");
-        messages.put("DURABLE_ACCESSORY", "饰品耐用品排除");
-        messages.put("DURABLE_GOODS", "耐用品排除");
-        messages.put("COUPON_OR_DEPOSIT", "支付权益类排除");
-        messages.put("REAL_PRODUCT_WITH_DEPOSIT", "真实商品含预售付定需复核");
-        messages.put("UNIT_UNSAFE", "单位不安全需复核");
-        messages.put("UNKNOWN_REVIEW", "无法判断需复核");
-        return Map.copyOf(messages);
     }
 
     private record ClassificationCorrection(String action, String productType, boolean reviewRequired, String reason) {
