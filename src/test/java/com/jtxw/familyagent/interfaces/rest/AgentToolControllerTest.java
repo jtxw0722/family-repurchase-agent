@@ -227,6 +227,7 @@ class AgentToolControllerTest {
                                   "records": [
                                     {
                                       "productName": "猫砂",
+                                      "normalizedName": "猫砂",
                                       "price": 109.9,
                                       "quantity": 24,
                                       "unit": "kg",
@@ -249,6 +250,10 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.records[0].normalizedName").value("猫砂"))
                 .andExpect(jsonPath("$.records[0].unitPrice").value(4.579167))
                 .andExpect(jsonPath("$.records[0].decision").value("include"));
+
+        ArgumentCaptor<RecordPurchaseCommand> captor = ArgumentCaptor.forClass(RecordPurchaseCommand.class);
+        verify(recordPurchaseApplicationService).record(captor.capture());
+        assertThat(captor.getValue().records().get(0).normalizedName()).isEqualTo("猫砂");
     }
 
     @Test

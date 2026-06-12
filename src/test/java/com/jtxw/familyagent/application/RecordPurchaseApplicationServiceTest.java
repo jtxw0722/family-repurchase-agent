@@ -376,6 +376,122 @@ class RecordPurchaseApplicationServiceTest {
                 .hasMessageContaining("purchaseDate 格式错误");
     }
 
+    @Test
+    void dryRunShouldIncludeManualRecordWhenNormalizedNameProvided() throws Exception {
+        Fixture fixture = fixture("manual-normalized-dry-run.sqlite");
+
+        RecordPurchaseResult result = fixture.service.record(command(true,
+                latteRecord("jtxw", "2026-06-02 08:12:41", "雀巢咖啡食品旗舰店", 8D, 26.14D)));
+
+        assertThat(result.savedCount()).isZero();
+        assertThat(result.reviewCount()).isZero();
+        assertThat(result.records()).hasSize(1);
+        RecordPurchaseResult.RecordResult item = result.records().get(0);
+        assertThat(item.decision()).isEqualTo("include");
+        assertThat(item.normalizedName()).isEqualTo("雀巢丝滑拿铁");
+        assertThat(item.quantity()).isEqualTo(8D);
+        assertThat(item.unit()).isEqualTo("瓶");
+        assertThat(item.unitPrice()).isCloseTo(3.2675D, offset(0.000001D));
+        assertThat(fixture.reviewItemRepository.listPendingDetails()).isEmpty();
+    }
+
+    @Test
+    void shouldIncludeManualRecordWhenNormalizedNameProvided() throws Exception {
+        Fixture fixture = fixture("manual-normalized-write.sqlite");
+
+        RecordPurchaseResult result = fixture.service.record(command(false,
+                latteRecord("jtxw", "2026-06-02 08:12:41", "雀巢咖啡食品旗舰店", 8D, 26.14D)));
+
+        assertThat(result.savedCount()).isEqualTo(1);
+        assertThat(result.reviewCount()).isZero();
+        List<PurchaseRecord> records = fixture.purchaseRecordRepository.listPriceHistoryRecords("雀巢丝滑拿铁");
+        assertThat(records).hasSize(1);
+        PurchaseRecord record = records.get(0);
+        assertThat(record.decision()).isEqualTo("include");
+        assertThat(record.normalizedName()).isEqualTo("雀巢丝滑拿铁");
+        assertThat(record.normalizationRule()).isEqualTo("manual_input");
+        assertThat(record.owner()).isEqualTo("jtxw");
+        assertThat(record.platform()).isEqualTo("pdd");
+        assertThat(record.unit()).isEqualTo("瓶");
+        assertThat(record.unitPrice()).isCloseTo(3.2675D, offset(0.000001D));
+        assertThat(fixture.reviewItemRepository.listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void shouldIncludeSixManualLatteRecordsWhenNormalizedNameProvided() throws Exception {
+        Fixture dryRunFixture = fixture("manual-latte-six-dry-run.sqlite");
+        RecordPurchaseCommand.Item[] records = latteRecords();
+
+        RecordPurchaseResult dryRun = dryRunFixture.service.record(command(true, records));
+
+        assertThat(dryRun.savedCount()).isZero();
+        assertThat(dryRun.reviewCount()).isZero();
+        assertThat(dryRun.records()).hasSize(6);
+        assertThat(dryRun.records()).extracting(RecordPurchaseResult.RecordResult::decision)
+                .containsOnly("include");
+        assertThat(dryRun.records()).extracting(RecordPurchaseResult.RecordResult::normalizedName)
+                .containsOnly("雀巢丝滑拿铁");
+        assertThat(dryRun.records()).extracting(RecordPurchaseResult.RecordResult::unit)
+                .containsOnly("瓶");
+        assertThat(dryRun.records()).extracting(RecordPurchaseResult.RecordResult::quantity)
+                .containsExactly(8D, 15D, 10D, 14D, 8D, 8D);
+        assertThat(dryRun.records().get(0).unitPrice()).isCloseTo(3.2675D, offset(0.000001D));
+        assertThat(dryRun.records().get(1).unitPrice()).isCloseTo(3.492D, offset(0.000001D));
+        assertThat(dryRun.records().get(2).unitPrice()).isCloseTo(3.39D, offset(0.000001D));
+        assertThat(dryRun.records().get(3).unitPrice()).isCloseTo(2.851428D, offset(0.000001D));
+        assertThat(dryRun.records().get(4).unitPrice()).isCloseTo(3.2675D, offset(0.000001D));
+        assertThat(dryRun.records().get(5).unitPrice()).isCloseTo(3.3325D, offset(0.000001D));
+
+        Fixture writeFixture = fixture("manual-latte-six-write.sqlite");
+        RecordPurchaseResult saved = writeFixture.service.record(command(false, records));
+
+        assertThat(saved.savedCount()).isEqualTo(6);
+        assertThat(saved.reviewCount()).isZero();
+        List<PurchaseRecord> history = writeFixture.purchaseRecordRepository.listPriceHistoryRecords("雀巢丝滑拿铁");
+        assertThat(history).hasSize(6);
+        assertThat(history).extracting(PurchaseRecord::normalizedName).containsOnly("雀巢丝滑拿铁");
+        assertThat(history).extracting(PurchaseRecord::decision).containsOnly("include");
+        assertThat(history).extracting(PurchaseRecord::unit).containsOnly("瓶");
+        assertThat(history).extracting(PurchaseRecord::normalizationRule).containsOnly("manual_input");
+    }
+
+    @Test
+    void shouldKeepLegacyFallbackBehaviorWhenNormalizedNameMissing() throws Exception {
+        Fixture fixture = fixture("manual-normalized-missing.sqlite");
+
+        RecordPurchaseResult result = fixture.service.record(command(true,
+                new RecordPurchaseCommand.Item(
+                        "某未知商品", null, 12D, 1D, "件", "拼多多", "2026-06-02 08:12:41",
+                        "jtxw", "未知店铺", "暂无", "手动录入", "未知商品手动录入", false
+                )));
+
+        assertThat(result.savedCount()).isZero();
+        assertThat(result.records()).hasSize(1);
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).reviewRequired()).isTrue();
+        assertThat(result.records().get(0).reviewReasons())
+                .anyMatch(reason -> reason.contains("商品归一化置信度较低"));
+    }
+
+    @Test
+    void shouldNotIncludeManualRecordWhenNegativeAliasMatchesEvenIfNormalizedNameProvided() throws Exception {
+        Fixture fixture = fixture("manual-normalized-negative-alias.sqlite");
+        String aliasKey = fixture.productTitleCleaner.aliasKey("某耐用品", "暂无");
+        fixture.productNegativeAliasRepository.upsert("某耐用品", aliasKey, "某商品", "耐用品不能纳入复购基线");
+
+        RecordPurchaseResult result = fixture.service.record(command(true,
+                new RecordPurchaseCommand.Item(
+                        "某耐用品", "某商品", 99D, 1D, "件", "拼多多", "2026-06-02 08:12:41",
+                        "jtxw", "未知店铺", "暂无", "手动录入", "负向别名测试", false
+                )));
+
+        assertThat(result.records()).hasSize(1);
+        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
+        assertThat(result.records().get(0).normalizedName()).isEqualTo("某耐用品");
+    }
+
     private void assertStoredPlatform(String dbName, String inputPlatform, String expectedPlatform) throws Exception {
         Fixture fixture = fixture(dbName);
         fixture.service.record(command(false, catLitterRecordWith(inputPlatform, "2026-06-04", "6kg*4包")));
@@ -441,6 +557,39 @@ class RecordPurchaseApplicationServiceTest {
         );
     }
 
+    private RecordPurchaseCommand.Item latteRecord(String owner,
+                                                   String purchaseDate,
+                                                   String shopName,
+                                                   double quantity,
+                                                   double price) {
+        return new RecordPurchaseCommand.Item(
+                "雀巢丝滑拿铁",
+                "雀巢丝滑拿铁",
+                price,
+                quantity,
+                "瓶",
+                "拼多多",
+                purchaseDate,
+                owner,
+                shopName,
+                quantity + "瓶",
+                "手动录入",
+                "用户明确说明商品名称和归类都是雀巢丝滑拿铁。",
+                false
+        );
+    }
+
+    private RecordPurchaseCommand.Item[] latteRecords() {
+        return new RecordPurchaseCommand.Item[]{
+                latteRecord("jtxw", "2026-06-02 08:12:41", "雀巢咖啡食品旗舰店", 8D, 26.14D),
+                latteRecord("jtxw", "2026-05-09 15:08:23", "俊山食品专营店", 15D, 52.38D),
+                latteRecord("jtxw", "2026-04-18 15:50:00", "雀巢品牌店", 10D, 33.9D),
+                latteRecord("lj", "2026-06-01 15:56:15", "雀巢品牌店", 14D, 39.92D),
+                latteRecord("lj", "2026-05-29 01:06:55", "雀巢咖啡食品旗舰店", 8D, 26.14D),
+                latteRecord("lj", "2025-05-11 08:42:15", "雀巢咖啡食品旗舰店", 8D, 26.66D)
+        };
+    }
+
     private void seedCatLitterHistory(Fixture fixture, int sampleCount) {
         double[] prices = {40D, 50D, 60D};
         for (int i = 0; i < sampleCount; i++) {
@@ -471,8 +620,9 @@ class RecordPurchaseApplicationServiceTest {
                 List.of(new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
                         List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100))
         );
+        ProductTitleCleaner productTitleCleaner = new ProductTitleCleaner();
         LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
-                new ProductTitleCleaner(),
+                productTitleCleaner,
                 productAliasRepository,
                 productNegativeAliasRepository,
                 productNameNormalizer
@@ -488,11 +638,14 @@ class RecordPurchaseApplicationServiceTest {
                 purchaseRecordRepository,
                 reviewItemRepository
         );
-        return new Fixture(service, purchaseRecordRepository, reviewItemRepository);
+        return new Fixture(service, purchaseRecordRepository, reviewItemRepository, productTitleCleaner,
+                productNegativeAliasRepository);
     }
 
     private record Fixture(RecordPurchaseApplicationService service,
                            PurchaseRecordRepository purchaseRecordRepository,
-                           ReviewItemRepository reviewItemRepository) {
+                           ReviewItemRepository reviewItemRepository,
+                           ProductTitleCleaner productTitleCleaner,
+                           ProductNegativeAliasRepository productNegativeAliasRepository) {
     }
 }

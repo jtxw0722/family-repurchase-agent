@@ -277,7 +277,7 @@ class FamilyRepurchaseMcpServerApplicationTest {
         Map<String, Object> recordItem = (Map<String, Object>) records.get("items");
         Map<String, Object> recordProperties = (Map<String, Object>) recordItem.get("properties");
         assertThat(recordProperties.keySet()).containsAll(Set.of(
-                "productName", "price", "quantity", "unit", "platform", "purchaseDate",
+                "productName", "normalizedName", "price", "quantity", "unit", "platform", "purchaseDate",
                 "owner", "shopName", "sku", "note", "sourceText"
         ));
         assertThat(recordItem.get("required")).isEqualTo(List.of("productName", "price", "quantity", "unit"));
@@ -319,12 +319,14 @@ class FamilyRepurchaseMcpServerApplicationTest {
         assertThat(restClient.body).containsEntry("dryRun", false);
         List<Map<String, Object>> records = (List<Map<String, Object>>) restClient.body.get("records");
         assertThat(records.get(0)).containsEntry("productName", "猫砂");
+        assertThat(records.get(0)).containsEntry("normalizedName", "猫砂");
         assertThat(records.get(0)).containsEntry("unit", "kg");
     }
 
     private Map<String, Object> recordPurchaseArgs() {
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("productName", "猫砂");
+        record.put("normalizedName", "猫砂");
         record.put("price", 109.9);
         record.put("quantity", 24);
         record.put("unit", "kg");

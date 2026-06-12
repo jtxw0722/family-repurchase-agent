@@ -16,6 +16,7 @@ public record RecordPurchaseCommand(
 ) {
     /**
      * @param productName       原始商品名称，例如“猫砂”“纸巾”“洗衣液”
+     * @param normalizedName    用户显式提供的归一化商品名称；为空时由系统规则归一化
      * @param price             购买总价
      * @param quantity          购买数量
      * @param unit              数量单位，例如 kg、L、抽、包
@@ -33,6 +34,7 @@ public record RecordPurchaseCommand(
      */
     public record Item(
             String productName,
+            String normalizedName,
             Double price,
             Double quantity,
             String unit,
@@ -45,6 +47,41 @@ public record RecordPurchaseCommand(
             String sourceText,
             Boolean confirmOutOfRange
     ) {
+        /**
+         * 创建单条手动购买记录录入命令明细。
+         *
+         * <p>该构造方法用于兼容未显式传入 normalizedName 的历史调用场景，
+         * 此时商品名称仍由系统规则或 legacy_fallback 归一化。</p>
+         *
+         * @param productName       原始商品名称
+         * @param price             购买总价
+         * @param quantity          购买数量
+         * @param unit              数量单位
+         * @param platform          购买平台
+         * @param purchaseDate      购买日期
+         * @param owner             订单归属人
+         * @param shopName          店铺名称
+         * @param sku               商品规格或 SKU
+         * @param note              人工备注
+         * @param sourceText        Claude 抽取前的原始自然语言文本
+         * @param confirmOutOfRange 是否确认接受偏离历史价格区间的样本
+         */
+        public Item(String productName,
+                    Double price,
+                    Double quantity,
+                    String unit,
+                    String platform,
+                    String purchaseDate,
+                    String owner,
+                    String shopName,
+                    String sku,
+                    String note,
+                    String sourceText,
+                    Boolean confirmOutOfRange) {
+            this(productName, null, price, quantity, unit, platform, purchaseDate, owner,
+                    shopName, sku, note, sourceText, confirmOutOfRange);
+        }
+
         /**
          * 创建单条手动购买记录录入命令明细。
          *
@@ -74,7 +111,7 @@ public record RecordPurchaseCommand(
                     String sku,
                     String note,
                     String sourceText) {
-            this(productName, price, quantity, unit, platform, purchaseDate, owner,
+            this(productName, null, price, quantity, unit, platform, purchaseDate, owner,
                     shopName, sku, note, sourceText, false);
         }
     }

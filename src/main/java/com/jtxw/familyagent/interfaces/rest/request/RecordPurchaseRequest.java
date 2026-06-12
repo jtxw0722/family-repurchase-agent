@@ -49,6 +49,9 @@ public record RecordPurchaseRequest(
             @NotBlank
             String productName,
 
+            @Schema(description = "用户显式提供的归一化商品名称；为空时由服务端规则归一化", example = "雀巢丝滑拿铁")
+            String normalizedName,
+
             @Schema(description = "购买总价", example = "109.9", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull
             @Positive
@@ -95,6 +98,7 @@ public record RecordPurchaseRequest(
         public RecordPurchaseCommand.Item toCommandItem() {
             return new RecordPurchaseCommand.Item(
                     productName,
+                    normalizedName,
                     price,
                     quantity,
                     unit,

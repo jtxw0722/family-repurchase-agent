@@ -84,6 +84,10 @@ public class RecordPurchaseApplicationService {
      */
     private static final String NORMALIZATION_RULE_LEGACY_FALLBACK = "legacy_fallback";
     /**
+     * 手动录入显式归一化规则标识
+     */
+    private static final String NORMALIZATION_RULE_MANUAL_INPUT = "manual_input";
+    /**
      * 默认平台：手动录入
      */
     private static final String PLATFORM_MANUAL = "manual";
@@ -311,9 +315,13 @@ public class RecordPurchaseApplicationService {
                                          boolean dryRun) {
         String productName = input.productName().trim();
         String sku = resolveSku(input.sku());
-        ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(productName, sku);
+        ProductNameNormalizationResult detectedNameResult = productNameNormalizer.normalize(productName, sku);
         // 负向别名是人工确认过的误判样本：自动排除，但不再创建商品归一化复核项。
-        boolean negativeAliasExcluded = isProductNegativeAlias(nameResult);
+        boolean negativeAliasExcluded = isProductNegativeAlias(detectedNameResult);
+        String manualNormalizedName = normalizeManualNormalizedName(input.normalizedName());
+        ProductNameNormalizationResult nameResult = manualNormalizedName != null && !negativeAliasExcluded
+                ? manualNameResult(manualNormalizedName)
+                : detectedNameResult;
 
         double resolvedQuantity = input.quantity();
         String resolvedUnit = input.unit().trim();
@@ -439,6 +447,38 @@ public class RecordPurchaseApplicationService {
      */
     private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
         return NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS.equals(nameResult.matchedRule());
+    }
+
+    /**
+     * 清洗用户显式提供的归一化商品名称。
+     *
+     * @param normalizedName 用户输入的归一化商品名称，允许为空
+     * @return trim 后的归一化商品名称；未提供或空白时返回 null
+     */
+    private String normalizeManualNormalizedName(String normalizedName) {
+        if (normalizedName == null || normalizedName.trim().isEmpty()) {
+            return null;
+        }
+        return normalizedName.trim();
+    }
+
+    /**
+     * 构造手动录入显式归一化结果。
+     *
+     * <p>用户已经明确指定归一化商品名称时，不再依赖 product-rules.yml 是否存在对应规则；
+     * targetUnit 留空，避免因为规则缺失或单位族不明确制造归一化复核。</p>
+     *
+     * @param normalizedName 清洗后的归一化商品名称
+     * @return 手动归一化结果
+     */
+    private ProductNameNormalizationResult manualNameResult(String normalizedName) {
+        return new ProductNameNormalizationResult(
+                normalizedName,
+                "",
+                1D,
+                NORMALIZATION_RULE_MANUAL_INPUT,
+                false
+        );
     }
 
     /**

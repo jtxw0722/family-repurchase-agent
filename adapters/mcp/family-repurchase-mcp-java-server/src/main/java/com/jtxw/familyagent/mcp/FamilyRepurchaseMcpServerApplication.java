@@ -686,6 +686,7 @@ public class FamilyRepurchaseMcpServerApplication {
     private static Map<String, Object> recordPurchaseInputSchema() {
         return objectSchema(properties(
                 property("productName", stringSchema("商品名称")),
+                property("normalizedName", stringSchema("用户显式提供的归一化商品名称，可选；为空时由后端规则归一化")),
                 property("price", numberSchema("购买总价")),
                 property("quantity", numberSchema("购买数量")),
                 property("unit", stringSchema("数量单位")),
