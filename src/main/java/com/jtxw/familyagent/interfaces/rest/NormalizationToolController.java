@@ -2,6 +2,7 @@ package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
+import com.jtxw.familyagent.application.AutoExcludedNormalizationSuggestionResult;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
@@ -91,6 +92,21 @@ public class NormalizationToolController {
     @GetMapping("/normalization-suggestions")
     public List<NormalizationSuggestion> listNormalizationSuggestions(@RequestParam long batchId) {
         return normalizationSuggestionService.listByBatchId(batchId);
+    }
+
+    /**
+     * 查询指定批次中已自动排除且无需人工复核的高置信 EXCLUDE 建议。
+     *
+     * @param batchId       导入批次 ID，必须大于 0
+     * @param minConfidence 最低置信度阈值，允许为空；为空时使用默认值 0.9
+     * @return 自动排除建议查询结果，包含总数、类型分布和明细
+     */
+    @Operation(summary = "查询自动排除的归一化建议", description = "按批次查询 auto_excluded 且无需人工复核的高置信 EXCLUDE suggestions。")
+    @GetMapping("/normalization-suggestions/auto-excluded")
+    public AutoExcludedNormalizationSuggestionResult listAutoExcludedNormalizationSuggestions(
+            @RequestParam long batchId,
+            @RequestParam(required = false) Double minConfidence) {
+        return normalizationSuggestionService.listAutoExcluded(batchId, minConfidence);
     }
 
     /**

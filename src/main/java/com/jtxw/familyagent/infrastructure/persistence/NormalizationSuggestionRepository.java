@@ -20,6 +20,26 @@ import java.util.List;
 @Repository
 public class NormalizationSuggestionRepository {
     /**
+     * LLM 建议排除动作，用于筛选不会进入复购价格基准的建议。
+     */
+    private static final String ACTION_EXCLUDE = "EXCLUDE";
+    /**
+     * 高置信排除建议状态，表示无需人工复核即可排除。
+     */
+    private static final String STATUS_AUTO_EXCLUDED = "auto_excluded";
+    /**
+     * 耐用品类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_DURABLE = "DURABLE";
+    /**
+     * 非复购商品类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_NON_REPURCHASE = "NON_REPURCHASE";
+    /**
+     * 券、定金、尾款或虚拟权益类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_COUPON_OR_DEPOSIT = "COUPON_OR_DEPOSIT";
+    /**
      * normalization_suggestions 表访问组件。
      */
     private final JdbcTemplate jdbcTemplate;
@@ -102,6 +122,29 @@ public class NormalizationSuggestionRepository {
                 WHERE batch_id = ? AND status = ?
                 ORDER BY id
                 """, rowMapper(), batchId, status);
+    }
+
+    /**
+     * 查询指定批次中已自动排除且无需人工复核的高置信归一化建议。
+     *
+     * <p>该方法只读取 normalization_suggestions，不更新建议状态，也不写入别名或购买记录。</p>
+     *
+     * @param batchId       导入批次 ID，必须大于 0
+     * @param minConfidence 最低置信度阈值，取值范围为 0.0 到 1.0
+     * @return 满足自动排除条件的建议列表，按置信度倒序和 ID 升序排列
+     */
+    public List<NormalizationSuggestion> listAutoExcludedByBatchId(long batchId, double minConfidence) {
+        return jdbcTemplate.query("""
+                SELECT * FROM normalization_suggestions
+                WHERE batch_id = ?
+                  AND action = ?
+                  AND review_required = 0
+                  AND status = ?
+                  AND confidence >= ?
+                  AND product_type IN (?, ?, ?)
+                ORDER BY confidence DESC, id ASC
+                """, rowMapper(), batchId, ACTION_EXCLUDE, STATUS_AUTO_EXCLUDED, minConfidence,
+                PRODUCT_TYPE_DURABLE, PRODUCT_TYPE_NON_REPURCHASE, PRODUCT_TYPE_COUPON_OR_DEPOSIT);
     }
 
     /**

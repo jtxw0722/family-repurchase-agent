@@ -22,6 +22,9 @@ import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * @Author: jtxw
@@ -788,7 +791,9 @@ class NormalizationSuggestionServiceTest {
 
     @Test
     void safetyGuardShouldKeepHighConfidenceDurableAutoExcludedWhenSuggestedNameUnsafe() throws Exception {
-        StubAdvisor advisor = advisor(normalizeTyped("女装套装", "女装套装", "件", "DURABLE"));
+        StubAdvisor advisor = advisor(new NormalizationAdvisorResult("女装套装", "默认", "EXCLUDE",
+                "女装套装", null, "DURABLE", "件", "COUNT", 0.96D, false,
+                "高置信排除", List.of("测试证据"), false));
         Fixture fixture = fixture("safety-durable-unsafe-name-auto-exclude.sqlite",
                 properties(true, "llm_suggestion"), advisor);
         long batchId = batchWithLegacyRecords(fixture, "女装套装");
@@ -800,11 +805,137 @@ class NormalizationSuggestionServiceTest {
         assertThat(suggestion.productType()).isEqualTo("DURABLE");
         assertThat(suggestion.reviewRequired()).isFalse();
         assertThat(suggestion.status()).isEqualTo("auto_excluded");
-        assertThat(suggestion.reason()).contains("高置信耐用品，自动排除");
+        assertThat(suggestion.reason()).contains("高置信服饰耐用品，自动排除");
         assertThat(suggestion.reason()).doesNotContain("建议标准名疑似包含规格/包装形态/促销销售词");
         assertThat(fixture.reviewItemRepository().listPendingDetails())
                 .extracting(ReviewItemDetail::reasonCode)
                 .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void analyzeBatchShouldAutoExcludeHighConfidenceClothingDurableWithoutReviewItem() throws Exception {
+        String productName = "SALT 美式潮牌字母印花基础款短袖t恤女夏季2026新款休闲百搭上衣";
+        StubAdvisor advisor = advisor(excludeTyped(productName, "酒红;L", "DURABLE", 0.96D));
+        Fixture fixture = fixture("auto-exclude-clothing-no-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "酒红;L"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.autoExcludedCount()).isEqualTo(1);
+        assertThat(result.pendingReviewCount()).isZero();
+        assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+        assertThat(suggestion.productType()).isEqualTo("DURABLE");
+        assertThat(suggestion.reviewRequired()).isFalse();
+        assertThat(suggestion.status()).isEqualTo("auto_excluded");
+        assertThat(suggestion.reason()).contains("高置信服饰耐用品，自动排除");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void analyzeBatchShouldAutoExcludeRaincoatUnderwearAndShirtWithoutReviewItems() throws Exception {
+        StubAdvisor advisor = advisor(
+                excludeTyped("雨衣电动车电瓶摩托车长款全身防暴雨雨披男款成人外穿骑行专用女", "默认", "DURABLE", 0.96D),
+                excludeTyped("有棵树莫代尔内裤女纯棉全棉裆抗菌无痕透气中高腰大码红色三角裤", "默认", "DURABLE", 0.96D),
+                excludeTyped("你好卡农 翻折口袋设计感长袖衬衫女春季2025新款宽松小个子衬衣", "默认", "DURABLE", 0.96D)
+        );
+        Fixture fixture = fixture("auto-exclude-clothing-keywords.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "雨衣电动车电瓶摩托车长款全身防暴雨雨披男款成人外穿骑行专用女",
+                "有棵树莫代尔内裤女纯棉全棉裆抗菌无痕透气中高腰大码红色三角裤",
+                "你好卡农 翻折口袋设计感长袖衬衫女春季2025新款宽松小个子衬衣");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(result.autoExcludedCount()).isEqualTo(3);
+        assertThat(result.pendingReviewCount()).isZero();
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+                    assertThat(suggestion.productType()).isEqualTo("DURABLE");
+                    assertThat(suggestion.reviewRequired()).isFalse();
+                    assertThat(suggestion.status()).isEqualTo("auto_excluded");
+                    assertThat(suggestion.reason()).contains("高置信服饰耐用品，自动排除");
+                });
+        assertThat(fixture.reviewItemRepository().listPendingDetails()).isEmpty();
+    }
+
+    @Test
+    void analyzeBatchShouldReviewLowConfidenceClothingExclude() throws Exception {
+        StubAdvisor advisor = advisor(excludeTyped("某模糊服饰商品", "默认", "DURABLE", 0.5D));
+        Fixture fixture = fixture("low-confidence-clothing-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "某模糊服饰商品");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(result.autoExcludedCount()).isZero();
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .containsExactly("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void analyzeBatchShouldReviewCatFoodMisclassifiedAsDurableExclude() throws Exception {
+        StubAdvisor advisor = advisor(excludeTyped("猫主食罐湿粮猫罐头", "默认", "DURABLE", 0.96D));
+        Fixture fixture = fixture("cat-food-durable-exclude-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫主食罐湿粮猫罐头");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("猫食品消耗品");
+    }
+
+    @Test
+    void analyzeBatchShouldReviewContactLensMisclassifiedAsDurableExclude() throws Exception {
+        String productName = "SweetColor日抛美瞳10片自然三明治工艺隐形眼镜";
+        StubAdvisor advisor = advisor(excludeTyped(productName, "自然棕;10片", "DURABLE", 0.96D));
+        Fixture fixture = fixture("contact-lens-durable-exclude-review.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "自然棕;10片"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+    }
+
+    @Test
+    void analyzeBatchShouldCreateReviewItemOnlyForPendingReviewNotAutoExcluded() throws Exception {
+        String clothingName = "SALT 美式潮牌字母印花基础款短袖t恤女夏季2026新款休闲百搭上衣";
+        String catFoodName = "猫主食罐湿粮猫罐头";
+        StubAdvisor advisor = advisor(
+                excludeTyped(clothingName, "酒红;L", "DURABLE", 0.96D),
+                review(catFoodName)
+        );
+        Fixture fixture = fixture("auto-excluded-not-review-items.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed(clothingName, "酒红;L"),
+                seed(catFoodName, "默认"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        List<ReviewItemDetail> reviewItems = fixture.reviewItemRepository().listPendingDetails();
+
+        assertThat(result.autoExcludedCount()).isEqualTo(1);
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(reviewItems).hasSize(1);
+        assertThat(reviewItems.get(0).productName()).isEqualTo(catFoodName);
+        assertThat(reviewItems.get(0).reasonCode()).isEqualTo("PRODUCT_NAME_NORMALIZATION_REVIEW");
     }
 
     @Test
@@ -1347,6 +1478,122 @@ class NormalizationSuggestionServiceTest {
     }
 
     @Test
+    void listAutoExcludedShouldOnlyReturnHighConfidenceAutoExcludedExcludeSuggestions() throws Exception {
+        Fixture fixture = fixture("list-auto-excluded-filter.sqlite", properties(true, "llm_suggestion"), advisor());
+        long batchId = 1L;
+        long durableId = saveSuggestion(fixture, batchId, "猫砂盆大号", "默认", "EXCLUDE",
+                "DURABLE", 0.96D, false, "auto_excluded");
+        long couponId = saveSuggestion(fixture, batchId, "0.01元锁定权益", "默认", "EXCLUDE",
+                "COUPON_OR_DEPOSIT", 0.95D, false, "auto_excluded");
+        long nonRepurchaseId = saveSuggestion(fixture, batchId, "手机壳透明款", "默认", "EXCLUDE",
+                "NON_REPURCHASE", 0.94D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "猫条三文鱼", "默认", "NORMALIZE",
+                "REPURCHASE_CONSUMABLE", 0.96D, false, "pending_batch_approval");
+        saveSuggestion(fixture, batchId, "低置信复核", "默认", "REVIEW",
+                "UNKNOWN", 0.80D, true, "pending_review");
+        saveSuggestion(fixture, batchId, "排除但待复核", "默认", "EXCLUDE",
+                "DURABLE", 0.96D, true, "pending_review");
+        saveSuggestion(fixture, batchId, "低置信耐用品", "默认", "EXCLUDE",
+                "DURABLE", 0.50D, false, "auto_excluded");
+
+        AutoExcludedNormalizationSuggestionResult result = fixture.suggestionService()
+                .listAutoExcluded(batchId, 0.9D);
+
+        assertThat(result.total()).isEqualTo(3);
+        assertThat(result.items())
+                .extracting(AutoExcludedNormalizationSuggestionResult.Item::suggestionId)
+                .containsExactly(durableId, couponId, nonRepurchaseId);
+        assertThat(result.items())
+                .allSatisfy(item -> {
+                    assertThat(item.action()).isEqualTo("EXCLUDE");
+                    assertThat(item.reviewRequired()).isFalse();
+                    assertThat(item.status()).isEqualTo("auto_excluded");
+                    assertThat(item.confidence()).isGreaterThanOrEqualTo(0.9D);
+                });
+    }
+
+    @Test
+    void listAutoExcludedShouldReturnDeterministicTypeCounts() throws Exception {
+        Fixture fixture = fixture("list-auto-excluded-type-counts.sqlite", properties(true, "llm_suggestion"), advisor());
+        long batchId = 1L;
+        saveSuggestion(fixture, batchId, "猫砂盆大号", "默认", "EXCLUDE",
+                "DURABLE", 0.98D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "猫砂铲", "默认", "EXCLUDE",
+                "DURABLE", 0.97D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "0.01元锁定权益", "默认", "EXCLUDE",
+                "COUPON_OR_DEPOSIT", 0.96D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "手机壳透明款", "默认", "EXCLUDE",
+                "NON_REPURCHASE", 0.95D, false, "auto_excluded");
+
+        AutoExcludedNormalizationSuggestionResult result = fixture.suggestionService()
+                .listAutoExcluded(batchId, 0.9D);
+
+        assertThat(result.typeCounts())
+                .extracting(AutoExcludedNormalizationSuggestionResult.TypeCount::productType,
+                        AutoExcludedNormalizationSuggestionResult.TypeCount::count)
+                .containsExactly(
+                        tuple("DURABLE", 2L),
+                        tuple("COUPON_OR_DEPOSIT", 1L),
+                        tuple("NON_REPURCHASE", 1L)
+                );
+    }
+
+    @Test
+    void listAutoExcludedShouldUseDefaultMinConfidence() throws Exception {
+        Fixture fixture = fixture("list-auto-excluded-default-confidence.sqlite",
+                properties(true, "llm_suggestion"), advisor());
+        long batchId = 1L;
+        saveSuggestion(fixture, batchId, "高置信耐用品", "默认", "EXCLUDE",
+                "DURABLE", 0.90D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "低置信耐用品", "默认", "EXCLUDE",
+                "DURABLE", 0.89D, false, "auto_excluded");
+
+        AutoExcludedNormalizationSuggestionResult result = fixture.suggestionService()
+                .listAutoExcluded(batchId, null);
+
+        assertThat(result.minConfidence()).isEqualTo(0.9D);
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.items()).extracting(AutoExcludedNormalizationSuggestionResult.Item::rawProductName)
+                .containsExactly("高置信耐用品");
+    }
+
+    @Test
+    void listAutoExcludedShouldRespectCustomMinConfidence() throws Exception {
+        Fixture fixture = fixture("list-auto-excluded-custom-confidence.sqlite",
+                properties(true, "llm_suggestion"), advisor());
+        long batchId = 1L;
+        saveSuggestion(fixture, batchId, "高置信耐用品", "默认", "EXCLUDE",
+                "DURABLE", 0.96D, false, "auto_excluded");
+        saveSuggestion(fixture, batchId, "默认阈值耐用品", "默认", "EXCLUDE",
+                "DURABLE", 0.94D, false, "auto_excluded");
+
+        AutoExcludedNormalizationSuggestionResult result = fixture.suggestionService()
+                .listAutoExcluded(batchId, 0.95D);
+
+        assertThat(result.minConfidence()).isEqualTo(0.95D);
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.items()).extracting(AutoExcludedNormalizationSuggestionResult.Item::rawProductName)
+                .containsExactly("高置信耐用品");
+    }
+
+    @Test
+    void listAutoExcludedShouldRejectInvalidParametersBeforeDatabaseQuery() {
+        DatabaseInitializer databaseInitializer = mock(DatabaseInitializer.class);
+        NormalizationSuggestionRepository suggestionRepository = mock(NormalizationSuggestionRepository.class);
+        NormalizationSuggestionService service = new NormalizationSuggestionService(
+                databaseInitializer, null, null, null, null, null, suggestionRepository,
+                null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.listAutoExcluded(0L, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("batchId 必须大于 0");
+        assertThatThrownBy(() -> service.listAutoExcluded(1L, 1.01D))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("minConfidence 必须在 0.0 到 1.0 之间");
+        verifyNoInteractions(databaseInitializer, suggestionRepository);
+    }
+
+    @Test
     void batchApplyShouldWriteAliasWithoutChangingPurchaseRecordDecision() throws Exception {
         StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
         Fixture fixture = fixture("batch-apply.sqlite", properties(true, "llm_suggestion"), advisor);
@@ -1487,6 +1734,24 @@ class NormalizationSuggestionServiceTest {
     private NormalizationAdvisorResult exclude(String productName, String productType) {
         return new NormalizationAdvisorResult(productName, "默认", "EXCLUDE", null, null,
                 productType, null, "UNKNOWN", 0.95D, false, "高置信排除", List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造指定 SKU、商品类型和置信度的 EXCLUDE 结果，用于测试自动排除与复核边界。
+     *
+     * @param productName 原始商品名
+     * @param sku         商品规格或 SKU
+     * @param productType LLM 建议商品类型
+     * @param confidence  LLM 建议置信度
+     * @return 测试用 LLM 排除建议
+     */
+    private NormalizationAdvisorResult excludeTyped(String productName,
+                                                    String sku,
+                                                    String productType,
+                                                    double confidence) {
+        return new NormalizationAdvisorResult(productName, sku, "EXCLUDE", null, null,
+                productType, null, "UNKNOWN", confidence, false, "高置信排除",
+                List.of("测试证据"), false);
     }
 
     /**
@@ -1660,6 +1925,23 @@ class NormalizationSuggestionServiceTest {
                 null, null, "UNKNOWN", null, "UNKNOWN", 0.6D,
                 true, "已有 " + status + " 建议", "[]", "test", "test-model", "test-prompt",
                 status, ClockUtils.nowText(), null));
+    }
+
+    private long saveSuggestion(Fixture fixture,
+                                long batchId,
+                                String productName,
+                                String sku,
+                                String action,
+                                String productType,
+                                double confidence,
+                                boolean reviewRequired,
+                                String status) {
+        String aliasKey = fixture.cleaner().aliasKey(productName, sku);
+        return fixture.suggestionRepository().save(new NormalizationSuggestion(
+                null, batchId, productName, sku, aliasKey, action,
+                null, null, productType, null, "UNKNOWN", confidence,
+                reviewRequired, "测试自动排除原因", "[]", "test", "test-model", "test-prompt",
+                status, "2026-06-12 10:00:00", null));
     }
 
     private NormalizationProperties properties(boolean llmEnabled, String fallbackReviewMode) {

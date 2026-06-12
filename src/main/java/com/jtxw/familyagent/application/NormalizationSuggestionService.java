@@ -90,6 +90,10 @@ public class NormalizationSuggestionService {
      */
     private static final String ACTION_REVIEW = "REVIEW";
     /**
+     * 自动排除只读查询的默认最低置信度阈值，低于该阈值的 EXCLUDE 记录仍不进入展示结果。
+     */
+    private static final double DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE = 0.9D;
+    /**
      * 可进入复购价格基准的长期消耗品类型。
      */
     private static final String PRODUCT_TYPE_REPURCHASE_CONSUMABLE = "REPURCHASE_CONSUMABLE";
@@ -115,6 +119,11 @@ public class NormalizationSuggestionService {
      */
     private static final Set<String> AUTO_EXCLUDED_PRODUCT_TYPES = Set.of(
             PRODUCT_TYPE_DURABLE, PRODUCT_TYPE_NON_REPURCHASE, PRODUCT_TYPE_COUPON_OR_DEPOSIT);
+    /**
+     * 自动排除统计展示顺序，保证 typeCounts 在 REST 响应和测试中具备确定性。
+     */
+    private static final List<String> AUTO_EXCLUDED_PRODUCT_TYPE_ORDER = List.of(
+            PRODUCT_TYPE_DURABLE, PRODUCT_TYPE_COUPON_OR_DEPOSIT, PRODUCT_TYPE_NON_REPURCHASE);
     /**
      * reasonCode 明确表达需要复核的集合，只用于安全降级，不用于反推商品分类。
      */
@@ -155,7 +164,7 @@ public class NormalizationSuggestionService {
     private static final List<String> CLOTHING_DURABLE_KEYWORDS = List.of(
             "衣", "裤", "裙", "袜", "鞋", "靴", "拖鞋", "背心", "T恤", "短袖", "长袖", "衬衫",
             "外套", "毛衣", "开衫", "内裤", "文胸", "泳衣", "泳裤", "潜水服", "防晒衣", "防晒衬衫",
-            "防晒服", "速干衣", "球衣", "运动裤", "吊带", "连衣裙", "套装");
+            "防晒服", "速干衣", "球衣", "运动裤", "吊带", "连衣裙", "套装", "雨衣", "雨披");
     /**
      * 防晒服饰关键词，用于区别防晒霜、防晒乳等个人护理消耗品。
      */
@@ -245,6 +254,17 @@ public class NormalizationSuggestionService {
     private static final List<String> REPURCHASE_PRODUCT_KEYWORDS = List.of("猫主食罐", "主食罐", "猫罐头", "湿粮",
             "餐盒", "一餐一杯", "猫条", "猫汤包", "咕噜酱", "补水零食", "猫零食", "猫咪零食", "猫粮",
             "全价猫粮", "主粮", "干粮", "美瞳", "隐形眼镜", "日抛", "月抛", "精华液", "精华");
+    /**
+     * 可能进入价格基准或需要确认归一化粒度的复购消耗品关键词，命中时不能按高置信 DURABLE 直接自动排除。
+     */
+    private static final List<String> PROTECTED_REPURCHASE_CANDIDATE_KEYWORDS = List.of(
+            "猫食品", "猫主食罐", "主食罐", "猫罐头", "湿粮", "猫条", "猫汤包", "猫零食", "猫咪零食",
+            "猫粮", "猫砂", "纸巾", "抽纸", "卫生巾", "洗衣液", "洗衣凝珠", "防晒霜",
+            "防晒乳", "防晒喷雾", "精华液", "精华", "美瞳", "隐形眼镜", "日抛", "月抛");
+    /**
+     * 宠物场景中的耐用品关键词，虽然包含猫砂、猫等复购候选词，但不应被复购保护规则拦截。
+     */
+    private static final List<String> PET_DURABLE_KEYWORDS = List.of("猫砂盆", "猫砂铲", "猫厕所", "猫窝", "猫抓板");
     /**
      * SKU 或商品名中的重量规格正则，用于 targetUnit 兜底推断。
      */
@@ -512,9 +532,13 @@ public class NormalizationSuggestionService {
                     batchFailedCount++;
                     failureTypeCounts.merge(errorType(suggestion.reason()), 1, Integer::sum);
                     createNormalizationReview(candidate.record(), suggestion.reason());
-                } else {
+                } else if (STATUS_PENDING_REVIEW.equals(status)) {
                     pendingReviewCount++;
                     createNormalizationReview(candidate.record(), suggestion.reason());
+                } else {
+                    pendingReviewCount++;
+                    createNormalizationReview(candidate.record(),
+                            appendReason(suggestion.reason(), "未知归一化建议状态：" + status));
                 }
             }
             long saveElapsedMs = elapsedMs(saveStartNanos);
@@ -556,6 +580,44 @@ public class NormalizationSuggestionService {
     public List<NormalizationSuggestion> listByBatchId(long batchId) {
         databaseInitializer.initialize();
         return normalizationSuggestionRepository.listByBatchId(batchId);
+    }
+
+    /**
+     * 查询指定批次中已自动排除且无需人工复核的高置信 EXCLUDE 建议。
+     *
+     * <p>该方法只读取 normalization_suggestions，用于展示 LLM 自动减少人工复核的记录明细；
+     * 不写入 product_aliases，不修改 purchase_records.decision，也不更新 suggestion 状态。</p>
+     *
+     * @param batchId       导入批次 ID，必须大于 0
+     * @param minConfidence 最低置信度阈值，允许为空；为空时使用默认值 0.9
+     * @return 自动排除建议查询结果，包含总数、类型分布和明细
+     */
+    public AutoExcludedNormalizationSuggestionResult listAutoExcluded(long batchId, Double minConfidence) {
+        if (batchId <= 0) {
+            throw new IllegalArgumentException("batchId 必须大于 0");
+        }
+        double resolvedMinConfidence = minConfidence == null ? DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE : minConfidence;
+        if (resolvedMinConfidence < 0.0D || resolvedMinConfidence > 1.0D) {
+            throw new IllegalArgumentException("minConfidence 必须在 0.0 到 1.0 之间");
+        }
+        databaseInitializer.initialize();
+        List<NormalizationSuggestion> suggestions = normalizationSuggestionRepository
+                .listAutoExcludedByBatchId(batchId, resolvedMinConfidence);
+        Map<String, Long> typeCountMap = new LinkedHashMap<>();
+        for (NormalizationSuggestion suggestion : suggestions) {
+            typeCountMap.merge(suggestion.productType(), 1L, Long::sum);
+        }
+        List<AutoExcludedNormalizationSuggestionResult.TypeCount> typeCounts = AUTO_EXCLUDED_PRODUCT_TYPE_ORDER
+                .stream()
+                .filter(typeCountMap::containsKey)
+                .map(productType -> new AutoExcludedNormalizationSuggestionResult.TypeCount(
+                        productType, typeCountMap.get(productType)))
+                .toList();
+        List<AutoExcludedNormalizationSuggestionResult.Item> items = suggestions.stream()
+                .map(this::toAutoExcludedItem)
+                .toList();
+        return new AutoExcludedNormalizationSuggestionResult(batchId, resolvedMinConfidence, items.size(),
+                typeCounts, items);
     }
 
     /**
@@ -1115,7 +1177,7 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradeCouponDepositRight(NormalizationAdvisorResult result,
                                                             String canonicalNormalizedName,
                                                             SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String text = rawSuggestionText(result);
@@ -1137,14 +1199,16 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeClothingDurable(NormalizationAdvisorResult result,
                                                          SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        String text = rawSuggestionText(result);
+        if (!containsAnyText(text, CLOTHING_DURABLE_KEYWORDS)) {
             return decision;
         }
-        if (!containsAnyText(rawSuggestionText(result), CLOTHING_DURABLE_KEYWORDS)) {
-            return decision;
+        if (isProtectedRepurchaseCandidateText(text)) {
+            return decision.reviewAs(PRODUCT_TYPE_REPURCHASE_CONSUMABLE, "潜在复购消耗品需人工复核");
         }
-        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
-            return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：高置信耐用品，自动排除");
+        if (PRODUCT_TYPE_DURABLE.equals(decision.productType())
+                && result.confidence() >= DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE) {
+            return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：高置信服饰耐用品，自动排除");
         }
         return decision.review("后处理修正：高风险自动批准过滤，转人工复核");
     }
@@ -1158,13 +1222,14 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeSunscreenDurable(NormalizationAdvisorResult result,
                                                           SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         if (!isSunscreenDurable(result.rawProductName(), result.sku())) {
             return decision;
         }
-        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
+        if (PRODUCT_TYPE_DURABLE.equals(decision.productType())
+                && result.confidence() >= DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE) {
             return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：防晒服饰耐用品，自动排除");
         }
         return decision.review("后处理修正：防晒服饰不是防晒护理消耗品，转人工复核");
@@ -1179,7 +1244,16 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeHighConfidenceDurable(NormalizationAdvisorResult result,
                                                                SafetyGuardDecision decision) {
-        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
+        if (!PRODUCT_TYPE_DURABLE.equals(decision.productType())) {
+            return decision;
+        }
+        if (isProtectedRepurchaseCandidate(result)) {
+            String reason = containsPetProductDomain(rawSuggestionText(result))
+                    ? "猫食品消耗品被误判为耐用品，需人工复核"
+                    : "潜在复购消耗品被误判为耐用品，需人工复核";
+            return decision.reviewAs(PRODUCT_TYPE_REPURCHASE_CONSUMABLE, reason);
+        }
+        if (result.confidence() >= DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE) {
             return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：高置信耐用品，自动排除");
         }
         return decision;
@@ -1196,7 +1270,7 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradePetDomainMismatch(NormalizationAdvisorResult result,
                                                            String canonicalNormalizedName,
                                                            SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         if (!PET_FOOD_NORMALIZED_NAMES.contains(safeText(canonicalNormalizedName))) {
@@ -1218,7 +1292,7 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeReviewReasonCode(NormalizationAdvisorResult result,
                                                           SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String reasonCode = safeText(result.reasonCode()).toUpperCase();
@@ -1240,7 +1314,7 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeReviewExplanation(NormalizationAdvisorResult result,
                                                            SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         if (decision.reviewRequired()) {
@@ -1262,7 +1336,7 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeInvalidTargetUnit(NormalizationAdvisorResult result,
                                                            SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String targetUnit = safeText(result.targetUnit()).toUpperCase();
@@ -1281,7 +1355,7 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeCoffeeBeverage(NormalizationAdvisorResult result,
                                                         SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String text = rawSuggestionText(result);
@@ -1320,7 +1394,7 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradeOrdinaryFood(NormalizationAdvisorResult result,
                                                       String canonicalNormalizedName,
                                                       SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String text = safeText(result.rawProductName()) + " " + safeText(result.sku()) + " "
@@ -1344,7 +1418,7 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeSampleOrGift(NormalizationAdvisorResult result,
                                                       SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String text = safeText(result.rawProductName()) + " " + safeText(result.sku());
@@ -1368,7 +1442,7 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradeCatMainCanAmbiguousSoup(NormalizationAdvisorResult result,
                                                                  String canonicalNormalizedName,
                                                                  SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         if (!"猫主食罐".equals(safeText(canonicalNormalizedName))) {
@@ -1392,7 +1466,7 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradePackageUnitWhenSpecExists(NormalizationAdvisorResult result,
                                                                    String canonicalTargetUnit,
                                                                    SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
@@ -1418,7 +1492,7 @@ public class NormalizationSuggestionService {
                                                                     String canonicalNormalizedName,
                                                                     String canonicalTargetUnit,
                                                                     SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
@@ -1447,7 +1521,7 @@ public class NormalizationSuggestionService {
                                                           String canonicalNormalizedName,
                                                           String canonicalTargetUnit,
                                                           SafetyGuardDecision decision) {
-        if (isAutoExcludedDecision(decision)) {
+        if (shouldAutoExcludeWithoutReview(result, decision)) {
             return decision;
         }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
@@ -1508,8 +1582,7 @@ public class NormalizationSuggestionService {
      * @return EXCLUDE、无需复核且类型属于耐用品、非复购或券定金权益时返回 true
      */
     private boolean isAutoExcludedDecision(SafetyGuardDecision decision) {
-        return isAutoExcludedDecision(decision.action(), decision.productType(), decision.reviewRequired(),
-                decision.reason());
+        return isAutoExcludedDecision(decision.action(), decision.productType(), decision.reviewRequired());
     }
 
     /**
@@ -1518,14 +1591,67 @@ public class NormalizationSuggestionService {
      * @param action         当前建议动作
      * @param productType    当前商品类型
      * @param reviewRequired 当前是否需要人工复核
-     * @param reason         当前 reason 文本
      * @return EXCLUDE、无需复核且类型属于耐用品、非复购或券定金权益时返回 true
      */
-    private boolean isAutoExcludedDecision(String action, String productType, boolean reviewRequired, String reason) {
+    private boolean isAutoExcludedDecision(String action, String productType, boolean reviewRequired) {
         return ACTION_EXCLUDE.equals(action)
                 && !reviewRequired
-                && AUTO_EXCLUDED_PRODUCT_TYPES.contains(productType)
-                && safeText(reason).contains("后处理修正");
+                && AUTO_EXCLUDED_PRODUCT_TYPES.contains(productType);
+    }
+
+    /**
+     * 判断当前安全决策是否可以作为高置信自动排除结果保留。
+     *
+     * @param result   LLM 原始结构化建议，用于读取置信度和商品文本
+     * @param decision 当前安全决策
+     * @return 满足 EXCLUDE、无需复核、排除类型、高置信且未命中复购保护关键词时返回 true
+     */
+    private boolean shouldAutoExcludeWithoutReview(NormalizationAdvisorResult result,
+                                                   SafetyGuardDecision decision) {
+        return shouldAutoExcludeWithoutReview(result, decision.action(), decision.productType(),
+                decision.reviewRequired());
+    }
+
+    /**
+     * 判断给定动作、类型和复核标记是否可进入 auto_excluded 状态。
+     *
+     * @param result         LLM 原始结构化建议，用于读取置信度和商品文本
+     * @param action         当前建议动作
+     * @param productType    当前商品类型
+     * @param reviewRequired 当前是否需要人工复核
+     * @return 满足自动排除结构条件、置信度阈值且不是复购保护候选时返回 true
+     */
+    private boolean shouldAutoExcludeWithoutReview(NormalizationAdvisorResult result,
+                                                   String action,
+                                                   String productType,
+                                                   boolean reviewRequired) {
+        return isAutoExcludedDecision(action, productType, reviewRequired)
+                && result.confidence() >= DEFAULT_AUTO_EXCLUDED_MIN_CONFIDENCE
+                && !isProtectedRepurchaseCandidate(result);
+    }
+
+    /**
+     * 判断商品标题或 SKU 是否命中必须保留人工判断的复购候选。
+     *
+     * @param result LLM 原始结构化建议
+     * @return 命中猫食品、美瞳、咖啡、个人护理等复购候选语义时返回 true
+     */
+    private boolean isProtectedRepurchaseCandidate(NormalizationAdvisorResult result) {
+        return isProtectedRepurchaseCandidateText(rawSuggestionText(result));
+    }
+
+    /**
+     * 判断文本是否命中不能自动排除的复购候选关键词。
+     *
+     * @param text 商品标题、SKU 或建议文本
+     * @return 命中复购候选关键词或真实咖啡饮品语义时返回 true
+     */
+    private boolean isProtectedRepurchaseCandidateText(String text) {
+        if (containsAnyText(text, PET_DURABLE_KEYWORDS) || containsAnyText(text, COFFEE_DURABLE_KEYWORDS)) {
+            return false;
+        }
+        return containsAnyText(text, PROTECTED_REPURCHASE_CANDIDATE_KEYWORDS)
+                || isCoffeeBeverageReviewText(text);
     }
 
     /**
@@ -1613,14 +1739,14 @@ public class NormalizationSuggestionService {
             resolvedReviewRequired = true;
             resolvedReason = appendReason(resolvedReason, "单位需复核");
         }
-        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired, resolvedReason)
+        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired)
                 && containsPetDomainReason(resolvedReason)
                 && !containsPetProductDomain(rawSuggestionText(result))) {
             resolvedAction = ACTION_REVIEW;
             resolvedReviewRequired = true;
             resolvedReason = appendReason(sanitizeCrossDomainReason(resolvedReason), "后处理修正：跨域 reason 已清理");
         }
-        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired, resolvedReason)
+        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired)
                 && containsAnyText(resolvedReason, REVIEW_TEXT_KEYWORDS)) {
             resolvedAction = ACTION_REVIEW;
             resolvedReviewRequired = true;
@@ -1636,9 +1762,14 @@ public class NormalizationSuggestionService {
                     appendReason(resolvedReason, "后处理修正：状态与动作不一致，已按状态机归一化"),
                     STATUS_PENDING_REVIEW);
         }
-        if (ACTION_EXCLUDE.equals(resolvedAction)) {
+        if (shouldAutoExcludeWithoutReview(result, resolvedAction, resolvedProductType, resolvedReviewRequired)) {
             return new SuggestionDecision(ACTION_EXCLUDE, resolvedProductType, false, resolvedReason,
                     STATUS_AUTO_EXCLUDED);
+        }
+        if (ACTION_EXCLUDE.equals(resolvedAction)) {
+            return new SuggestionDecision(ACTION_REVIEW, resolvedProductType, true,
+                    appendReason(resolvedReason, "后处理修正：低置信或潜在复购候选，转人工复核"),
+                    STATUS_PENDING_REVIEW);
         }
         return new SuggestionDecision(ACTION_NORMALIZE, resolvedProductType, false, resolvedReason,
                 STATUS_PENDING_BATCH_APPROVAL);
@@ -1755,6 +1886,38 @@ public class NormalizationSuggestionService {
             return baseReason;
         }
         return sanitizeReasonPunctuation(baseReason + "；" + extraReason);
+    }
+
+    /**
+     * 将数据库建议实体转换为自动排除只读接口明细项。
+     *
+     * @param suggestion 已通过仓储条件筛选的自动排除建议
+     * @return 不包含 evidenceJson 的响应明细项
+     */
+    private AutoExcludedNormalizationSuggestionResult.Item toAutoExcludedItem(NormalizationSuggestion suggestion) {
+        return new AutoExcludedNormalizationSuggestionResult.Item(
+                suggestion.id(),
+                suggestion.rawProductName(),
+                suggestion.sku(),
+                suggestion.aliasKey(),
+                suggestion.action(),
+                suggestion.productType(),
+                suggestion.confidence(),
+                suggestion.reviewRequired(),
+                suggestion.status(),
+                suggestion.reason(),
+                toResponseDateTimeText(suggestion.createdAt())
+        );
+    }
+
+    /**
+     * 将数据库中的空格分隔时间转换为 REST 响应使用的 ISO 风格时间文本。
+     *
+     * @param createdAt 数据库存储的创建时间文本，通常为 yyyy-MM-dd HH:mm:ss
+     * @return yyyy-MM-dd'T'HH:mm:ss 风格时间文本；空值保持为空字符串
+     */
+    private String toResponseDateTimeText(String createdAt) {
+        return safeText(createdAt).replace(' ', 'T');
     }
 
     private void createNormalizationReview(PurchaseRecord record, String reason) {

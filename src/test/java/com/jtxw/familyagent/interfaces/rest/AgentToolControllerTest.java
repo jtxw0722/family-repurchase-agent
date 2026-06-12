@@ -354,6 +354,55 @@ class AgentToolControllerTest {
     }
 
     @Test
+    void listAutoExcludedNormalizationSuggestionsShouldUseDefaultMinConfidence() throws Exception {
+        when(normalizationSuggestionService.listAutoExcluded(1L, null))
+                .thenReturn(autoExcludedResult(0.9D));
+
+        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
+                        .param("batchId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.batchId").value(1))
+                .andExpect(jsonPath("$.minConfidence").value(0.9))
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.typeCounts[0].productType").value("DURABLE"))
+                .andExpect(jsonPath("$.typeCounts[0].count").value(1))
+                .andExpect(jsonPath("$.items[0].suggestionId").value(11))
+                .andExpect(jsonPath("$.items[0].rawProductName").value("猫砂盆大号"))
+                .andExpect(jsonPath("$.items[0].sku").value("默认"))
+                .andExpect(jsonPath("$.items[0].aliasKey").value("maoshapendahao"))
+                .andExpect(jsonPath("$.items[0].action").value("EXCLUDE"))
+                .andExpect(jsonPath("$.items[0].productType").value("DURABLE"))
+                .andExpect(jsonPath("$.items[0].confidence").value(0.96))
+                .andExpect(jsonPath("$.items[0].reviewRequired").value(false))
+                .andExpect(jsonPath("$.items[0].status").value("auto_excluded"))
+                .andExpect(jsonPath("$.items[0].reason").value("后处理修正：高置信耐用品，自动排除"))
+                .andExpect(jsonPath("$.items[0].createdAt").value("2026-06-12T10:00:00"));
+    }
+
+    @Test
+    void listAutoExcludedNormalizationSuggestionsShouldPassCustomMinConfidence() throws Exception {
+        when(normalizationSuggestionService.listAutoExcluded(1L, 0.95D))
+                .thenReturn(autoExcludedResult(0.95D));
+
+        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
+                        .param("batchId", "1")
+                        .param("minConfidence", "0.95"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.minConfidence").value(0.95));
+    }
+
+    @Test
+    void listAutoExcludedNormalizationSuggestionsShouldReturnBadRequestForInvalidBatchId() throws Exception {
+        when(normalizationSuggestionService.listAutoExcluded(0L, null))
+                .thenThrow(new IllegalArgumentException("batchId 必须大于 0"));
+
+        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
+                        .param("batchId", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("batchId 必须大于 0"));
+    }
+
+    @Test
     void analyzeNormalizationShouldReturnConflictWhenActiveTaskExists() throws Exception {
         when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
                 .thenThrow(new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试"));
@@ -394,6 +443,28 @@ class AgentToolControllerTest {
                                 0.0125, "抽", 3120.0, "抽")
                 ), 0, List.of(), List.of()),
                 List.of()
+        );
+    }
+
+    private AutoExcludedNormalizationSuggestionResult autoExcludedResult(double minConfidence) {
+        return new AutoExcludedNormalizationSuggestionResult(
+                1L,
+                minConfidence,
+                1,
+                List.of(new AutoExcludedNormalizationSuggestionResult.TypeCount("DURABLE", 1L)),
+                List.of(new AutoExcludedNormalizationSuggestionResult.Item(
+                        11L,
+                        "猫砂盆大号",
+                        "默认",
+                        "maoshapendahao",
+                        "EXCLUDE",
+                        "DURABLE",
+                        0.96D,
+                        false,
+                        "auto_excluded",
+                        "后处理修正：高置信耐用品，自动排除",
+                        "2026-06-12T10:00:00"
+                ))
         );
     }
 
