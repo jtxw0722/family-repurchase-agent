@@ -94,10 +94,27 @@ public class NormalizationSuggestionService {
      */
     private static final String PRODUCT_TYPE_REPURCHASE_CONSUMABLE = "REPURCHASE_CONSUMABLE";
     /**
+     * 耐用品类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_DURABLE = "DURABLE";
+    /**
+     * 非复购商品类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_NON_REPURCHASE = "NON_REPURCHASE";
+    /**
+     * 券、定金、尾款或虚拟权益类型，不进入复购消耗品价格基准。
+     */
+    private static final String PRODUCT_TYPE_COUPON_OR_DEPOSIT = "COUPON_OR_DEPOSIT";
+    /**
      * 非正向商品类型；若与 NORMALIZE 同时出现，说明 LLM 输出自相矛盾，只能进入人工复核。
      */
     private static final Set<String> NON_POSITIVE_PRODUCT_TYPES = Set.of(
-            "DURABLE", "NON_REPURCHASE", "COUPON_OR_DEPOSIT", "UNKNOWN");
+            PRODUCT_TYPE_DURABLE, PRODUCT_TYPE_NON_REPURCHASE, PRODUCT_TYPE_COUPON_OR_DEPOSIT, "UNKNOWN");
+    /**
+     * 已可自动排除的商品类型，后续普通人工复核降级规则不得覆盖。
+     */
+    private static final Set<String> AUTO_EXCLUDED_PRODUCT_TYPES = Set.of(
+            PRODUCT_TYPE_DURABLE, PRODUCT_TYPE_NON_REPURCHASE, PRODUCT_TYPE_COUPON_OR_DEPOSIT);
     /**
      * reasonCode 明确表达需要复核的集合，只用于安全降级，不用于反推商品分类。
      */
@@ -133,6 +150,67 @@ public class NormalizationSuggestionService {
     private static final List<String> SAMPLE_OR_GIFT_KEYWORDS = List.of(
             "试吃", "试用", "尝鲜", "U先", "U选", "小样", "体验装", "会员试用", "赠品", "赠1", "加赠", "抢先加赠");
     /**
+     * 服饰耐用品关键词；命中后不允许进入 pending_batch_approval。
+     */
+    private static final List<String> CLOTHING_DURABLE_KEYWORDS = List.of(
+            "衣", "裤", "裙", "袜", "鞋", "靴", "拖鞋", "背心", "T恤", "短袖", "长袖", "衬衫",
+            "外套", "毛衣", "开衫", "内裤", "文胸", "泳衣", "泳裤", "潜水服", "防晒衣", "防晒衬衫",
+            "防晒服", "速干衣", "球衣", "运动裤", "吊带", "连衣裙", "套装");
+    /**
+     * 防晒服饰关键词，用于区别防晒霜、防晒乳等个人护理消耗品。
+     */
+    private static final List<String> SUNSCREEN_DURABLE_KEYWORDS = List.of(
+            "防晒衣", "防晒衬衫", "防晒服", "防晒速干衣", "防晒外套", "防晒罩衫", "潜水服", "水母服", "冲浪服");
+    /**
+     * 防晒个人护理消耗品关键词，命中时不按服饰耐用品处理。
+     */
+    private static final List<String> SUNSCREEN_CONSUMABLE_KEYWORDS = List.of(
+            "防晒霜", "防晒乳", "防晒喷雾", "防晒啫喱", "防晒液");
+    /**
+     * 纯权益、券、定金和尾款关键词；无真实商品本体时自动排除。
+     */
+    private static final List<String> COUPON_DEPOSIT_RIGHT_KEYWORDS = List.of(
+            "预售", "付定", "定金", "锁定", "0.01", "尾款", "加赠礼", "预定礼", "权益",
+            "券", "优惠券", "代金券");
+    /**
+     * 酒店、住宿和旅行服务关键词。
+     */
+    private static final List<String> TRAVEL_SERVICE_KEYWORDS = List.of(
+            "酒店", "住宿", "大床房", "高级大床房", "门票", "机票", "火车票", "旅行", "服务");
+    /**
+     * 咖啡类复购饮品强关键词；该类商品具备复购属性，但品类和规格差异较大，需人工确认归一化结果。
+     */
+    private static final List<String> COFFEE_BEVERAGE_STRONG_KEYWORDS = List.of(
+            "咖啡", "咖啡粉", "咖啡液", "咖啡豆", "冻干咖啡", "挂耳咖啡", "胶囊咖啡", "即饮咖啡",
+            "速溶咖啡", "黑咖啡");
+    /**
+     * 咖啡类复购饮品弱关键词；只有与强咖啡上下文共同出现时才允许触发咖啡复核。
+     */
+    private static final List<String> COFFEE_BEVERAGE_WEAK_KEYWORDS = List.of(
+            "美式", "拿铁", "Americano", "Latte", "浓缩液");
+    /**
+     * 颜色语义中的咖啡词，清理后再做咖啡饮品判断，避免服饰颜色误触发。
+     */
+    private static final List<String> COFFEE_COLOR_EXCLUDE_KEYWORDS = List.of(
+            "咖啡色", "深咖啡", "浅咖啡", "咖啡棕");
+    /**
+     * 咖啡相关耐用品关键词；命中时不能按咖啡饮品规则处理。
+     */
+    private static final List<String> COFFEE_DURABLE_KEYWORDS = List.of(
+            "咖啡杯", "咖啡机", "咖啡壶", "磨豆机", "咖啡滤纸架", "滤纸架", "咖啡勺", "咖啡器具");
+    /**
+     * 建议标准名中不允许出现的包装形态或销售形态词，避免把规格层级沉淀为标准品类。
+     */
+    private static final List<String> UNSAFE_NORMALIZED_NAME_PACKAGING_KEYWORDS = List.of(
+            "整箱", "囤货装", "家庭装", "组合装", "套装", "大包装", "小包装", "分享装", "体验装",
+            "试用装", "试吃装", "尝鲜装", "旅行装", "补充装", "替换装", "加量装", "优惠装", "礼盒装");
+    /**
+     * 建议标准名中不允许出现的促销、交易和销售形态词。
+     */
+    private static final List<String> UNSAFE_NORMALIZED_NAME_PROMOTION_KEYWORDS = List.of(
+            "双11", "618", "优惠", "优惠价", "秒杀", "预售", "付定", "定金", "尾款", "锁定",
+            "加赠", "赠品", "买一送一", "直播间", "囤货");
+    /**
      * 宠物食品标准名称集合，用于判断重量/体积 targetUnit 是否需要商品标题或 SKU 中有规格证据。
      */
     private static final Set<String> PET_FOOD_NORMALIZED_NAMES = Set.of(
@@ -143,6 +221,10 @@ public class NormalizationSuggestionService {
     private static final List<String> PET_FOOD_KEYWORDS = List.of(
             "猫主食罐", "主食罐", "猫罐头", "湿粮", "餐盒", "猫条", "猫汤包", "猫零食", "猫咪零食",
             "猫粮", "主食冻干", "猫冻干", "冻干");
+    /**
+     * 宠物商品域关键词，用于区分真实宠物商品与咖啡冻干等跨域误判。
+     */
+    private static final List<String> PET_PRODUCT_DOMAIN_KEYWORDS = List.of("猫", "犬", "狗", "宠物");
     /**
      * 汤类、补水类猫食品语义容易在主食罐、零食罐和补水零食之间摇摆，不能直接归入猫主食罐价格基准。
      */
@@ -175,6 +257,12 @@ public class NormalizationSuggestionService {
      * SKU 或商品名中的数量包装单位正则，用于 targetUnit 兜底推断。
      */
     private static final Pattern COUNT_UNIT_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?\\s*(罐|包|盒|杯)");
+    /**
+     * 建议标准名中的规格数量特征，例如 268ml、15瓶、3000抽。
+     */
+    private static final Pattern UNSAFE_NORMALIZED_NAME_SPEC_PATTERN = Pattern.compile(
+            "\\d+(?:\\.\\d+)?\\s*(?:g|kg|ml|l|瓶|罐|包|袋|盒|片|抽|件|只|条|支|枚|颗)",
+            Pattern.CASE_INSENSITIVE);
     /**
      * LLM debug dump 文件名时间戳格式。
      */
@@ -716,8 +804,8 @@ public class NormalizationSuggestionService {
     }
 
     private NormalizationAdviceObservation failedObservation(Exception e,
-                                                            NormalizationAdviceRequestMetrics requestMetrics,
-                                                            long batchStartNanos) {
+                                                             NormalizationAdviceRequestMetrics requestMetrics,
+                                                             long batchStartNanos) {
         return new NormalizationAdviceObservation(
                 requestMetrics.promptChars(),
                 requestMetrics.requestBytes(),
@@ -870,35 +958,14 @@ public class NormalizationSuggestionService {
     private record TruncatedText(String text, boolean truncated) {
     }
 
-    private String status(NormalizationAdvisorResult result) {
-        if (result.failed()) {
-            return STATUS_FAILED;
-        }
-        NormalizationProperties.Llm llm = normalizationProperties.getLlm();
-        if (ACTION_EXCLUDE.equals(result.action())
-                && "COUPON_OR_DEPOSIT".equals(result.productType())
-                && !result.reviewRequired()) {
-            return STATUS_AUTO_EXCLUDED;
-        }
-        if (ACTION_EXCLUDE.equals(result.action())
-                && List.of("NON_REPURCHASE", "DURABLE", "COUPON_OR_DEPOSIT").contains(result.productType())
-                && result.confidence() >= llm.getExcludeConfidenceThreshold()
-                && !result.reviewRequired()) {
-            return STATUS_AUTO_EXCLUDED;
-        }
-        if (ACTION_NORMALIZE.equals(result.action())
-                && PRODUCT_TYPE_REPURCHASE_CONSUMABLE.equals(result.productType())
-                && result.confidence() >= llm.getNormalizeConfidenceThreshold()) {
-            return STATUS_PENDING_BATCH_APPROVAL;
-        }
-        return STATUS_PENDING_REVIEW;
-    }
-
     private PreparedSuggestion toSuggestion(long batchId,
                                             String aliasKey,
                                             NormalizationAdvisorResult result) {
         String canonicalNormalizedName = suggestedNormalizedNameCanonicalizer.canonicalize(
                 result.rawProductName(), result.sku(), result.suggestedNormalizedName());
+        if (isSunscreenDurable(result.rawProductName(), result.sku()) && "防晒".equals(canonicalNormalizedName)) {
+            canonicalNormalizedName = null;
+        }
         SuggestedTargetUnitCanonicalizer.TargetUnitSafetyResult targetUnitResult =
                 suggestedTargetUnitCanonicalizer.canonicalize(canonicalNormalizedName, result.targetUnit());
         String action = result.action();
@@ -917,22 +984,13 @@ public class NormalizationSuggestionService {
         productType = guardDecision.productType();
         reviewRequired = guardDecision.reviewRequired();
         reason = guardDecision.reason();
-        String status = status(new NormalizationAdvisorResult(result.rawProductName(), result.sku(), action,
-                result.suggestedNormalizedName(), result.rejectedNormalizedName(), productType, targetUnitResult.targetUnit(),
-                result.unitFamily(), result.confidence(), reviewRequired, reason, result.evidence(), result.failed()));
-        if (guardDecision.forcePendingReview() && !STATUS_FAILED.equals(status)) {
-            status = STATUS_PENDING_REVIEW;
-        }
-        if (STATUS_PENDING_BATCH_APPROVAL.equals(status) && !targetUnitResult.batchApprovalSafe()) {
-            status = STATUS_PENDING_REVIEW;
-            reviewRequired = true;
-            reason = appendReason(reason, "单位需复核");
-        }
-        if (!result.failed() && containsAnyText(reason, REVIEW_TEXT_KEYWORDS)) {
-            status = STATUS_PENDING_REVIEW;
-            reviewRequired = true;
-            action = ACTION_REVIEW;
-        }
+        SuggestionDecision suggestionDecision = normalizeSuggestionDecision(result, action, productType,
+                reviewRequired, reason, targetUnitResult.batchApprovalSafe());
+        action = suggestionDecision.action();
+        productType = suggestionDecision.productType();
+        reviewRequired = suggestionDecision.reviewRequired();
+        reason = suggestionDecision.reason();
+        String status = suggestionDecision.status();
         NormalizationSuggestion suggestion = new NormalizationSuggestion(
                 null,
                 batchId,
@@ -990,14 +1048,22 @@ public class NormalizationSuggestionService {
                                                   boolean reviewRequired,
                                                   String reason) {
         // decision 贯穿所有 safety guard，统一承载最终是否需要人工复核和短 reason。
-        SafetyGuardDecision decision = new SafetyGuardDecision(action, productType, reviewRequired, reason, false);
+        SafetyGuardDecision decision = new SafetyGuardDecision(action, productType, reviewRequired, reason);
         if (result.failed()) {
             return decision;
         }
+        decision = downgradeTravelService(result, decision);
+        decision = downgradeCouponDepositRight(result, canonicalNormalizedName, decision);
+        decision = downgradeClothingDurable(result, decision);
+        decision = downgradeSunscreenDurable(result, decision);
+        decision = downgradeHighConfidenceDurable(result, decision);
+        decision = downgradePetDomainMismatch(result, canonicalNormalizedName, decision);
         decision = downgradeNormalizeTypeConflict(decision);
         decision = downgradeReviewReasonCode(result, decision);
         decision = downgradeReviewExplanation(result, decision);
         decision = downgradeInvalidTargetUnit(result, decision);
+        decision = downgradeCoffeeBeverage(result, decision);
+        decision = downgradeUnsafeSuggestedNormalizedName(canonicalNormalizedName, decision);
         decision = downgradeOrdinaryFood(result, canonicalNormalizedName, decision);
         decision = downgradeSampleOrGift(result, decision);
         decision = downgradeCatMainCanAmbiguousSoup(result, canonicalNormalizedName, decision);
@@ -1013,10 +1079,134 @@ public class NormalizationSuggestionService {
      * @return 若命中类型动作冲突，则返回人工复核决策；否则返回原决策
      */
     private SafetyGuardDecision downgradeNormalizeTypeConflict(SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         if (ACTION_NORMALIZE.equals(decision.action()) && NON_POSITIVE_PRODUCT_TYPES.contains(decision.productType())) {
             return decision.review("类型动作冲突");
         }
         return decision;
+    }
+
+    /**
+     * 酒店、住宿和旅行服务不是家庭复购消耗品，直接自动排除。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 命中服务类关键词时返回自动排除决策
+     */
+    private SafetyGuardDecision downgradeTravelService(NormalizationAdvisorResult result,
+                                                       SafetyGuardDecision decision) {
+        String text = rawSuggestionText(result);
+        if (!containsAnyText(text, TRAVEL_SERVICE_KEYWORDS)) {
+            return decision;
+        }
+        return decision.exclude(PRODUCT_TYPE_NON_REPURCHASE, "后处理修正：酒店/住宿/旅行服务，自动排除");
+    }
+
+    /**
+     * 处理预售、付定、定金、权益券等高风险交易词。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param decision                当前安全决策
+     * @return 纯权益自动排除；真实商品含预售/付定时转人工复核
+     */
+    private SafetyGuardDecision downgradeCouponDepositRight(NormalizationAdvisorResult result,
+                                                            String canonicalNormalizedName,
+                                                            SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        String text = rawSuggestionText(result);
+        if (!containsAnyText(text, COUPON_DEPOSIT_RIGHT_KEYWORDS)) {
+            return decision;
+        }
+        if (hasRepurchaseProductBody(text, canonicalNormalizedName)) {
+            return decision.review("后处理修正：真实商品含预售/付定/定金，需人工确认是否为完整订单");
+        }
+        return decision.exclude(PRODUCT_TYPE_COUPON_OR_DEPOSIT, "后处理修正：纯权益/券/定金，自动排除");
+    }
+
+    /**
+     * 服饰类商品不得自动进入批量确认。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 高置信耐用品自动排除；其他冲突场景转人工复核
+     */
+    private SafetyGuardDecision downgradeClothingDurable(NormalizationAdvisorResult result,
+                                                         SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        if (!containsAnyText(rawSuggestionText(result), CLOTHING_DURABLE_KEYWORDS)) {
+            return decision;
+        }
+        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
+            return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：高置信耐用品，自动排除");
+        }
+        return decision.review("后处理修正：高风险自动批准过滤，转人工复核");
+    }
+
+    /**
+     * 防晒服饰和防晒护理用品语义分流。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 防晒衣/潜水服等耐用品自动排除或转复核
+     */
+    private SafetyGuardDecision downgradeSunscreenDurable(NormalizationAdvisorResult result,
+                                                          SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        if (!isSunscreenDurable(result.rawProductName(), result.sku())) {
+            return decision;
+        }
+        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
+            return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：防晒服饰耐用品，自动排除");
+        }
+        return decision.review("后处理修正：防晒服饰不是防晒护理消耗品，转人工复核");
+    }
+
+    /**
+     * 高置信耐用品直接排除，避免形成无意义的人工复核噪音或正向别名。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 高置信 DURABLE 返回自动排除决策
+     */
+    private SafetyGuardDecision downgradeHighConfidenceDurable(NormalizationAdvisorResult result,
+                                                               SafetyGuardDecision decision) {
+        if (PRODUCT_TYPE_DURABLE.equals(decision.productType()) && result.confidence() >= 0.85D) {
+            return decision.exclude(PRODUCT_TYPE_DURABLE, "后处理修正：高置信耐用品，自动排除");
+        }
+        return decision;
+    }
+
+    /**
+     * LLM 把普通商品跨域归入宠物食品时转人工复核，并清理跨域 reason。
+     *
+     * @param result                  LLM 原始结构化建议
+     * @param canonicalNormalizedName 归并后的系统标准品类名称
+     * @param decision                当前安全决策
+     * @return 跨域命中时返回人工复核决策
+     */
+    private SafetyGuardDecision downgradePetDomainMismatch(NormalizationAdvisorResult result,
+                                                           String canonicalNormalizedName,
+                                                           SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        if (!PET_FOOD_NORMALIZED_NAMES.contains(safeText(canonicalNormalizedName))) {
+            return decision;
+        }
+        if (containsPetProductDomain(rawSuggestionText(result))) {
+            return decision;
+        }
+        return decision.withReason(sanitizeCrossDomainReason(decision.reason()))
+                .review("后处理修正：标准品类与商品语义跨域，转人工复核");
     }
 
     /**
@@ -1028,11 +1218,14 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeReviewReasonCode(NormalizationAdvisorResult result,
                                                           SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String reasonCode = safeText(result.reasonCode()).toUpperCase();
         if (!REVIEW_REQUIRED_REASON_CODES.contains(reasonCode)) {
             return decision;
         }
-        if (ACTION_EXCLUDE.equals(decision.action()) && "COUPON_OR_DEPOSIT".equals(decision.productType())) {
+        if (ACTION_EXCLUDE.equals(decision.action()) && PRODUCT_TYPE_COUPON_OR_DEPOSIT.equals(decision.productType())) {
             return decision.forceReview("reasonCode 需复核");
         }
         return decision.review("reasonCode 需复核");
@@ -1047,6 +1240,9 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeReviewExplanation(NormalizationAdvisorResult result,
                                                            SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         if (decision.reviewRequired()) {
             return decision;
         }
@@ -1066,11 +1262,51 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeInvalidTargetUnit(NormalizationAdvisorResult result,
                                                            SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String targetUnit = safeText(result.targetUnit()).toUpperCase();
         if (!targetUnit.isBlank() && UNIT_FAMILY_VALUES.contains(targetUnit)) {
             return decision.review("单位字段非法");
         }
         return decision;
+    }
+
+    /**
+     * 咖啡类真实饮品具备复购属性，但不同形态的 normalizedName 和 targetUnit 需要人工确认。
+     *
+     * @param result   LLM 原始结构化建议
+     * @param decision 当前安全决策
+     * @return 命中咖啡饮品时返回复购消耗品人工复核决策；咖啡杯、咖啡机等耐用品不在此规则处理
+     */
+    private SafetyGuardDecision downgradeCoffeeBeverage(NormalizationAdvisorResult result,
+                                                        SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        String text = rawSuggestionText(result);
+        if (!isCoffeeBeverageReviewText(text) || containsAnyText(text, COFFEE_DURABLE_KEYWORDS)) {
+            return decision;
+        }
+        return decision.reviewAs(PRODUCT_TYPE_REPURCHASE_CONSUMABLE, "咖啡类复购品需人工确认归一化");
+    }
+
+    /**
+     * 校验 LLM 建议标准名是否混入规格、包装形态或促销销售词。
+     *
+     * @param canonicalNormalizedName 归并后的建议标准名，允许包含品牌、系列和口味
+     * @param decision                当前安全决策
+     * @return 建议标准名不安全时返回人工复核决策；否则返回原决策
+     */
+    private SafetyGuardDecision downgradeUnsafeSuggestedNormalizedName(String canonicalNormalizedName,
+                                                                       SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
+        if (!isUnsafeSuggestedNormalizedName(canonicalNormalizedName)) {
+            return decision;
+        }
+        return decision.review("建议标准名疑似包含规格/包装形态/促销销售词，需人工确认");
     }
 
     /**
@@ -1084,6 +1320,9 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradeOrdinaryFood(NormalizationAdvisorResult result,
                                                       String canonicalNormalizedName,
                                                       SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String text = safeText(result.rawProductName()) + " " + safeText(result.sku()) + " "
                 + safeText(canonicalNormalizedName);
         if (isPetFood(canonicalNormalizedName, text)) {
@@ -1105,14 +1344,17 @@ public class NormalizationSuggestionService {
      */
     private SafetyGuardDecision downgradeSampleOrGift(NormalizationAdvisorResult result,
                                                       SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String text = safeText(result.rawProductName()) + " " + safeText(result.sku());
         if (!containsAnyText(text, SAMPLE_OR_GIFT_KEYWORDS)) {
             return decision;
         }
-        if (ACTION_EXCLUDE.equals(decision.action()) && "COUPON_OR_DEPOSIT".equals(decision.productType())) {
+        if (ACTION_EXCLUDE.equals(decision.action()) && PRODUCT_TYPE_COUPON_OR_DEPOSIT.equals(decision.productType())) {
             return decision;
         }
-        return decision.review("试吃样品需复核");
+        return decision.review("试吃/尝鲜/会员试用，需人工确认是否纳入");
     }
 
     /**
@@ -1126,6 +1368,9 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradeCatMainCanAmbiguousSoup(NormalizationAdvisorResult result,
                                                                  String canonicalNormalizedName,
                                                                  SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         if (!"猫主食罐".equals(safeText(canonicalNormalizedName))) {
             return decision;
         }
@@ -1147,6 +1392,9 @@ public class NormalizationSuggestionService {
     private SafetyGuardDecision downgradePackageUnitWhenSpecExists(NormalizationAdvisorResult result,
                                                                    String canonicalTargetUnit,
                                                                    SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
         if (!WEIGHT_UNIT_PATTERN.matcher(rawText).find() && !VOLUME_UNIT_PATTERN.matcher(rawText).find()) {
             return decision;
@@ -1170,6 +1418,9 @@ public class NormalizationSuggestionService {
                                                                     String canonicalNormalizedName,
                                                                     String canonicalTargetUnit,
                                                                     SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
         if (!isPetFood(canonicalNormalizedName, rawText)) {
             return decision;
@@ -1196,6 +1447,9 @@ public class NormalizationSuggestionService {
                                                           String canonicalNormalizedName,
                                                           String canonicalTargetUnit,
                                                           SafetyGuardDecision decision) {
+        if (isAutoExcludedDecision(decision)) {
+            return decision;
+        }
         String rawText = safeText(result.rawProductName()) + " " + safeText(result.sku());
         if (!isPetFood(canonicalNormalizedName, rawText)) {
             return decision;
@@ -1216,6 +1470,62 @@ public class NormalizationSuggestionService {
     private boolean isPetFood(String canonicalNormalizedName, String text) {
         return PET_FOOD_NORMALIZED_NAMES.contains(safeText(canonicalNormalizedName))
                 || containsAnyText(text, PET_FOOD_KEYWORDS);
+    }
+
+    /**
+     * 判断文本是否命中真实咖啡饮品语义。
+     *
+     * @param text 商品标题、SKU 和建议标准名拼接后的上下文
+     * @return 命中咖啡强关键词时返回 true；单独“美式”“拿铁”“Americano”“Latte”“浓缩液”不触发
+     */
+    private boolean isCoffeeBeverageReviewText(String text) {
+        String coffeeSignalText = removeCoffeeColorWords(text);
+        boolean hasStrongCoffeeContext = containsAnyText(coffeeSignalText, COFFEE_BEVERAGE_STRONG_KEYWORDS);
+        if (containsAnyText(coffeeSignalText, COFFEE_BEVERAGE_WEAK_KEYWORDS)) {
+            return hasStrongCoffeeContext;
+        }
+        return hasStrongCoffeeContext;
+    }
+
+    /**
+     * 移除服饰、彩妆和色号中的咖啡色描述，避免被“咖啡”强词误判为饮品。
+     *
+     * @param text 商品标题、SKU 和建议标准名拼接后的上下文
+     * @return 去除咖啡色描述后的文本
+     */
+    private String removeCoffeeColorWords(String text) {
+        String result = safeText(text);
+        for (String colorKeyword : COFFEE_COLOR_EXCLUDE_KEYWORDS) {
+            result = result.replace(colorKeyword, "");
+        }
+        return result;
+    }
+
+    /**
+     * 判断当前安全决策是否已经是明确自动排除结果。
+     *
+     * @param decision 当前安全决策
+     * @return EXCLUDE、无需复核且类型属于耐用品、非复购或券定金权益时返回 true
+     */
+    private boolean isAutoExcludedDecision(SafetyGuardDecision decision) {
+        return isAutoExcludedDecision(decision.action(), decision.productType(), decision.reviewRequired(),
+                decision.reason());
+    }
+
+    /**
+     * 判断给定 action、productType 和复核标记是否已经是明确自动排除结果。
+     *
+     * @param action         当前建议动作
+     * @param productType    当前商品类型
+     * @param reviewRequired 当前是否需要人工复核
+     * @param reason         当前 reason 文本
+     * @return EXCLUDE、无需复核且类型属于耐用品、非复购或券定金权益时返回 true
+     */
+    private boolean isAutoExcludedDecision(String action, String productType, boolean reviewRequired, String reason) {
+        return ACTION_EXCLUDE.equals(action)
+                && !reviewRequired
+                && AUTO_EXCLUDED_PRODUCT_TYPES.contains(productType)
+                && safeText(reason).contains("后处理修正");
     }
 
     /**
@@ -1260,12 +1570,191 @@ public class NormalizationSuggestionService {
         return unit;
     }
 
+    /**
+     * 统一归一化 action、productType、reviewRequired、status 和 reason。
+     *
+     * <p>该方法是 normalization suggestion 入库前的最终状态机，所有前置 safety guard 的结果都必须经过这里，
+     * 避免出现 action、reviewRequired 和 status 相互矛盾的建议。</p>
+     *
+     * @param result            LLM 原始结构化建议
+     * @param action            safety guard 后的动作
+     * @param productType       safety guard 后的商品类型
+     * @param reviewRequired    safety guard 后的复核标记
+     * @param reason            safety guard 后的原因
+     * @param batchApprovalSafe targetUnit 是否允许批量确认
+     * @return 归一化后的最终建议决策
+     */
+    private SuggestionDecision normalizeSuggestionDecision(NormalizationAdvisorResult result,
+                                                           String action,
+                                                           String productType,
+                                                           boolean reviewRequired,
+                                                           String reason,
+                                                           boolean batchApprovalSafe) {
+        String resolvedAction = safeText(action).isBlank() ? ACTION_REVIEW : action;
+        String resolvedProductType = safeText(productType).isBlank() ? "UNKNOWN" : productType;
+        String resolvedReason = sanitizeReasonPunctuation(reason);
+        boolean resolvedReviewRequired = reviewRequired;
+        if (result.failed()) {
+            return new SuggestionDecision(ACTION_REVIEW, resolvedProductType, true,
+                    appendReason(resolvedReason, "后处理修正：LLM 输出失败，转人工复核"), STATUS_FAILED);
+        }
+        if (!List.of(ACTION_NORMALIZE, ACTION_EXCLUDE, ACTION_REVIEW).contains(resolvedAction)) {
+            resolvedAction = ACTION_REVIEW;
+            resolvedReviewRequired = true;
+            resolvedReason = appendReason(resolvedReason, "后处理修正：非法 action，转人工复核");
+        }
+        if (ACTION_NORMALIZE.equals(resolvedAction) && NON_POSITIVE_PRODUCT_TYPES.contains(resolvedProductType)) {
+            resolvedAction = ACTION_REVIEW;
+            resolvedReviewRequired = true;
+            resolvedReason = appendReason(resolvedReason, "后处理修正：类型动作冲突，需人工复核");
+        }
+        if (ACTION_NORMALIZE.equals(resolvedAction) && !batchApprovalSafe) {
+            resolvedAction = ACTION_REVIEW;
+            resolvedReviewRequired = true;
+            resolvedReason = appendReason(resolvedReason, "单位需复核");
+        }
+        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired, resolvedReason)
+                && containsPetDomainReason(resolvedReason)
+                && !containsPetProductDomain(rawSuggestionText(result))) {
+            resolvedAction = ACTION_REVIEW;
+            resolvedReviewRequired = true;
+            resolvedReason = appendReason(sanitizeCrossDomainReason(resolvedReason), "后处理修正：跨域 reason 已清理");
+        }
+        if (!isAutoExcludedDecision(resolvedAction, resolvedProductType, resolvedReviewRequired, resolvedReason)
+                && containsAnyText(resolvedReason, REVIEW_TEXT_KEYWORDS)) {
+            resolvedAction = ACTION_REVIEW;
+            resolvedReviewRequired = true;
+        }
+        if (ACTION_REVIEW.equals(resolvedAction)) {
+            resolvedReviewRequired = true;
+            return new SuggestionDecision(ACTION_REVIEW, resolvedProductType, true,
+                    appendReason(resolvedReason, "后处理修正：状态与动作不一致，已按状态机归一化"),
+                    STATUS_PENDING_REVIEW);
+        }
+        if (resolvedReviewRequired) {
+            return new SuggestionDecision(ACTION_REVIEW, resolvedProductType, true,
+                    appendReason(resolvedReason, "后处理修正：状态与动作不一致，已按状态机归一化"),
+                    STATUS_PENDING_REVIEW);
+        }
+        if (ACTION_EXCLUDE.equals(resolvedAction)) {
+            return new SuggestionDecision(ACTION_EXCLUDE, resolvedProductType, false, resolvedReason,
+                    STATUS_AUTO_EXCLUDED);
+        }
+        return new SuggestionDecision(ACTION_NORMALIZE, resolvedProductType, false, resolvedReason,
+                STATUS_PENDING_BATCH_APPROVAL);
+    }
+
+    /**
+     * 判断标题或 SKU 是否为防晒服饰，而不是防晒霜、防晒乳等护理消耗品。
+     *
+     * @param productName 商品标题
+     * @param sku         商品 SKU
+     * @return 命中防晒服饰语义时返回 true
+     */
+    private boolean isSunscreenDurable(String productName, String sku) {
+        String text = safeText(productName) + " " + safeText(sku);
+        return containsAnyText(text, SUNSCREEN_DURABLE_KEYWORDS)
+                && !containsAnyText(text, SUNSCREEN_CONSUMABLE_KEYWORDS);
+    }
+
+    /**
+     * 判断预售、付定或权益文本中是否仍存在明确复购商品本体。
+     *
+     * @param text                    商品标题和 SKU 拼接文本
+     * @param canonicalNormalizedName 归并后的标准品类名称
+     * @return 有真实复购商品本体时返回 true
+     */
+    private boolean hasRepurchaseProductBody(String text, String canonicalNormalizedName) {
+        return REPURCHASE_NORMALIZED_NAMES.contains(safeText(canonicalNormalizedName))
+                || containsAnyText(text, REPURCHASE_PRODUCT_KEYWORDS);
+    }
+
+    /**
+     * 拼接商品标题和 SKU，作为后处理关键词匹配文本。
+     *
+     * @param result LLM 原始结构化建议
+     * @return 商品标题和 SKU 拼接文本
+     */
+    private String rawSuggestionText(NormalizationAdvisorResult result) {
+        return safeText(result.rawProductName()) + " " + safeText(result.sku());
+    }
+
+    /**
+     * 判断商品标题或 SKU 是否属于宠物商品语义域。
+     *
+     * @param text 商品标题与 SKU 拼接文本
+     * @return 命中猫、犬、狗、宠物等域词时返回 true
+     */
+    private boolean containsPetProductDomain(String text) {
+        return containsAnyText(text, PET_PRODUCT_DOMAIN_KEYWORDS);
+    }
+
+    /**
+     * 判断建议标准名是否混入规格、包装形态或促销销售词。
+     *
+     * @param suggestedNormalizedName LLM 建议标准名
+     * @return 命中规格数量、包装形态或促销销售词时返回 true
+     */
+    private boolean isUnsafeSuggestedNormalizedName(String suggestedNormalizedName) {
+        String text = safeText(suggestedNormalizedName);
+        if (text.isBlank()) {
+            return false;
+        }
+        return UNSAFE_NORMALIZED_NAME_SPEC_PATTERN.matcher(text).find()
+                || containsAnyText(text, UNSAFE_NORMALIZED_NAME_PACKAGING_KEYWORDS)
+                || containsAnyText(text, UNSAFE_NORMALIZED_NAME_PROMOTION_KEYWORDS);
+    }
+
+    /**
+     * 判断 reason 是否包含宠物食品域的误判描述。
+     *
+     * @param reason LLM 或后处理生成的原因
+     * @return 包含猫食品或宠物食品表述时返回 true
+     */
+    private boolean containsPetDomainReason(String reason) {
+        String text = safeText(reason);
+        return text.contains("猫食品") || text.contains("宠物食品");
+    }
+
+    /**
+     * 清理明显跨域的 reason 文案。
+     *
+     * @param reason 原始 reason
+     * @return 清理后的 reason
+     */
+    private String sanitizeCrossDomainReason(String reason) {
+        String sanitized = safeText(reason)
+                .replace("命中猫食品消耗品关键词", "")
+                .replace("宠物食品单位需复核", "")
+                .replace("猫食品", "")
+                .replace("宠物食品", "")
+                .replace("个人护理消耗品", "");
+        // 删除跨域 reason 片段后可能留下“；，”这类连续标点，避免 review item reason 自相矛盾。
+        sanitized = sanitized.replaceAll("[；;]\\s*[，,]+", "；");
+        sanitized = sanitized.replaceAll("[；;，,\\s]+$", "").trim();
+        return sanitized.isBlank() ? "LLM 安全校验" : sanitized;
+    }
+
+    /**
+     * 清理 reason 拼接过程中的连续标点残留。
+     *
+     * @param reason 原始 reason 文本
+     * @return 将“；，”等残留标点规整后的 reason
+     */
+    private String sanitizeReasonPunctuation(String reason) {
+        return safeText(reason)
+                .replaceAll("[；;]\\s*[，,]+", "；")
+                .replaceAll("[，,]+\\s*[；;]", "；")
+                .trim();
+    }
+
     private String appendReason(String originalReason, String extraReason) {
-        String baseReason = originalReason == null || originalReason.isBlank() ? "targetUnit 安全校验" : originalReason;
+        String baseReason = sanitizeReasonPunctuation(originalReason);
+        baseReason = baseReason.isBlank() ? "targetUnit 安全校验" : baseReason;
         if (extraReason == null || extraReason.isBlank() || baseReason.contains(extraReason)) {
             return baseReason;
         }
-        return baseReason + "；" + extraReason;
+        return sanitizeReasonPunctuation(baseReason + "；" + extraReason);
     }
 
     private void createNormalizationReview(PurchaseRecord record, String reason) {
@@ -1306,19 +1795,29 @@ public class NormalizationSuggestionService {
      * @param productType        最终商品类型
      * @param reviewRequired     是否需要人工复核
      * @param reason             最终 reason 文本
-     * @param forcePendingReview 是否强制落为 pending_review
      */
     private record SafetyGuardDecision(String action,
                                        String productType,
                                        boolean reviewRequired,
-                                       String reason,
-                                       boolean forcePendingReview) {
+                                       String reason) {
         private SafetyGuardDecision review(String extraReason) {
-            return new SafetyGuardDecision(ACTION_REVIEW, productType, true, appendGuardReason(extraReason), true);
+            return new SafetyGuardDecision(ACTION_REVIEW, productType, true, appendGuardReason(extraReason));
+        }
+
+        private SafetyGuardDecision reviewAs(String resolvedProductType, String extraReason) {
+            return new SafetyGuardDecision(ACTION_REVIEW, resolvedProductType, true, appendGuardReason(extraReason));
         }
 
         private SafetyGuardDecision forceReview(String extraReason) {
-            return new SafetyGuardDecision(action, productType, true, appendGuardReason(extraReason), true);
+            return new SafetyGuardDecision(action, productType, true, appendGuardReason(extraReason));
+        }
+
+        private SafetyGuardDecision exclude(String resolvedProductType, String extraReason) {
+            return new SafetyGuardDecision(ACTION_EXCLUDE, resolvedProductType, false, appendGuardReason(extraReason));
+        }
+
+        private SafetyGuardDecision withReason(String resolvedReason) {
+            return new SafetyGuardDecision(action, productType, reviewRequired, resolvedReason);
         }
 
         private String appendGuardReason(String extraReason) {
@@ -1348,5 +1847,12 @@ public class NormalizationSuggestionService {
     }
 
     private record PreparedSuggestion(NormalizationSuggestion suggestion, String status) {
+    }
+
+    private record SuggestionDecision(String action,
+                                      String productType,
+                                      boolean reviewRequired,
+                                      String reason,
+                                      String status) {
     }
 }

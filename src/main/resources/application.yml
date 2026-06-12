@@ -35,11 +35,11 @@ family-agent:
       # LLM 最大输出 token 数；0 表示不传 max_tokens
       max-tokens: 0
       # Provider 专属扩展参数；为空表示使用 provider 默认行为
-      extra-body-json: '{"max_completion_tokens":1024,"temperature":1.0,"top_p":0.95,"thinking":{"type":"disabled"}}'
+      extra-body-json: '{"temperature":0.8,"top_p":0.95,"thinking":{"type":"disabled"}}'
       # LLM 请求超时时间，单位秒
       request-timeout-seconds: 180
       # 单次 LLM 请求最多分析的商品数量
-      batch-size: 10
+      batch-size: 20
 
       # 高置信 EXCLUDE 阈值
       exclude-confidence-threshold: 0.9

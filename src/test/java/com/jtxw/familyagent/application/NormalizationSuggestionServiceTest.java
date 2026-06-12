@@ -3,38 +3,13 @@ package com.jtxw.familyagent.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.common.ClockUtils;
-import com.jtxw.familyagent.domain.model.NormalizationAdvisorResult;
-import com.jtxw.familyagent.domain.model.NormalizationAdvisorRequest;
-import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
-import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
-import com.jtxw.familyagent.domain.model.NormalizationRagContext;
-import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
-import com.jtxw.familyagent.domain.model.PurchaseRecord;
-import com.jtxw.familyagent.domain.model.ReviewItemDetail;
-import com.jtxw.familyagent.domain.policy.DuplicateDetectionPolicy;
-import com.jtxw.familyagent.domain.policy.LearningProductNameNormalizer;
-import com.jtxw.familyagent.domain.policy.OwnerNormalizer;
-import com.jtxw.familyagent.domain.policy.PaymentAdjustmentPolicy;
-import com.jtxw.familyagent.domain.policy.ProductNameNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductNormalizer;
-import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
-import com.jtxw.familyagent.domain.policy.ProductRuleProperties;
-import com.jtxw.familyagent.domain.policy.ProductSpecParser;
-import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
-import com.jtxw.familyagent.domain.policy.PurchaseTimeNormalizer;
-import com.jtxw.familyagent.domain.policy.QuantityUnitParser;
-import com.jtxw.familyagent.domain.policy.UnitPriceCalculator;
+import com.jtxw.familyagent.domain.model.*;
+import com.jtxw.familyagent.domain.policy.*;
 import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.importer.CsvPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
-import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
-import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
-import com.jtxw.familyagent.infrastructure.persistence.NormalizationSuggestionRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import com.jtxw.familyagent.infrastructure.persistence.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -43,11 +18,7 @@ import javax.sql.DataSource;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -432,22 +403,23 @@ class NormalizationSuggestionServiceTest {
     @Test
     void safetyGuardShouldReviewNormalizeWithNonPositiveProductType() throws Exception {
         StubAdvisor advisor = advisor(
-                normalizeTyped("纯棉T恤", "T恤", "件", "DURABLE"),
+                normalizeTyped("未知摆件商品", "未知品类", "件", "UNKNOWN"),
                 normalizeTyped("一次性服务", "服务", "件", "NON_REPURCHASE")
         );
         Fixture fixture = fixture("safety-type-conflict.sqlite", properties(true, "llm_suggestion"), advisor);
-        long batchId = batchWithLegacyRecords(fixture, "纯棉T恤", "一次性服务");
+        long batchId = batchWithLegacyRecords(fixture, "未知摆件商品", "一次性服务");
 
         NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
 
         assertThat(result.pendingBatchApprovalCount()).isZero();
-        assertThat(result.pendingReviewCount()).isEqualTo(2);
-        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
-                .allSatisfy(suggestion -> {
-                    assertThat(suggestion.action()).isEqualTo("REVIEW");
-                    assertThat(suggestion.status()).isEqualTo("pending_review");
-                    assertThat(suggestion.reason()).contains("类型动作冲突");
-                });
+        assertThat(result.pendingReviewCount()).isEqualTo(1);
+        assertThat(result.autoExcludedCount()).isEqualTo(1);
+        List<NormalizationSuggestion> suggestions = fixture.suggestionRepository().listByBatchId(batchId);
+        assertThat(suggestions.get(0).action()).isEqualTo("REVIEW");
+        assertThat(suggestions.get(0).status()).isEqualTo("pending_review");
+        assertThat(suggestions.get(0).reason()).contains("类型动作冲突");
+        assertThat(suggestions.get(1).action()).isEqualTo("EXCLUDE");
+        assertThat(suggestions.get(1).status()).isEqualTo("auto_excluded");
     }
 
     @Test
@@ -543,7 +515,7 @@ class NormalizationSuggestionServiceTest {
         assertThat(fixture.suggestionRepository().listByBatchId(batchId))
                 .extracting(NormalizationSuggestion::reason)
                 .anySatisfy(reason -> assertThat(reason).contains("食品需复核"))
-                .anySatisfy(reason -> assertThat(reason).contains("试吃样品需复核"));
+                .anySatisfy(reason -> assertThat(reason).contains("试吃/尝鲜/会员试用"));
     }
 
     @Test
@@ -559,6 +531,454 @@ class NormalizationSuggestionServiceTest {
         assertThat(suggestion.action()).isEqualTo("EXCLUDE");
         assertThat(suggestion.productType()).isEqualTo("COUPON_OR_DEPOSIT");
         assertThat(suggestion.status()).isEqualTo("auto_excluded");
+    }
+
+    @Test
+    void safetyGuardShouldBlockClothingSunscreenAndTravelFromBatchApproval() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalizeTyped("【狂欢价】木耳边袜子女夏季薄款纯棉中筒袜无骨花边短袜春秋松口中短筒棉袜",
+                        "袜子", "件", "DURABLE"),
+                normalizeTyped("法式灰色长袖防晒衬衫外套女夏薄款天丝外穿宽松衬衣开衫外搭上衣",
+                        "防晒", "件", "DURABLE"),
+                normalizeTyped("迪卡侬潜水服男水母服湿衣长袖泳衣冲浪服防晒速干衣",
+                        "防晒", "件", "DURABLE"),
+                normalizeWithReason("麗枫酒店抚州高铁站华美立家店名人雕塑园豪华大床房",
+                        "住宿", "件", "服务类")
+        );
+        Fixture fixture = fixture("safety-clothing-sunscreen-travel.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture,
+                seed("【狂欢价】木耳边袜子女夏季薄款纯棉中筒袜无骨花边短袜春秋松口中短筒棉袜",
+                        "【4双装 纯棉无骨抗起球】4双白色;均码"),
+                seed("法式灰色长袖防晒衬衫外套女夏薄款天丝外穿宽松衬衣开衫外搭上衣",
+                        "灰色【防晒衣/罩衫/空调衫】"),
+                seed("迪卡侬潜水服男水母服湿衣长袖泳衣冲浪服防晒速干衣", "默认"),
+                seed("麗枫酒店抚州高铁站华美立家店名人雕塑园豪华大床房", "默认"));
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        List<NormalizationSuggestion> suggestions = fixture.suggestionRepository().listByBatchId(batchId);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(result.autoExcludedCount()).isEqualTo(4);
+        assertThat(suggestions)
+                .allSatisfy(suggestion -> {
+                    assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+                    assertThat(suggestion.reviewRequired()).isFalse();
+                    assertThat(suggestion.status()).isEqualTo("auto_excluded");
+                    assertThat(suggestion.suggestedNormalizedName()).isNotEqualTo("防晒");
+                });
+        assertThat(suggestions.get(3).productType()).isEqualTo("NON_REPURCHASE");
+        assertThat(suggestions.get(3).productType()).isNotEqualTo("COUPON_OR_DEPOSIT");
+    }
+
+    @Test
+    void safetyGuardShouldKeepSunscreenCreamAsConsumableCandidate() throws Exception {
+        StubAdvisor advisor = advisor(normalize("防晒霜 SPF50", "防晒", "ml"));
+        Fixture fixture = fixture("safety-sunscreen-cream.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "防晒霜 SPF50");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("NORMALIZE");
+        assertThat(suggestion.suggestedNormalizedName()).isEqualTo("防晒");
+        assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
+    }
+
+    @Test
+    void safetyGuardShouldCleanCoffeeCrossDomainPetReason() throws Exception {
+        StubAdvisor advisor = advisor(normalizeWithReason(
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品",
+                "猫主食罐", "g", "命中猫食品消耗品关键词；宠物食品单位需复核"));
+        Fixture fixture = fixture("safety-coffee-cross-domain.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("咖啡类复购品需人工确认归一化");
+        assertThat(suggestion.reason()).doesNotContain("猫食品", "宠物食品");
+    }
+
+    @Test
+    void safetyGuardShouldReviewCoffeeEvenWhenLlmExcludes() throws Exception {
+        StubAdvisor advisor = advisor(new NormalizationAdvisorResult(
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品",
+                "默认", "EXCLUDE", null, null, "NON_REPURCHASE", null, "UNKNOWN",
+                0.95D, false, "普通饮品排除", List.of("测试证据"), false));
+        Fixture fixture = fixture("safety-coffee-exclude-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldReviewCoffeeEvenWhenLlmNormalizesWithHighConfidence() throws Exception {
+        StubAdvisor advisor = advisor(normalize(
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品",
+                "咖啡", "g"));
+        Fixture fixture = fixture("safety-coffee-normalize-review.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldAllowBrandSeriesSuggestedNameButReviewCoffee() throws Exception {
+        StubAdvisor advisor = advisor(normalize(
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神",
+                "雀巢丝滑拿铁", "ml"));
+        Fixture fixture = fixture("safety-safe-brand-series-coffee.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("咖啡类复购品需人工确认归一化");
+        assertThat(suggestion.reason()).doesNotContain("建议标准名疑似包含规格/包装形态/促销销售词");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatAmericanStyleTShirtAsCoffeeBeverage() throws Exception {
+        String productName = "SALT 美式潮牌字母印花基础款短袖t恤女夏季2026新款休闲百搭上衣";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, "酒红;L", "短袖T恤", "件"));
+        Fixture fixture = fixture("safety-american-style-shirt-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "酒红;L"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatCoffeeColorPantsAsCoffeeBeverage() throws Exception {
+        String productName = "羊城故事 美式复古咖色休闲裤女秋季新款小众高腰宽松直筒裤子";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, "咖色（配丝带）;M", "休闲裤", "件"));
+        Fixture fixture = fixture("safety-coffee-color-pants-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "咖色（配丝带）;M"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatAmericanoContactLensColorAsCoffeeBeverage() throws Exception {
+        String productName = "隐形眼镜半年抛2片装LEMONADE美瞳女彩色近视眼镜";
+        String sku = "【日抛同款】312 冰美式 Americano（原生感伪素颜神器）;375";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, sku, "美瞳", "片"));
+        Fixture fixture = fixture("safety-americano-contact-lens-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, sku));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatLaundryConcentrateAsCoffeeBeverage() throws Exception {
+        String productName = "洗衣浓缩液持久留香家庭装";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, "500ml", "洗衣液", "ml"));
+        Fixture fixture = fixture("safety-laundry-concentrate-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "500ml"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatSerumConcentrateAsCoffeeBeverage() throws Exception {
+        String productName = "修护精华浓缩液补水保湿";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, "30ml", "精华液", "ml"));
+        Fixture fixture = fixture("safety-serum-concentrate-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "30ml"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatCoffeeColorPantsKeywordAsCoffeeBeverage() throws Exception {
+        String productName = "美式复古咖啡色休闲裤女秋季新款高腰宽松直筒裤子";
+        StubAdvisor advisor = advisor(normalizeWithSku(productName, "咖啡色;M", "休闲裤", "件"));
+        Fixture fixture = fixture("safety-coffee-color-keyword-pants-not-coffee.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "咖啡色;M"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldReviewCoffeeWhenWeakWordsHaveStrongContext() throws Exception {
+        String productName = "隅田川速溶黑咖啡粉冻干美式拿铁豆浓缩液无糖0脂官方旗舰店正品";
+        StubAdvisor advisor = advisor(normalize(productName, "咖啡", "g"));
+        Fixture fixture = fixture("safety-coffee-weak-words-with-strong-context.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, productName);
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldKeepAutoExcludedDurableWhenWeakCoffeeWordAppears() throws Exception {
+        String productName = "SALT 美式潮牌字母印花基础款短袖t恤";
+        StubAdvisor advisor = advisor(normalizeTypedWithSku(productName, "酒红;L", "短袖T恤", "件", "DURABLE"));
+        Fixture fixture = fixture("safety-auto-excluded-shirt-not-coffee-review.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecordsAndSku(fixture, seed(productName, "酒红;L"));
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+        assertThat(suggestion.productType()).isEqualTo("DURABLE");
+        assertThat(suggestion.reviewRequired()).isFalse();
+        assertThat(suggestion.status()).isEqualTo("auto_excluded");
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void safetyGuardShouldKeepHighConfidenceDurableAutoExcludedWhenSuggestedNameUnsafe() throws Exception {
+        StubAdvisor advisor = advisor(normalizeTyped("女装套装", "女装套装", "件", "DURABLE"));
+        Fixture fixture = fixture("safety-durable-unsafe-name-auto-exclude.sqlite",
+                properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "女装套装");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("EXCLUDE");
+        assertThat(suggestion.productType()).isEqualTo("DURABLE");
+        assertThat(suggestion.reviewRequired()).isFalse();
+        assertThat(suggestion.status()).isEqualTo("auto_excluded");
+        assertThat(suggestion.reason()).contains("高置信耐用品，自动排除");
+        assertThat(suggestion.reason()).doesNotContain("建议标准名疑似包含规格/包装形态/促销销售词");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonCode)
+                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
+    }
+
+    @Test
+    void safetyGuardShouldReviewSuggestedNameWithPackagingShape() throws Exception {
+        StubAdvisor advisor = advisor(normalize(
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神",
+                "雀巢丝滑拿铁整箱", "ml"));
+        Fixture fixture = fixture("safety-unsafe-name-packaging.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("建议标准名疑似包含规格/包装形态/促销销售词，需人工确认");
+    }
+
+    @Test
+    void safetyGuardShouldReviewSuggestedNameWithSpecQuantity() throws Exception {
+        StubAdvisor advisor = advisor(normalize(
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神",
+                "雀巢丝滑拿铁268ml15瓶", "ml"));
+        Fixture fixture = fixture("safety-unsafe-name-spec.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 整箱饮料即饮咖啡熬夜提神");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("建议标准名疑似包含规格/包装形态/促销销售词，需人工确认");
+    }
+
+    @Test
+    void safetyGuardShouldNotMarkSafeSuggestedNamesAsUnsafe() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("豆腐猫砂 6L", "猫砂", "L"),
+                normalize("猫条三文鱼口味", "猫条", "g"),
+                normalize("猫主食罐鸡肉味", "猫主食罐", "g"),
+                normalize("洗衣凝珠", "洗衣凝珠", "颗"),
+                normalize("防晒喷雾 SPF50", "防晒喷雾", "ml"),
+                normalize("即饮咖啡饮料", "咖啡饮料", "ml"),
+                normalize("雀巢丝滑拿铁", "雀巢丝滑拿铁", "ml"),
+                normalize("隅田川速溶咖啡", "隅田川速溶咖啡", "g"),
+                normalize("维达超韧抽纸", "维达超韧抽纸", "抽")
+        );
+        Fixture fixture = fixture("safety-safe-suggested-names.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "豆腐猫砂 6L", "猫条三文鱼口味", "猫主食罐鸡肉味", "洗衣凝珠", "防晒喷雾 SPF50",
+                "即饮咖啡饮料", "雀巢丝滑拿铁", "隅田川速溶咖啡", "维达超韧抽纸");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId))
+                .extracting(NormalizationSuggestion::reason)
+                .allSatisfy(reason -> assertThat(reason)
+                        .doesNotContain("建议标准名疑似包含规格/包装形态/促销销售词"));
+    }
+
+    @Test
+    void safetyGuardShouldReviewSuggestedNameWithPromotionWords() throws Exception {
+        StubAdvisor advisor = advisor(normalize(
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 双11优惠装",
+                "雀巢丝滑拿铁双11优惠装", "ml"));
+        Fixture fixture = fixture("safety-unsafe-name-promotion.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "Nestle/雀巢咖啡丝滑拿铁味268ml*15瓶 双11优惠装");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.action()).isEqualTo("REVIEW");
+        assertThat(suggestion.reviewRequired()).isTrue();
+        assertThat(suggestion.status()).isEqualTo("pending_review");
+        assertThat(suggestion.reason()).contains("建议标准名疑似包含规格/包装形态/促销销售词，需人工确认");
+    }
+
+    @Test
+    void safetyGuardShouldNotTreatCatFreezeDriedFoodAsCoffeeBeverage() throws Exception {
+        StubAdvisor advisor = advisor(normalize("猫冻干主食冻干鸡肉味", "猫冻干", "g"));
+        Fixture fixture = fixture("safety-cat-freeze-dried-not-coffee.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "猫冻干主食冻干鸡肉味");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.productType()).isEqualTo("REPURCHASE_CONSUMABLE");
+        assertThat(suggestion.reason()).doesNotContain("咖啡类复购品需人工确认归一化");
+    }
+
+    @Test
+    void safetyGuardShouldCleanReasonPunctuationResidue() throws Exception {
+        StubAdvisor advisor = advisor(normalizeWithReason(
+                "普通商品",
+                "猫主食罐",
+                "g",
+                "猫主食罐消耗品；，不应按 EXCLUDE 或 DURABLE 处理"));
+        Fixture fixture = fixture("safety-reason-punctuation-clean.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "普通商品");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
+        assertThat(suggestion.reason()).doesNotContain("；，");
+        assertThat(fixture.reviewItemRepository().listPendingDetails())
+                .extracting(ReviewItemDetail::reasonMessage)
+                .allSatisfy(reasonMessage -> assertThat(reasonMessage).doesNotContain("；，"));
+    }
+
+    @Test
+    void safetyGuardShouldReviewTrialAndRealDepositButExcludePureRight() throws Exception {
+        StubAdvisor advisor = advisor(
+                normalize("【天猫U先】帕特猫条猫咪零食牛肉兔肉便携装营养补水湿粮猫条60g",
+                        "猫条", "g"),
+                normalizeWithReason("0.01元锁定30元", "权益", "件", "模型误判可归一"),
+                normalize("【李佳琦直播间爆品节付定金】弗列加特主食罐头95g*18罐囤货装",
+                        "猫主食罐", "g")
+        );
+        Fixture fixture = fixture("safety-trial-right-deposit.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture,
+                "【天猫U先】帕特猫条猫咪零食牛肉兔肉便携装营养补水湿粮猫条60g",
+                "0.01元锁定30元",
+                "【李佳琦直播间爆品节付定金】弗列加特主食罐头95g*18罐囤货装");
+
+        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
+        List<NormalizationSuggestion> suggestions = fixture.suggestionRepository().listByBatchId(batchId);
+
+        assertThat(result.pendingBatchApprovalCount()).isZero();
+        assertThat(suggestions.get(0).action()).isEqualTo("REVIEW");
+        assertThat(suggestions.get(0).reviewRequired()).isTrue();
+        assertThat(suggestions.get(0).status()).isEqualTo("pending_review");
+        assertThat(suggestions.get(0).reason()).contains("试吃/尝鲜/会员试用");
+        assertThat(suggestions.get(1).action()).isEqualTo("EXCLUDE");
+        assertThat(suggestions.get(1).productType()).isEqualTo("COUPON_OR_DEPOSIT");
+        assertThat(suggestions.get(1).reviewRequired()).isFalse();
+        assertThat(suggestions.get(1).status()).isEqualTo("auto_excluded");
+        assertThat(suggestions.get(2).action()).isEqualTo("REVIEW");
+        assertThat(suggestions.get(2).reviewRequired()).isTrue();
+        assertThat(suggestions.get(2).status()).isEqualTo("pending_review");
+        assertThat(suggestions.get(2).reason()).contains("真实商品含预售/付定/定金");
+    }
+
+    @Test
+    void stateMachineShouldNormalizeActionReviewRequiredAndStatus() throws Exception {
+        StubAdvisor advisor = advisor(
+                new NormalizationAdvisorResult("模型误报复核", "默认", "REVIEW", null, null,
+                        "UNKNOWN", null, "UNKNOWN", 0.7D, false, "模型要求复核", List.of("测试证据"), false),
+                new NormalizationAdvisorResult("模型误报排除", "默认", "EXCLUDE", null, null,
+                        "NON_REPURCHASE", null, "UNKNOWN", 0.96D, false, "高置信排除", List.of("测试证据"), false),
+                new NormalizationAdvisorResult("模型误报归一", "100g", "NORMALIZE", "猫条", null,
+                        "REPURCHASE_CONSUMABLE", "g", "WEIGHT", 0.96D, true, "高置信复购消耗品",
+                        List.of("测试证据"), false)
+        );
+        Fixture fixture = fixture("state-machine-normalize.sqlite", properties(true, "llm_suggestion"), advisor);
+        long batchId = batchWithLegacyRecords(fixture, "模型误报复核", "模型误报排除", "模型误报归一");
+
+        fixture.suggestionService().analyzeBatch(batchId, 100, false);
+
+        List<NormalizationSuggestion> suggestions = fixture.suggestionRepository().listByBatchId(batchId);
+        assertThat(suggestions.get(0).action()).isEqualTo("REVIEW");
+        assertThat(suggestions.get(0).reviewRequired()).isTrue();
+        assertThat(suggestions.get(0).status()).isEqualTo("pending_review");
+        assertThat(suggestions.get(1).action()).isEqualTo("EXCLUDE");
+        assertThat(suggestions.get(1).reviewRequired()).isFalse();
+        assertThat(suggestions.get(1).status()).isEqualTo("auto_excluded");
+        assertThat(suggestions.get(2).action()).isEqualTo("REVIEW");
+        assertThat(suggestions.get(2).reviewRequired()).isTrue();
+        assertThat(suggestions.get(2).status()).isEqualTo("pending_review");
     }
 
     @Test
@@ -1079,7 +1499,7 @@ class NormalizationSuggestionServiceTest {
      */
     private NormalizationAdvisorResult normalize(String productName, String normalizedName, String targetUnit) {
         return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
-                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, "高置信复购消耗品",
                 List.of("测试证据"), false);
     }
 
@@ -1093,7 +1513,7 @@ class NormalizationSuggestionServiceTest {
      */
     private NormalizationAdvisorResult normalizeNoSpec(String productName, String normalizedName, String targetUnit) {
         return new NormalizationAdvisorResult(productName, "默认", "NORMALIZE", normalizedName, null,
-                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, "高置信复购消耗品",
                 List.of("测试证据"), false);
     }
 
@@ -1111,7 +1531,7 @@ class NormalizationSuggestionServiceTest {
                                                         String normalizedName,
                                                         String targetUnit) {
         return new NormalizationAdvisorResult(productName, sku, "NORMALIZE", normalizedName, null,
-                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, true, "高置信复购消耗品",
+                "REPURCHASE_CONSUMABLE", targetUnit, "COUNT", 0.96D, false, "高置信复购消耗品",
                 List.of("测试证据"), false);
     }
 
@@ -1129,6 +1549,26 @@ class NormalizationSuggestionServiceTest {
                                                       String targetUnit,
                                                       String productType) {
         return new NormalizationAdvisorResult(productName, defaultSkuFor(targetUnit), "NORMALIZE", normalizedName, null,
+                productType, targetUnit, "COUNT", 0.96D, false, "高置信归一化",
+                List.of("测试证据"), false);
+    }
+
+    /**
+     * 构造带指定 SKU 和 productType 的 NORMALIZE 结果，用于测试后处理安全规则。
+     *
+     * @param productName    原始商品名
+     * @param sku            商品规格或 SKU
+     * @param normalizedName LLM 建议标准品类
+     * @param targetUnit     LLM 建议目标单位
+     * @param productType    LLM 建议商品类型
+     * @return 测试用 LLM 归一化结果
+     */
+    private NormalizationAdvisorResult normalizeTypedWithSku(String productName,
+                                                             String sku,
+                                                             String normalizedName,
+                                                             String targetUnit,
+                                                             String productType) {
+        return new NormalizationAdvisorResult(productName, sku, "NORMALIZE", normalizedName, null,
                 productType, targetUnit, "COUNT", 0.96D, false, "高置信归一化",
                 List.of("测试证据"), false);
     }
