@@ -141,6 +141,126 @@ class FamilyRepurchaseMcpServerApplicationTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void searchPurchaseRecordsSchemaShouldReturnRawRecordsWithoutBaselineFields() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new FakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        Map<String, Object> inputSchema = application.searchPurchaseRecordsTool().tool().inputSchema();
+        Map<String, Object> inputProperties = (Map<String, Object>) inputSchema.get("properties");
+        assertThat(inputProperties.keySet()).containsAll(Set.of("keyword", "owner", "limit", "fromDate", "toDate"));
+        assertThat(inputSchema.get("required")).isEqualTo(List.of("keyword"));
+        assertThat((Map<String, Object>) inputProperties.get("owner"))
+                .containsEntry("type", List.of("string", "null"));
+        assertThat((Map<String, Object>) inputProperties.get("fromDate"))
+                .containsEntry("type", List.of("string", "null"));
+        assertThat((Map<String, Object>) inputProperties.get("toDate"))
+                .containsEntry("type", List.of("string", "null"));
+        assertThat((Map<String, Object>) inputProperties.get("limit"))
+                .containsEntry("type", "integer");
+
+        Map<String, Object> outputSchema = application.searchPurchaseRecordsTool().tool().outputSchema();
+        Map<String, Object> outputProperties = (Map<String, Object>) outputSchema.get("properties");
+        assertThat(outputProperties.keySet()).containsAll(Set.of(
+                "keyword", "scope", "owner", "matchedCount", "returnedCount", "records", "warnings"
+        ));
+        assertThat(outputProperties.keySet()).doesNotContain("baseline", "roughBaseline", "fallbackBaseline");
+
+        Map<String, Object> records = (Map<String, Object>) outputProperties.get("records");
+        Map<String, Object> recordItem = (Map<String, Object>) records.get("items");
+        Map<String, Object> recordProperties = (Map<String, Object>) recordItem.get("properties");
+        assertThat(recordProperties.keySet()).containsAll(Set.of(
+                "recordId", "orderTime", "platform", "owner", "productName", "sku", "category",
+                "subCategory", "quantity", "unit", "totalAmount", "currency", "normalizedName", "unitPrice"
+        ));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchPurchaseRecordsShouldForwardToBackendSearchEndpoint() {
+        CaptureRestClient restClient = new CaptureRestClient();
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                restClient,
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        McpSchema.CallToolResult result = application.searchPurchaseRecordsTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("search_purchase_records")
+                        .arguments(Map.of(
+                                "keyword", "猫砂",
+                                "owner", "   ",
+                                "limit", 10,
+                                "fromDate", "2025-01-01",
+                                "toDate", "2026-06-12"
+                        ))
+                        .build()
+        );
+
+        assertThat(result.isError()).isFalse();
+        assertThat(restClient.path).isEqualTo("/api/tools/purchase-records/search");
+        assertThat(restClient.body).containsEntry("keyword", "猫砂");
+        assertThat(restClient.body).containsEntry("limit", 10);
+        assertThat(restClient.body).containsEntry("fromDate", "2025-01-01");
+        assertThat(restClient.body).containsEntry("toDate", "2026-06-12");
+        assertThat(restClient.body).doesNotContainKey("owner");
+    }
+
+    @Test
+    void searchPurchaseRecordsShouldNotForwardNullOwnerToBackend() {
+        CaptureRestClient restClient = new CaptureRestClient();
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                restClient,
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("keyword", "猫砂");
+        arguments.put("owner", null);
+        arguments.put("limit", 10);
+
+        McpSchema.CallToolResult result = application.searchPurchaseRecordsTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("search_purchase_records")
+                        .arguments(arguments)
+                        .build()
+        );
+
+        assertThat(result.isError()).isFalse();
+        assertThat(restClient.path).isEqualTo("/api/tools/purchase-records/search");
+        assertThat(restClient.body).containsEntry("keyword", "猫砂");
+        assertThat(restClient.body).containsEntry("limit", 10);
+        assertThat(restClient.body).doesNotContainKey("owner");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchPurchaseRecordsShouldReturnFamilyScopeAndWarnings() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new SearchFakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        McpSchema.CallToolResult result = application.searchPurchaseRecordsTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("search_purchase_records")
+                        .arguments(Map.of("keyword", "猫砂", "limit", 10))
+                        .build()
+        );
+
+        assertThat(result.isError()).isFalse();
+        Map<String, Object> structuredContent = (Map<String, Object>) result.structuredContent();
+        assertThat(structuredContent).containsEntry("scope", "FAMILY");
+        assertThat((List<String>) structuredContent.get("warnings")).isNotEmpty();
+        assertThat((List<Map<String, Object>>) structuredContent.get("records")).hasSize(1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void recordPurchaseSchemaShouldMatchBackendFields() {
         FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
                 new ObjectMapper(),
@@ -242,6 +362,28 @@ class FamilyRepurchaseMcpServerApplicationTest {
             this.path = path;
             this.body = body;
             return Map.of("dryRun", false, "savedCount", 1, "reviewCount", 0, "records", List.of());
+        }
+    }
+
+    private static class SearchFakeRestClient extends FamilyAgentRestClient {
+        SearchFakeRestClient() {
+            super(URI.create("http://127.0.0.1:8080"), new ObjectMapper());
+        }
+
+        @Override
+        public Map<String, Object> postJson(String path, Map<String, Object> body) {
+            return Map.of(
+                    "keyword", "猫砂",
+                    "scope", "FAMILY",
+                    "matchedCount", 1,
+                    "returnedCount", 1,
+                    "records", List.of(Map.of(
+                            "recordId", 123,
+                            "productName", "名创优品猫砂",
+                            "sku", "混合猫砂 40kg"
+                    )),
+                    "warnings", List.of("该结果来自原始订单记录检索，不代表已完成商品归一化。")
+            );
         }
     }
 

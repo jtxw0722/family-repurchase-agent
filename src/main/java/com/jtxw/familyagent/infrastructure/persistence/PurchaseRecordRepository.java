@@ -181,6 +181,93 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 按关键词检索原始购买记录样本。
+     *
+     * <p>该查询覆盖 product_name、sku、category、sub_category 和 normalized_name，
+     * 只用于原始订单样本检索，不要求记录已纳入价格基线统计。</p>
+     *
+     * @param keyword       查询关键词，已由应用服务 trim
+     * @param owner         可选订单归属人；为空时查询全家庭样本
+     * @param fromOrderTime 可选订单时间下界，格式 yyyy-MM-dd HH:mm:ss
+     * @param toOrderTime   可选订单时间上界，格式 yyyy-MM-dd HH:mm:ss
+     * @param limit         最大返回条数
+     * @return 按订单时间倒序排列的原始购买记录样本
+     */
+    public List<PurchaseRecord> listByKeyword(String keyword,
+                                              String owner,
+                                              String fromOrderTime,
+                                              String toOrderTime,
+                                              int limit) {
+        String likeKeyword = "%" + escapeLikeKeyword(keyword) + "%";
+        return jdbcTemplate.query("""
+                SELECT * FROM purchase_records
+                WHERE (? IS NULL OR owner = ?)
+                  AND (? IS NULL OR order_time >= ?)
+                  AND (? IS NULL OR order_time <= ?)
+                  AND (
+                    COALESCE(product_name, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(sku, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(category, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(sub_category, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(normalized_name, '') LIKE ? ESCAPE '\\'
+                  )
+                ORDER BY order_time DESC, id DESC
+                LIMIT ?
+                """, rowMapper(),
+                owner, owner,
+                fromOrderTime, fromOrderTime,
+                toOrderTime, toOrderTime,
+                likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword,
+                limit);
+    }
+
+    /**
+     * 统计按关键词命中的原始购买记录数量。
+     *
+     * <p>该数量不受 limit 影响，用于响应 matchedCount，帮助 LLM 区分总命中数和实际返回数。</p>
+     *
+     * @param keyword       查询关键词，已由应用服务 trim
+     * @param owner         可选订单归属人；为空时查询全家庭样本
+     * @param fromOrderTime 可选订单时间下界，格式 yyyy-MM-dd HH:mm:ss
+     * @param toOrderTime   可选订单时间上界，格式 yyyy-MM-dd HH:mm:ss
+     * @return 符合条件的原始购买记录数量
+     */
+    public int countByKeyword(String keyword, String owner, String fromOrderTime, String toOrderTime) {
+        String likeKeyword = "%" + escapeLikeKeyword(keyword) + "%";
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM purchase_records
+                WHERE (? IS NULL OR owner = ?)
+                  AND (? IS NULL OR order_time >= ?)
+                  AND (? IS NULL OR order_time <= ?)
+                  AND (
+                    COALESCE(product_name, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(sku, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(category, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(sub_category, '') LIKE ? ESCAPE '\\'
+                    OR COALESCE(normalized_name, '') LIKE ? ESCAPE '\\'
+                  )
+                """, Integer.class,
+                owner, owner,
+                fromOrderTime, fromOrderTime,
+                toOrderTime, toOrderTime,
+                likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * 转义 SQL LIKE 通配符，避免用户输入 % 或 _ 导致扩大匹配范围。
+     *
+     * @param keyword 已 trim 的查询关键词
+     * @return 可安全用于 LIKE 的关键词片段
+     */
+    private String escapeLikeKeyword(String keyword) {
+        return keyword
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
+    /**
      * 查询指定归一化商品和单位的有效历史单价区间。
      *
      * <p>用于手动录入时拦截明显偏离历史区间的自然语言抽取结果。</p>

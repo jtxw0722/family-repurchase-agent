@@ -38,7 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         PriceToolController.class,
         ReportToolController.class,
         ReviewToolController.class,
-        NormalizationToolController.class
+        NormalizationToolController.class,
+        PurchaseRecordSearchController.class
 })
 class AgentToolControllerTest {
     @Autowired
@@ -58,6 +59,83 @@ class AgentToolControllerTest {
     private NormalizationSuggestionService normalizationSuggestionService;
     @MockitoBean
     private NormalizationAnalysisTaskService normalizationAnalysisTaskService;
+    @MockitoBean
+    private PurchaseRecordSearchService purchaseRecordSearchService;
+
+    @Test
+    void searchPurchaseRecordsShouldReturnRecordsWithFamilyScope() throws Exception {
+        when(purchaseRecordSearchService.search(any()))
+                .thenReturn(searchPurchaseRecordsResult("FAMILY", null, 1));
+
+        mockMvc.perform(post("/api/tools/purchase-records/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "keyword": "猫砂",
+                                  "limit": 10
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keyword").value("猫砂"))
+                .andExpect(jsonPath("$.scope").value("FAMILY"))
+                .andExpect(jsonPath("$.owner").doesNotExist())
+                .andExpect(jsonPath("$.matchedCount").value(1))
+                .andExpect(jsonPath("$.returnedCount").value(1))
+                .andExpect(jsonPath("$.records[0].recordId").value(123))
+                .andExpect(jsonPath("$.records[0].productName").value("名创优品猫砂"))
+                .andExpect(jsonPath("$.records[0].sku").value("混合猫砂 40kg"))
+                .andExpect(jsonPath("$.records[0].normalizedName").value("猫砂"))
+                .andExpect(jsonPath("$.warnings[0]").exists());
+    }
+
+    @Test
+    void searchPurchaseRecordsShouldReturnOwnerScopeWhenOwnerProvided() throws Exception {
+        when(purchaseRecordSearchService.search(any()))
+                .thenReturn(searchPurchaseRecordsResult("OWNER", "jtxw", 1));
+
+        mockMvc.perform(post("/api/tools/purchase-records/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "keyword": "猫砂",
+                                  "owner": "jtxw",
+                                  "limit": 10
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("OWNER"))
+                .andExpect(jsonPath("$.owner").value("jtxw"));
+    }
+
+    @Test
+    void searchPurchaseRecordsShouldReturnBadRequestWhenKeywordMissing() throws Exception {
+        mockMvc.perform(post("/api/tools/purchase-records/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "limit": 10
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void searchPurchaseRecordsShouldReturnEmptyRecordsWhenNoMatch() throws Exception {
+        when(purchaseRecordSearchService.search(any()))
+                .thenReturn(searchPurchaseRecordsResult("FAMILY", null, 0));
+
+        mockMvc.perform(post("/api/tools/purchase-records/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "keyword": "不存在"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchedCount").value(0))
+                .andExpect(jsonPath("$.records").isArray())
+                .andExpect(jsonPath("$.records").isEmpty());
+    }
 
     @Test
     void comparePriceShouldReturnEvidenceStructure() throws Exception {
@@ -465,6 +543,36 @@ class AgentToolControllerTest {
                         "后处理修正：高置信耐用品，自动排除",
                         "2026-06-12T10:00:00"
                 ))
+        );
+    }
+
+    private SearchPurchaseRecordsResult searchPurchaseRecordsResult(String scope, String owner, int matchedCount) {
+        List<SearchPurchaseRecordsResult.Item> records = matchedCount == 0 ? List.of() : List.of(
+                new SearchPurchaseRecordsResult.Item(
+                        123L,
+                        "2026-05-21 10:30:00",
+                        "淘宝",
+                        "jtxw",
+                        "名创优品猫砂",
+                        "混合猫砂 40kg",
+                        "宠物用品",
+                        "猫砂",
+                        40D,
+                        "kg",
+                        119.30D,
+                        "CNY",
+                        "猫砂",
+                        2.9825D
+                )
+        );
+        return new SearchPurchaseRecordsResult(
+                "猫砂",
+                scope,
+                owner,
+                matchedCount,
+                records.size(),
+                records,
+                List.of("该结果来自原始订单记录检索，不代表已完成商品归一化。")
         );
     }
 

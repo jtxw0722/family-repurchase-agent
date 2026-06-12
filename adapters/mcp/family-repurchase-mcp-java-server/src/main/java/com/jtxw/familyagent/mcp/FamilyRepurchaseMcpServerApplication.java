@@ -83,6 +83,7 @@ public class FamilyRepurchaseMcpServerApplication {
                         application.recordPurchaseTool(),
                         application.comparePriceTool(),
                         application.getPriceBaselineTool(),
+                        application.searchPurchaseRecordsTool(),
                         application.generateReportTool()
                 )
                 .build();
@@ -141,6 +142,49 @@ public class FamilyRepurchaseMcpServerApplication {
                         )))
                         .build(),
                 this::handleRecordPurchase
+        );
+    }
+
+    /**
+     * 定义原始购买记录关键词检索 MCP tool。
+     *
+     * <p>该工具只转发到后端只读 REST 接口，返回原始订单样本，不生成价格基线。</p>
+     *
+     * @return search_purchase_records tool specification
+     */
+    McpServerFeatures.SyncToolSpecification searchPurchaseRecordsTool() {
+        String title = "Search Purchase Records";
+        return new McpServerFeatures.SyncToolSpecification(
+                McpSchema.Tool.builder("search_purchase_records")
+                        .title(title)
+                        .description("""
+                                Search raw historical purchase records by keyword when compare_price or get_price_baseline has no reliable baseline.
+                                This tool returns raw order samples only and does not produce a normalized price baseline.
+                                If owner is omitted, empty, or null, it searches all family records.
+                                LLM answers based on this tool must state that there is no reliable normalized price baseline and that the analysis is only based on raw historical order samples.
+                                """)
+                        .annotations(toolAnnotations(title, true, false, true))
+                        .inputSchema(objectSchema(
+                                properties(
+                                        property("keyword", stringSchema("查询关键词，例如 猫砂；按原始商品名、SKU、分类和归一化名称检索")),
+                                        property("owner", nullableStringSchema("订单所属人，可选；不传、空字符串或 null 时查询全家庭样本")),
+                                        property("limit", integerSchema("可选返回条数；后端默认 20，最大 50")),
+                                        property("fromDate", nullableStringSchema("可选开始日期，格式 yyyy-MM-dd")),
+                                        property("toDate", nullableStringSchema("可选结束日期，格式 yyyy-MM-dd"))
+                                ),
+                                List.of("keyword")
+                        ))
+                        .outputSchema(objectSchema(properties(
+                                property("keyword", stringSchema("清洗后的查询关键词")),
+                                property("scope", stringSchema("查询范围，FAMILY 表示全家庭样本，OWNER 表示指定归属人样本")),
+                                property("owner", nullableStringSchema("指定归属人；全家庭查询时为空")),
+                                property("matchedCount", numberSchema("符合查询条件的原始记录总数")),
+                                property("returnedCount", numberSchema("实际返回的记录数量")),
+                                property("records", arraySchema(searchPurchaseRecordItemOutputSchema())),
+                                property("warnings", arraySchema(stringSchema("风险提示，说明结果不是价格基线")))
+                        )))
+                        .build(),
+                this::handleSearchPurchaseRecords
         );
     }
 
@@ -340,6 +384,47 @@ public class FamilyRepurchaseMcpServerApplication {
         }
     }
 
+    /**
+     * 处理原始购买记录关键词检索工具调用。
+     *
+     * @param exchange MCP 同步交换上下文
+     * @param request  工具调用请求
+     * @return 工具调用结果，成功时 structuredContent 复用后端 REST 响应
+     */
+    private McpSchema.CallToolResult handleSearchPurchaseRecords(McpSyncServerExchange exchange,
+                                                                 McpSchema.CallToolRequest request) {
+        try {
+            Map<String, Object> args = arguments(request);
+            Map<String, Object> body = new LinkedHashMap<>();
+
+            body.put("keyword", requireString(args, "keyword"));
+
+            String owner = optionalBlankAsNullString(args, "owner");
+            if (owner != null) {
+                body.put("owner", owner);
+            }
+
+            Integer limit = optionalPositiveInteger(args, "limit");
+            if (limit != null) {
+                body.put("limit", limit);
+            }
+
+            String fromDate = optionalBlankAsNullString(args, "fromDate");
+            if (fromDate != null) {
+                body.put("fromDate", fromDate);
+            }
+
+            String toDate = optionalBlankAsNullString(args, "toDate");
+            if (toDate != null) {
+                body.put("toDate", toDate);
+            }
+
+            return toolSuccess(restClient.postJson("/api/tools/purchase-records/search", body));
+        } catch (Exception e) {
+            return toolError(e);
+        }
+    }
+
     private McpSchema.CallToolResult handleGenerateReport(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         try {
             Map<String, Object> args = arguments(request);
@@ -388,6 +473,59 @@ public class FamilyRepurchaseMcpServerApplication {
             return text.trim();
         }
         throw new ToolExecutionException(name + " 提供时必须是非空字符串");
+    }
+
+    /**
+     * 读取可选字符串参数，并将空字符串按未传处理。
+     *
+     * @param args 工具入参
+     * @param name 参数名
+     * @return trim 后的字符串；未传或空白时返回 null
+     */
+    private String optionalBlankAsNullString(Map<String, Object> args, String name) {
+        Object value = args.get(name);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String text) {
+            String trimmed = text.trim();
+            return trimmed.isEmpty() ? null : trimmed;
+        }
+        throw new ToolExecutionException(name + " 提供时必须是字符串");
+    }
+
+    /**
+     * 读取可选正整数参数。
+     *
+     * @param args 工具入参
+     * @param name 参数名
+     * @return 正整数；未传时返回 null
+     */
+    private Integer optionalPositiveInteger(Map<String, Object> args, String name) {
+        Object value = args.get(name);
+        if (value == null) {
+            return null;
+        }
+        BigDecimal number;
+        if (value instanceof Number numericValue) {
+            number = new BigDecimal(numericValue.toString());
+        } else if (value instanceof String text && !text.isBlank()) {
+            try {
+                number = new BigDecimal(text.trim());
+            } catch (NumberFormatException e) {
+                throw new ToolExecutionException(name + " 必须是正整数");
+            }
+        } else {
+            throw new ToolExecutionException(name + " 必须是正整数");
+        }
+        if (number.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ToolExecutionException(name + " 必须是正整数");
+        }
+        try {
+            return number.intValueExact();
+        } catch (ArithmeticException e) {
+            throw new ToolExecutionException(name + " 必须是正整数");
+        }
     }
 
     private BigDecimal requirePositiveNumber(Map<String, Object> args, String name) {
@@ -481,6 +619,16 @@ public class FamilyRepurchaseMcpServerApplication {
         return Map.of("type", "number", "description", description);
     }
 
+    /**
+     * 构建整数类型 JSON Schema。
+     *
+     * @param description 字段说明
+     * @return integer schema
+     */
+    private static Map<String, Object> integerSchema(String description) {
+        return Map.of("type", "integer", "description", description);
+    }
+
     private static Map<String, Object> nullableNumberSchema(String description) {
         return Map.of("type", List.of("number", "null"), "description", description);
     }
@@ -508,6 +656,30 @@ public class FamilyRepurchaseMcpServerApplication {
                 property("unitPriceUnit", nullableStringSchema("单位价格口径单位")),
                 property("originalQuantity", nullableNumberSchema("原始记录数量")),
                 property("originalUnit", nullableStringSchema("原始记录单位"))
+        ));
+    }
+
+    /**
+     * 构建 search_purchase_records 返回记录明细的 JSON Schema。
+     *
+     * @return 原始购买记录明细 schema
+     */
+    private static Map<String, Object> searchPurchaseRecordItemOutputSchema() {
+        return objectSchema(properties(
+                property("recordId", nullableNumberSchema("购买记录 ID")),
+                property("orderTime", nullableStringSchema("订单发生时间")),
+                property("platform", nullableStringSchema("购买平台")),
+                property("owner", nullableStringSchema("订单归属人")),
+                property("productName", stringSchema("原始商品名称")),
+                property("sku", nullableStringSchema("商品规格或 SKU")),
+                property("category", nullableStringSchema("一级商品分类")),
+                property("subCategory", nullableStringSchema("二级商品分类")),
+                property("quantity", nullableNumberSchema("原始数量")),
+                property("unit", nullableStringSchema("原始数量单位")),
+                property("totalAmount", nullableNumberSchema("统计总金额")),
+                property("currency", nullableStringSchema("交易币种")),
+                property("normalizedName", nullableStringSchema("记录中已有的归一化名称，不代表可靠价格基线")),
+                property("unitPrice", nullableNumberSchema("记录中已有的单位价格，允许为空"))
         ));
     }
 
