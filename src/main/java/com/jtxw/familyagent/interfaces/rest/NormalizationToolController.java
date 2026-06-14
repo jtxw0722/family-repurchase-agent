@@ -4,7 +4,6 @@ import com.jtxw.familyagent.application.NormalizationLibraryService;
 import com.jtxw.familyagent.application.NormalizationLlmTaskService;
 import com.jtxw.familyagent.application.NormalizationRuleSuggestionService;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
-import com.jtxw.familyagent.domain.model.NormalizationLibraryOperationResult;
 import com.jtxw.familyagent.domain.model.NormalizationLlmTask;
 import com.jtxw.familyagent.domain.model.NormalizationLlmTaskCreateResult;
 import com.jtxw.familyagent.interfaces.rest.request.NormalizationLibraryOperationRequest;
@@ -72,11 +71,11 @@ public class NormalizationToolController {
      * 统一处理归一化规则库写操作。
      *
      * @param request 统一写操作请求，使用 action 区分 create_rule、update_rule、disable_rule、add_keyword、disable_keyword
-     * @return 统一写操作响应结果
+     * @return 统一写操作响应结果；apply_rule_to_records 返回历史记录回填预览或执行结果
      */
-    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用和关键词维护。")
+    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用、关键词维护和受控历史记录回填。")
     @PostMapping("/normalization-library")
-    public NormalizationLibraryOperationResult operateNormalizationLibrary(
+    public Object operateNormalizationLibrary(
             @RequestBody NormalizationLibraryOperationRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("归一化规则库操作请求不能为空");

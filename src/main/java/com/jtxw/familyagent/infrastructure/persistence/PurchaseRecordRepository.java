@@ -192,6 +192,48 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 查询归一化规则回填候选购买记录。
+     *
+     * <p>该查询只按 batchId、owner、legacy fallback 和 exclude 状态缩小候选范围；
+     * 最终是否命中指定规则必须由应用层复用规则匹配器判断，不能只依赖 SQL 关键词匹配。</p>
+     *
+     * @param batchId            可选导入批次 ID；为空时不按批次筛选
+     * @param owner              可选订单归属人；为空时不按归属人筛选
+     * @param onlyLegacyFallback 是否只处理未命中明确规则的记录
+     * @param onlyExcluded       是否只处理当前已排除记录
+     * @param limit              最大返回条数
+     * @return 候选购买记录列表
+     */
+    public List<PurchaseRecord> listRuleApplyCandidates(Long batchId,
+                                                        String owner,
+                                                        boolean onlyLegacyFallback,
+                                                        boolean onlyExcluded,
+                                                        int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT * FROM purchase_records
+                WHERE 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (batchId != null) {
+            sql.append(" AND batch_id = ?");
+            args.add(batchId);
+        }
+        if (owner != null && !owner.isBlank()) {
+            sql.append(" AND owner = ?");
+            args.add(owner.trim());
+        }
+        if (onlyLegacyFallback) {
+            sql.append(" AND (normalization_rule IS NULL OR normalization_rule = '' OR normalization_rule = 'legacy_fallback')");
+        }
+        if (onlyExcluded) {
+            sql.append(" AND decision = 'exclude'");
+        }
+        sql.append(" ORDER BY order_time DESC, id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper(), args.toArray());
+    }
+
+    /**
      * 查询指定商品的历史有效单价样本。
      *
      * <p>默认只返回正式统计口径内的记录：
@@ -407,6 +449,40 @@ public class PurchaseRecordRepository {
                 SET normalized_name = ?, decision = ?
                 WHERE id = ?
                 """, normalizedName, decision, id);
+    }
+
+    /**
+     * 根据指定归一化规则回填购买记录统计字段。
+     *
+     * <p>该方法只更新归一化名称、标准数量、单位、单价、统计决策和命中规则；
+     * 不修改商品标题、SKU、平台、归属人、订单时间、来源和备注等原始溯源字段。</p>
+     *
+     * @param id                购买记录 ID
+     * @param normalizedName    规则对应的归一化商品名称
+     * @param quantity          解析后的标准数量
+     * @param unit              规则标准单位
+     * @param unitPrice         重新计算后的标准单价
+     * @param decision          统计决策，自动回填时为 include
+     * @param normalizationRule 命中的规则编码
+     * @return 更新记录数
+     */
+    public int updateNormalizedRecordAfterRuleApply(long id,
+                                                    String normalizedName,
+                                                    double quantity,
+                                                    String unit,
+                                                    double unitPrice,
+                                                    String decision,
+                                                    String normalizationRule) {
+        return jdbcTemplate.update("""
+                UPDATE purchase_records
+                SET normalized_name = ?,
+                    quantity = ?,
+                    unit = ?,
+                    unit_price = ?,
+                    decision = ?,
+                    normalization_rule = ?
+                WHERE id = ?
+                """, normalizedName, quantity, unit, unitPrice, decision, normalizationRule, id);
     }
 
     /**

@@ -11,6 +11,7 @@ import com.jtxw.familyagent.domain.model.NormalizationRuleMutationResult;
 import com.jtxw.familyagent.domain.policy.UnitFamily;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.NormalizationRuleRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +49,10 @@ public class NormalizationLibraryService {
      * 统一入口禁用关键词动作。
      */
     private static final String ACTION_DISABLE_KEYWORD = "disable_keyword";
+    /**
+     * 统一入口将规则受控应用到历史购买记录动作。
+     */
+    private static final String ACTION_APPLY_RULE_TO_RECORDS = "apply_rule_to_records";
     /**
      * 手动维护规则的 source 标记。
      */
@@ -93,11 +98,31 @@ public class NormalizationLibraryService {
      * 归一化规则仓储，负责读取规则、关键词和样本统计。
      */
     private final NormalizationRuleRepository normalizationRuleRepository;
+    /**
+     * 归一化规则历史记录回填服务，负责 dry-run 预览和显式回填。
+     */
+    private final NormalizationRuleApplyService normalizationRuleApplyService;
 
+    @Autowired
     public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
-                                       NormalizationRuleRepository normalizationRuleRepository) {
+                                       NormalizationRuleRepository normalizationRuleRepository,
+                                       NormalizationRuleApplyService normalizationRuleApplyService) {
         this.databaseInitializer = databaseInitializer;
         this.normalizationRuleRepository = normalizationRuleRepository;
+        this.normalizationRuleApplyService = normalizationRuleApplyService;
+    }
+
+    /**
+     * 创建归一化名称库应用服务。
+     *
+     * <p>该构造器用于不涉及历史记录回填的单元测试场景；生产运行由 Spring 注入完整构造器。</p>
+     *
+     * @param databaseInitializer        数据库初始化组件
+     * @param normalizationRuleRepository 归一化规则仓储
+     */
+    public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
+                                       NormalizationRuleRepository normalizationRuleRepository) {
+        this(databaseInitializer, normalizationRuleRepository, null);
     }
 
     /**
@@ -119,7 +144,7 @@ public class NormalizationLibraryService {
      * @return 统一写操作响应结果
      */
     @Transactional
-    public NormalizationLibraryOperationResult operate(NormalizationLibraryOperationCommand command) {
+    public Object operate(NormalizationLibraryOperationCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("归一化规则库操作请求不能为空");
         }
@@ -131,8 +156,16 @@ public class NormalizationLibraryService {
             case ACTION_ADD_KEYWORD -> operateAddKeyword(action, command);
             case ACTION_DISABLE_KEYWORD -> toOperationResult(action, disableKeyword(
                     new DisableNormalizationRuleKeywordCommand(command.ruleCode(), command.keyword(), command.matchType())));
+            case ACTION_APPLY_RULE_TO_RECORDS -> applyRuleToRecords(command);
             default -> throw new IllegalArgumentException("不支持的归一化规则库操作：" + command.action());
         };
+    }
+
+    private Object applyRuleToRecords(NormalizationLibraryOperationCommand command) {
+        if (normalizationRuleApplyService == null) {
+            throw new IllegalStateException("归一化规则历史记录回填服务未初始化");
+        }
+        return normalizationRuleApplyService.apply(command);
     }
 
     /**

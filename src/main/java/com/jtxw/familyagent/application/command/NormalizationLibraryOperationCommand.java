@@ -19,6 +19,12 @@ import java.util.List;
  * @param matchType       关键词类型，仅允许 include 或 exclude
  * @param keywords        初始 include 关键词列表，create_rule 时允许为空
  * @param excludeKeywords 初始 exclude 关键词列表，create_rule 时允许为空
+ * @param batchId         历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选
+ * @param owner           历史记录回填归属人筛选，apply_rule_to_records 时可选；为空时不按归属人筛选；batchId 和 owner 都为空时按全家庭历史样本扫描
+ * @param onlyLegacyFallback 是否只处理未命中明确规则的记录，apply_rule_to_records 默认 true
+ * @param onlyExcluded    是否只处理当前已排除记录，apply_rule_to_records 默认 true
+ * @param dryRun          是否只预览不写库，apply_rule_to_records 默认 true
+ * @param limit           历史记录回填候选数量上限，apply_rule_to_records 默认 100，最大 500
  */
 public record NormalizationLibraryOperationCommand(
         String action,
@@ -32,7 +38,13 @@ public record NormalizationLibraryOperationCommand(
         String keyword,
         String matchType,
         List<String> keywords,
-        List<String> excludeKeywords
+        List<String> excludeKeywords,
+        Long batchId,
+        String owner,
+        Boolean onlyLegacyFallback,
+        Boolean onlyExcluded,
+        Boolean dryRun,
+        Integer limit
 ) {
     /**
      * 创建统一操作命令。
@@ -51,9 +63,50 @@ public record NormalizationLibraryOperationCommand(
      * @param matchType       关键词类型
      * @param keywords        include 关键词列表
      * @param excludeKeywords exclude 关键词列表
+     * @param batchId         导入批次筛选；为空时不按批次筛选
+     * @param owner           归属人筛选；为空时不按归属人筛选；batchId 和 owner 都为空时按全家庭历史样本扫描
+     * @param onlyLegacyFallback 是否只处理未命中明确规则的记录
+     * @param onlyExcluded    是否只处理当前已排除记录
+     * @param dryRun          是否只预览不写库
+     * @param limit           最大候选数量
      */
     public NormalizationLibraryOperationCommand {
         keywords = keywords == null ? List.of() : keywords.stream().toList();
         excludeKeywords = excludeKeywords == null ? List.of() : excludeKeywords.stream().toList();
+    }
+
+    /**
+     * 创建不包含历史记录回填字段的规则库操作命令。
+     *
+     * <p>该构造器用于保留原 create_rule / add_keyword 等调用方的构造方式，
+     * 历史记录回填字段统一置空，由 apply_rule_to_records 分支单独处理。</p>
+     *
+     * @param action          操作动作
+     * @param ruleCode        规则业务编码
+     * @param normalizedName  归一化商品名称
+     * @param category        商品品类
+     * @param standardUnit    标准统计单位
+     * @param unitFamily      单位族文本
+     * @param priority        优先级
+     * @param enabled         是否启用规则
+     * @param keyword         单个关键词
+     * @param matchType       关键词类型
+     * @param keywords        include 关键词列表
+     * @param excludeKeywords exclude 关键词列表
+     */
+    public NormalizationLibraryOperationCommand(String action,
+                                                String ruleCode,
+                                                String normalizedName,
+                                                String category,
+                                                String standardUnit,
+                                                String unitFamily,
+                                                Integer priority,
+                                                Boolean enabled,
+                                                String keyword,
+                                                String matchType,
+                                                List<String> keywords,
+                                                List<String> excludeKeywords) {
+        this(action, ruleCode, normalizedName, category, standardUnit, unitFamily, priority, enabled, keyword,
+                matchType, keywords, excludeKeywords, null, null, null, null, null, null);
     }
 }

@@ -73,6 +73,38 @@ public class NormalizationLibraryOperationRequest {
      */
     @Schema(description = "初始 exclude 关键词列表")
     private List<String> excludeKeywords = new ArrayList<>();
+    /**
+     * 历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选。
+     * batchId 和 owner 都为空时，按全家庭历史样本扫描。
+     */
+    @Schema(description = "历史记录回填批次筛选；为空时不按批次筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "1")
+    private Long batchId;
+    /**
+     * 历史记录回填归属人筛选，apply_rule_to_records 时可选；为空时不按归属人筛选。
+     * batchId 和 owner 都为空时，按全家庭历史样本扫描。
+     */
+    @Schema(description = "历史记录回填归属人筛选；为空时不按归属人筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "lj")
+    private String owner;
+    /**
+     * 是否只处理 normalization_rule 为空或 legacy_fallback 的记录，apply_rule_to_records 默认 true。
+     */
+    @Schema(description = "是否只处理未命中明确规则的记录", example = "true")
+    private Boolean onlyLegacyFallback;
+    /**
+     * 是否只处理当前 decision=exclude 的记录，apply_rule_to_records 默认 true。
+     */
+    @Schema(description = "是否只处理当前已排除记录", example = "true")
+    private Boolean onlyExcluded;
+    /**
+     * 是否只预览不写库，apply_rule_to_records 默认 true；只有显式 false 才回填。
+     */
+    @Schema(description = "是否只预览不写库", example = "true")
+    private Boolean dryRun;
+    /**
+     * 历史记录回填候选数量上限，默认 100，最大 500。
+     */
+    @Schema(description = "历史记录回填候选数量上限", example = "100")
+    private Integer limit;
 
     public String getAction() {
         return action;
@@ -170,6 +202,54 @@ public class NormalizationLibraryOperationRequest {
         this.excludeKeywords = excludeKeywords;
     }
 
+    public Long getBatchId() {
+        return batchId;
+    }
+
+    public void setBatchId(Long batchId) {
+        this.batchId = batchId;
+    }
+
+    public String getOwner() {
+        return owner;
+    }
+
+    public void setOwner(String owner) {
+        this.owner = owner;
+    }
+
+    public Boolean getOnlyLegacyFallback() {
+        return onlyLegacyFallback;
+    }
+
+    public void setOnlyLegacyFallback(Boolean onlyLegacyFallback) {
+        this.onlyLegacyFallback = onlyLegacyFallback;
+    }
+
+    public Boolean getOnlyExcluded() {
+        return onlyExcluded;
+    }
+
+    public void setOnlyExcluded(Boolean onlyExcluded) {
+        this.onlyExcluded = onlyExcluded;
+    }
+
+    public Boolean getDryRun() {
+        return dryRun;
+    }
+
+    public void setDryRun(Boolean dryRun) {
+        this.dryRun = dryRun;
+    }
+
+    public Integer getLimit() {
+        return limit;
+    }
+
+    public void setLimit(Integer limit) {
+        this.limit = limit;
+    }
+
     /**
      * 转换为应用层统一写操作命令。
      *
@@ -177,6 +257,7 @@ public class NormalizationLibraryOperationRequest {
      */
     public NormalizationLibraryOperationCommand toCommand() {
         return new NormalizationLibraryOperationCommand(action, ruleCode, normalizedName, category, standardUnit,
-                unitFamily, priority, enabled, keyword, matchType, keywords, excludeKeywords);
+                unitFamily, priority, enabled, keyword, matchType, keywords, excludeKeywords,
+                batchId, owner, onlyLegacyFallback, onlyExcluded, dryRun, limit);
     }
 }

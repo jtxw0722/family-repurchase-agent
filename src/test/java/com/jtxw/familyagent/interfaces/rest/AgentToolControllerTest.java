@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -326,6 +327,80 @@ class AgentToolControllerTest {
         verify(normalizationLibraryService).operate(captor.capture());
         assertThat(captor.getValue().action()).isEqualTo("disable_rule");
         assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
+    }
+
+    @Test
+    void applyRuleToRecordsShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(new NormalizationApplyRuleToRecordsResult(
+                        "apply_rule_to_records",
+                        true,
+                        "contact_lenses",
+                        "美瞳",
+                        true,
+                        1,
+                        1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        List.of("dryRun=true，仅返回预览，不写入 purchase_records"),
+                        List.of(new NormalizationApplyRuleToRecordsItem(
+                                22L,
+                                "美瞳日抛 10片",
+                                "自然棕",
+                                "applicable",
+                                new NormalizationApplyRuleRecordSnapshot(
+                                        "美瞳日抛 10片",
+                                        BigDecimal.ONE,
+                                        "件",
+                                        BigDecimal.valueOf(33.79D),
+                                        "exclude",
+                                        "legacy_fallback"
+                                ),
+                                new NormalizationApplyRuleRecordSnapshot(
+                                        "美瞳",
+                                        BigDecimal.TEN,
+                                        "片",
+                                        BigDecimal.valueOf(3.379D),
+                                        "include",
+                                        "contact_lenses"
+                                ),
+                                List.of()
+                        ))
+                ));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "apply_rule_to_records",
+                                  "ruleCode": "contact_lenses",
+                                  "onlyLegacyFallback": true,
+                                  "onlyExcluded": true,
+                                  "dryRun": true,
+                                  "limit": 50
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("apply_rule_to_records"))
+                .andExpect(jsonPath("$.ruleCode").value("contact_lenses"))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.items[0].status").value("applicable"))
+                .andExpect(jsonPath("$.items[0].after.normalizedName").value("美瞳"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        NormalizationLibraryOperationCommand command = captor.getValue();
+        assertThat(command.action()).isEqualTo("apply_rule_to_records");
+        assertThat(command.ruleCode()).isEqualTo("contact_lenses");
+        assertThat(command.batchId()).isNull();
+        assertThat(command.owner()).isNull();
+        assertThat(command.onlyLegacyFallback()).isTrue();
+        assertThat(command.onlyExcluded()).isTrue();
+        assertThat(command.dryRun()).isTrue();
+        assertThat(command.limit()).isEqualTo(50);
     }
 
     @Test

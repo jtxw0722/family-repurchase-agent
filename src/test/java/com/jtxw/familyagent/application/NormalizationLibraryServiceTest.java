@@ -65,7 +65,7 @@ class NormalizationLibraryServiceTest {
 
     @Test
     void shouldDispatchUnifiedOperationAction() {
-        NormalizationLibraryOperationResult result = service.operate(new NormalizationLibraryOperationCommand(
+        NormalizationLibraryOperationResult result = (NormalizationLibraryOperationResult) service.operate(new NormalizationLibraryOperationCommand(
                 "create_rule",
                 "body_wash",
                 "沐浴露",

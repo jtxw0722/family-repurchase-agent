@@ -21,6 +21,24 @@ import java.util.Optional;
  */
 @Repository
 public class ReviewItemRepository {
+    /**
+     * 规则回填可以自动解决的商品归一化复核原因。
+     */
+    private static final List<String> RULE_APPLY_RESOLVABLE_REASONS = List.of(
+            "PRODUCT_NAME_NORMALIZATION_REVIEW",
+            "QUANTITY_UNIT_PARSE_REVIEW"
+    );
+    /**
+     * 规则回填必须继续阻断的风险型 pending 复核原因。
+     */
+    private static final List<String> RULE_APPLY_BLOCKING_PENDING_REASONS = List.of(
+            "DUPLICATE_ORDER",
+            "ZERO_PAYMENT",
+            "PAYMENT_ADJUSTMENT",
+            "PRICE_OUT_OF_BASELINE_RANGE",
+            "UNIT_MISMATCH_UNPARSED"
+    );
+
     private final JdbcTemplate jdbcTemplate;
 
     public ReviewItemRepository(JdbcTemplate jdbcTemplate) {
@@ -252,6 +270,97 @@ public class ReviewItemRepository {
                 WHERE record_id = ? AND reason_code = ? AND status = 'pending'
                 """, Integer.class, recordId, reasonCode);
         return count != null && count > 0;
+    }
+
+    /**
+     * 判断指定购买记录是否存在任意待处理复核项。
+     *
+     * @param recordId 购买记录 ID
+     * @return 存在 pending 复核项时返回 true
+     */
+    public boolean existsPendingByRecordId(long recordId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM review_items
+                WHERE record_id = ? AND status = 'pending'
+                """, Integer.class, recordId);
+        return count != null && count > 0;
+    }
+
+    /**
+     * 判断指定购买记录是否存在会阻断自动规则回填的复核项。
+     *
+     * <p>pending 复核项表示当前仍需人工确认；resolved 且 review_decision=exclude 表示人工已明确排除，
+     * 自动回填不得再将该记录改回 include。</p>
+     *
+     * @param recordId 购买记录 ID
+     * @return 存在阻断复核项时返回 true
+     */
+    public boolean existsBlockingReviewByRecordId(long recordId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM review_items
+                WHERE record_id = ?
+                  AND (status = 'pending' OR (status = 'resolved' AND review_decision = 'exclude'))
+                """, Integer.class, recordId);
+        return count != null && count > 0;
+    }
+
+    /**
+     * 判断指定购买记录是否存在会阻断规则自动回填的复核项。
+     *
+     * <p>阻断条件仅包括人工已确认 exclude 的复核结果，以及仍处于 pending 的风险型复核。
+     * PRODUCT_NAME_NORMALIZATION_REVIEW 和 QUANTITY_UNIT_PARSE_REVIEW 属于规则补齐后可解决的复核，
+     * 不能一刀切阻断 apply_rule_to_records。</p>
+     *
+     * @param recordId 购买记录 ID
+     * @return 存在规则回填阻断项时返回 true
+     */
+    public boolean existsBlockingReviewForRuleApply(long recordId) {
+        List<Object> params = new ArrayList<>();
+        params.add(recordId);
+        params.addAll(RULE_APPLY_BLOCKING_PENDING_REASONS);
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM review_items
+                WHERE record_id = ?
+                  AND (
+                      review_decision = 'exclude'
+                      OR (status = 'pending' AND reason_code IN (%s))
+                  )
+                """.formatted(placeholders(RULE_APPLY_BLOCKING_PENDING_REASONS.size())), Integer.class,
+                params.toArray());
+        return count != null && count > 0;
+    }
+
+    /**
+     * 将规则回填已经解决的 pending 复核项标记为已处理。
+     *
+     * <p>该方法只关闭商品归一化和数量单位解析复核，不会关闭重复订单、支付、价格异常等风险型复核。</p>
+     *
+     * @param recordId       购买记录 ID
+     * @param reviewDecision 复核处理结果，例如 rule_applied
+     * @param reviewNote     复核处理说明
+     * @return 被关闭的复核项数量
+     */
+    public int resolvePendingRuleApplyReviews(long recordId, String reviewDecision, String reviewNote) {
+        List<Object> params = new ArrayList<>();
+        params.add(reviewDecision);
+        params.add(reviewNote);
+        params.add(ClockUtils.nowText());
+        params.add(recordId);
+        params.addAll(RULE_APPLY_RESOLVABLE_REASONS);
+        return jdbcTemplate.update("""
+                UPDATE review_items
+                SET status = 'resolved',
+                    review_decision = ?,
+                    review_note = ?,
+                    resolved_at = ?
+                WHERE record_id = ?
+                  AND status = 'pending'
+                  AND reason_code IN (%s)
+                """.formatted(placeholders(RULE_APPLY_RESOLVABLE_REASONS.size())), params.toArray());
+    }
+
+    private String placeholders(int size) {
+        return String.join(", ", java.util.Collections.nCopies(size, "?"));
     }
 
     private RowMapper<ReviewItem> rowMapper() {
