@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.infrastructure.persistence;
 
 import com.jtxw.familyagent.common.ClockUtils;
+import com.jtxw.familyagent.domain.model.NormalizationRuleSuggestionCandidate;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -12,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -135,6 +137,58 @@ public class PurchaseRecordRepository {
                 WHERE batch_id = ?
                 ORDER BY id
                 """, rowMapper(), batchId);
+    }
+
+    /**
+     * 查询规则维护建议候选商品样本。
+     *
+     * <p>该查询只返回允许进入 LLM 的脱敏字段，不包含 owner、订单时间、金额、店铺、
+     * 来源文件或 sourceText。默认 legacy_fallback 模式只选取未被规则稳定命中的样本。</p>
+     *
+     * @param batchId         可选导入批次 ID；不为空时只查询该批次
+     * @param owner           可选订单归属人；不为空时只查询该 owner
+     * @param fullScan        是否显式全量扫描；仅影响调用方校验，查询本身按条件组合执行
+     * @param candidateMode   候选模式，legacy_fallback 只查询 fallback 或空规则，all 查询全部
+     * @param includeKeywords 包含关键词，命中 product_name 或 sku 任一字段才保留
+     * @param excludeKeywords 排除关键词，命中 product_name 或 sku 任一字段则排除
+     * @param limit           最大返回条数，调用方已限制上限
+     * @return 脱敏后的候选商品样本
+     */
+    public List<NormalizationRuleSuggestionCandidate> listRuleSuggestionCandidates(Long batchId,
+                                                                                   String owner,
+                                                                                   boolean fullScan,
+                                                                                   String candidateMode,
+                                                                                   List<String> includeKeywords,
+                                                                                   List<String> excludeKeywords,
+                                                                                   int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT product_name, sku, category, sub_category, normalization_rule
+                FROM purchase_records
+                WHERE 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (batchId != null) {
+            sql.append(" AND batch_id = ?");
+            args.add(batchId);
+        }
+        if (owner != null && !owner.isBlank()) {
+            sql.append(" AND owner = ?");
+            args.add(owner.trim());
+        }
+        if (!"all".equalsIgnoreCase(candidateMode)) {
+            sql.append(" AND (normalization_rule IS NULL OR normalization_rule = '' OR normalization_rule = 'legacy_fallback')");
+        }
+        appendKeywordFilter(sql, args, includeKeywords, false);
+        appendKeywordFilter(sql, args, excludeKeywords, true);
+        sql.append(" ORDER BY id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new NormalizationRuleSuggestionCandidate(
+                rs.getString("product_name"),
+                rs.getString("sku"),
+                rs.getString("category"),
+                rs.getString("sub_category"),
+                safeColumn(rs, "normalization_rule")
+        ), args.toArray());
     }
 
     /**
@@ -265,6 +319,38 @@ public class PurchaseRecordRepository {
                 .replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
+    }
+
+    /**
+     * 追加商品名和 SKU 的关键词过滤条件。
+     *
+     * @param sql             正在构建的 SQL
+     * @param args            SQL 参数列表
+     * @param keywords        关键词列表，允许为空
+     * @param excludedKeyword true 表示排除命中关键词的商品，false 表示只保留命中关键词的商品
+     */
+    private void appendKeywordFilter(StringBuilder sql,
+                                     List<Object> args,
+                                     List<String> keywords,
+                                     boolean excludedKeyword) {
+        List<String> safeKeywords = keywords == null ? List.of() : keywords.stream()
+                .filter(keyword -> keyword != null && !keyword.isBlank())
+                .map(String::trim)
+                .toList();
+        if (safeKeywords.isEmpty()) {
+            return;
+        }
+        sql.append(excludedKeyword ? " AND NOT (" : " AND (");
+        for (int index = 0; index < safeKeywords.size(); index++) {
+            if (index > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("(COALESCE(product_name, '') LIKE ? ESCAPE '\\' OR COALESCE(sku, '') LIKE ? ESCAPE '\\')");
+            String likeKeyword = "%" + escapeLikeKeyword(safeKeywords.get(index)) + "%";
+            args.add(likeKeyword);
+            args.add(likeKeyword);
+        }
+        sql.append(")");
     }
 
     /**

@@ -1,11 +1,10 @@
 package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationAnalyzeResult;
+import com.jtxw.familyagent.domain.model.NormalizationLlmTaskCreateResult;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
-import com.jtxw.familyagent.infrastructure.persistence.NormalizationAnalysisTaskRepository;
+import com.jtxw.familyagent.infrastructure.persistence.NormalizationLlmTaskRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -25,15 +24,19 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
      * 应用重启时中断遗留 active 任务的错误提示，必须明确告知用户重新创建任务。
      */
     private static final String INTERRUPTED_TASK_MESSAGE = "应用重启，任务已中断，请重新创建分析任务。";
+    /**
+     * 旧商品归一化分析任务类型，写入通用 LLM 任务表。
+     */
+    private static final String TASK_TYPE_NORMALIZATION_SUGGESTION_ANALYSIS = "normalization_suggestion_analysis";
 
     /**
      * 数据库初始化组件，用于确保任务表和建议表在接口调用前可用。
      */
     private final DatabaseInitializer databaseInitializer;
     /**
-     * 归一化分析任务仓储，负责 normalization_analysis_tasks 表的读写。
+     * 通用 LLM 任务仓储，新代码写入 normalization_llm_tasks 表。
      */
-    private final NormalizationAnalysisTaskRepository taskRepository;
+    private final NormalizationLlmTaskRepository llmTaskRepository;
     /**
      * 原有同步归一化建议服务，后台任务复用其分析和写 suggestion 的业务逻辑。
      */
@@ -52,11 +55,11 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
      * @param executorService     单线程后台执行器，不能为空
      */
     public NormalizationAnalysisTaskService(DatabaseInitializer databaseInitializer,
-                                            NormalizationAnalysisTaskRepository taskRepository,
+                                            NormalizationLlmTaskRepository llmTaskRepository,
                                             NormalizationSuggestionService suggestionService,
                                             @Qualifier("normalizationAnalysisExecutor") ExecutorService executorService) {
         this.databaseInitializer = databaseInitializer;
-        this.taskRepository = taskRepository;
+        this.llmTaskRepository = llmTaskRepository;
         this.suggestionService = suggestionService;
         this.executorService = executorService;
     }
@@ -81,7 +84,7 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
      */
     public int recoverInterruptedActiveTasks() {
         databaseInitializer.initialize();
-        return taskRepository.markInterruptedActiveTasks(INTERRUPTED_TASK_MESSAGE);
+        return llmTaskRepository.markInterruptedActiveTasks(INTERRUPTED_TASK_MESSAGE);
     }
 
     /**
@@ -99,12 +102,12 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
      * @return 异步任务创建结果，包含 taskId、batchId、初始状态和提示信息
      * @throws NormalizationAnalysisTaskConflictException 已存在 pending/running 任务时抛出
      */
-    public synchronized NormalizationAnalysisTaskCreateResult create(long batchId,
-                                                                      int limit,
-                                                                      boolean forceReanalyze,
-                                                                      List<String> includeKeywords,
-                                                                      List<String> excludeKeywords,
-                                                                      boolean onlyFailed) {
+    public synchronized NormalizationLlmTaskCreateResult create(long batchId,
+                                                                 int limit,
+                                                                 boolean forceReanalyze,
+                                                                 List<String> includeKeywords,
+                                                                 List<String> excludeKeywords,
+                                                                 boolean onlyFailed) {
         return create(new AnalyzeNormalizationCommand(batchId, limit, forceReanalyze,
                 includeKeywords, excludeKeywords, onlyFailed));
     }
@@ -119,29 +122,17 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
      * @return 异步任务创建结果，包含 taskId、batchId、初始状态和提示信息
      * @throws NormalizationAnalysisTaskConflictException 已存在 pending/running 任务时抛出
      */
-    public synchronized NormalizationAnalysisTaskCreateResult create(AnalyzeNormalizationCommand command) {
+    public synchronized NormalizationLlmTaskCreateResult create(AnalyzeNormalizationCommand command) {
         databaseInitializer.initialize();
-        if (taskRepository.existsActiveTask()) {
+        if (llmTaskRepository.existsActiveTask()) {
             throw new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试");
         }
-        long taskId = taskRepository.create(command.batchId(), command.limit(), command.forceReanalyze(),
-                safeKeywords(command.includeKeywords()), safeKeywords(command.excludeKeywords()), command.onlyFailed());
+        long taskId = llmTaskRepository.create(TASK_TYPE_NORMALIZATION_SUGGESTION_ANALYSIS, command.batchId(), null,
+                false, false, "legacy_fallback", command.limit(), command);
         executorService.submit(() -> runTask(taskId, command.batchId(), command.limit(), command.forceReanalyze(),
                 safeKeywords(command.includeKeywords()), safeKeywords(command.excludeKeywords()), command.onlyFailed()));
-        return new NormalizationAnalysisTaskCreateResult(taskId, command.batchId(), "pending", "归一化建议分析任务已创建");
-    }
-
-    /**
-     * 查询商品归一化异步分析任务详情。
-     *
-     * @param taskId 任务 ID，对应 normalization_analysis_tasks.id
-     * @return 任务状态、进度、统计结果和错误信息
-     * @throws IllegalArgumentException 指定任务不存在时抛出
-     */
-    public NormalizationAnalysisTask get(long taskId) {
-        databaseInitializer.initialize();
-        return taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("归一化建议分析任务不存在：" + taskId));
+        return new NormalizationLlmTaskCreateResult(taskId, TASK_TYPE_NORMALIZATION_SUGGESTION_ANALYSIS,
+                "pending", "归一化建议分析任务已创建");
     }
 
     /**
@@ -165,14 +156,16 @@ public class NormalizationAnalysisTaskService implements ApplicationRunner {
                          List<String> includeKeywords,
                          List<String> excludeKeywords,
                          boolean onlyFailed) {
-        taskRepository.markRunning(taskId);
+        llmTaskRepository.markRunning(taskId);
         try {
             NormalizationAnalyzeResult result = suggestionService.analyzeBatch(batchId, limit, forceReanalyze,
                     includeKeywords, excludeKeywords, onlyFailed,
-                    progress -> taskRepository.updateProgress(taskId, progress));
-            taskRepository.markCompleted(taskId, result);
+                    progress -> llmTaskRepository.updateProgress(taskId, progress.candidateCount(), progress.analyzedCount()));
+            llmTaskRepository.markCompleted(taskId, result.candidateCount(), result.analyzedCount(),
+                    result.pendingBatchApprovalCount() + result.pendingReviewCount() + result.autoExcludedCount(),
+                    0, result.failedCount(), result, List.of());
         } catch (Exception e) {
-            taskRepository.markFailed(taskId, sanitizeError(errorMessage(e)));
+            llmTaskRepository.markFailed(taskId, sanitizeError(errorMessage(e)));
         }
     }
 

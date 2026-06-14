@@ -2,17 +2,20 @@ package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
 import com.jtxw.familyagent.application.NormalizationLibraryService;
+import com.jtxw.familyagent.application.NormalizationLlmTaskService;
+import com.jtxw.familyagent.application.NormalizationRuleSuggestionService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.application.AutoExcludedNormalizationSuggestionResult;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
-import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryOperationResult;
+import com.jtxw.familyagent.domain.model.NormalizationLlmTask;
+import com.jtxw.familyagent.domain.model.NormalizationLlmTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
 import com.jtxw.familyagent.interfaces.rest.request.AnalyzeNormalizationRequest;
 import com.jtxw.familyagent.interfaces.rest.request.BatchApplyNormalizationRequest;
 import com.jtxw.familyagent.interfaces.rest.request.NormalizationLibraryOperationRequest;
+import com.jtxw.familyagent.interfaces.rest.request.NormalizationRuleSuggestionRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -40,6 +43,14 @@ public class NormalizationToolController {
      */
     private final NormalizationAnalysisTaskService normalizationAnalysisTaskService;
     /**
+     * 归一化 LLM 通用任务查询服务，负责查询 normalization_llm_tasks。
+     */
+    private final NormalizationLlmTaskService normalizationLlmTaskService;
+    /**
+     * 规则维护建议服务，负责创建 LLM 规则建议任务。
+     */
+    private final NormalizationRuleSuggestionService normalizationRuleSuggestionService;
+    /**
      * 商品归一化建议服务，负责查询和批量应用 normalization_suggestions。
      */
     private final NormalizationSuggestionService normalizationSuggestionService;
@@ -56,9 +67,13 @@ public class NormalizationToolController {
      * @param normalizationLibraryService      归一化名称库服务
      */
     public NormalizationToolController(NormalizationAnalysisTaskService normalizationAnalysisTaskService,
+                                       NormalizationLlmTaskService normalizationLlmTaskService,
+                                       NormalizationRuleSuggestionService normalizationRuleSuggestionService,
                                        NormalizationSuggestionService normalizationSuggestionService,
                                        NormalizationLibraryService normalizationLibraryService) {
         this.normalizationAnalysisTaskService = normalizationAnalysisTaskService;
+        this.normalizationLlmTaskService = normalizationLlmTaskService;
+        this.normalizationRuleSuggestionService = normalizationRuleSuggestionService;
         this.normalizationSuggestionService = normalizationSuggestionService;
         this.normalizationLibraryService = normalizationLibraryService;
     }
@@ -102,22 +117,38 @@ public class NormalizationToolController {
      */
     @Operation(summary = "分析批次商品归一化建议", description = "对导入批次内 legacy_fallback 商品创建 LLM Advisor 异步分析任务，并在后台保存建议审计记录。")
     @PostMapping("/import-batches/{batchId}/analyze-normalization")
-    public NormalizationAnalysisTaskCreateResult analyzeNormalization(@PathVariable long batchId,
-                                                                      @RequestBody(required = false) AnalyzeNormalizationRequest request) {
+    public NormalizationLlmTaskCreateResult analyzeNormalization(@PathVariable long batchId,
+                                                                 @RequestBody(required = false) AnalyzeNormalizationRequest request) {
         AnalyzeNormalizationRequest body = request == null ? new AnalyzeNormalizationRequest() : request;
         return normalizationAnalysisTaskService.create(body.toCommand(batchId));
     }
 
     /**
-     * 查询商品归一化分析任务状态。
+     * 创建 LLM 归一化规则维护建议任务。
      *
-     * @param taskId 商品归一化分析任务 ID
-     * @return 任务状态、进度和统计结果
+     * @param request 规则维护建议请求，包含候选筛选条件和 apply 开关
+     * @return 异步任务创建结果
      */
-    @Operation(summary = "查询商品归一化分析任务", description = "查询 analyze-normalization 异步任务的状态、进度和统计结果。")
-    @GetMapping("/normalization-analysis-tasks/{taskId}")
-    public NormalizationAnalysisTask getNormalizationAnalysisTask(@PathVariable long taskId) {
-        return normalizationAnalysisTaskService.get(taskId);
+    @Operation(summary = "创建归一化规则维护建议任务", description = "从历史购买记录筛选候选商品，调用 LLM 建议新增规则或关键词；是否写库由 apply 控制。")
+    @PostMapping("/normalization-rule-suggestions")
+    public NormalizationLlmTaskCreateResult createNormalizationRuleSuggestionTask(
+            @RequestBody NormalizationRuleSuggestionRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("规则维护建议请求不能为空");
+        }
+        return normalizationRuleSuggestionService.create(request.toCommand());
+    }
+
+    /**
+     * 查询归一化 LLM 通用异步任务状态。
+     *
+     * @param taskId 通用 LLM 任务 ID
+     * @return 任务状态、筛选条件、统计计数和 JSON 结果
+     */
+    @Operation(summary = "查询归一化 LLM 通用任务", description = "查询 normalization_suggestion_analysis 和 rule_suggestion 两类异步任务。")
+    @GetMapping("/normalization-llm-tasks/{taskId}")
+    public NormalizationLlmTask getNormalizationLlmTask(@PathVariable long taskId) {
+        return normalizationLlmTaskService.get(taskId);
     }
 
     /**

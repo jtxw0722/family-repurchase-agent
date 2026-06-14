@@ -60,6 +60,7 @@ public class DatabaseInitializer implements ApplicationRunner {
             ensureReviewItemColumns();
             ensureNormalizationSuggestionTable();
             ensureNormalizationAnalysisTaskTable();
+            ensureNormalizationLlmTaskTable();
             executeSqlResource(DATA_SQL_PATH);
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
@@ -204,5 +205,41 @@ public class DatabaseInitializer implements ApplicationRunner {
                 """);
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status)");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id)");
+    }
+
+    /**
+     * 确保归一化 LLM 通用异步任务表存在。
+     *
+     * <p>该表承载旧商品归一化分析任务和新规则维护建议任务；初始化只做幂等创建和索引补齐，
+     * 不删除旧 normalization_analysis_tasks 表，避免破坏用户已有 SQLite 数据。</p>
+     */
+    private void ensureNormalizationLlmTaskTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS normalization_llm_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    batch_id INTEGER,
+                    owner TEXT,
+                    full_scan INTEGER DEFAULT 0,
+                    apply_changes INTEGER DEFAULT 0,
+                    candidate_mode TEXT,
+                    limit_count INTEGER,
+                    candidate_count INTEGER DEFAULT 0,
+                    analyzed_count INTEGER DEFAULT 0,
+                    suggested_operation_count INTEGER DEFAULT 0,
+                    applied_count INTEGER DEFAULT 0,
+                    skipped_count INTEGER DEFAULT 0,
+                    request_json TEXT,
+                    result_json TEXT,
+                    warnings_json TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    finished_at TEXT
+                )
+                """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_status ON normalization_llm_tasks(status)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_type ON normalization_llm_tasks(task_type)");
     }
 }

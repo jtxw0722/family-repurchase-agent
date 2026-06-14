@@ -127,6 +127,30 @@ CREATE TABLE IF NOT EXISTS normalization_analysis_tasks (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS normalization_llm_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    batch_id INTEGER,
+    owner TEXT,
+    full_scan INTEGER DEFAULT 0,
+    apply_changes INTEGER DEFAULT 0,
+    candidate_mode TEXT,
+    limit_count INTEGER,
+    candidate_count INTEGER DEFAULT 0,
+    analyzed_count INTEGER DEFAULT 0,
+    suggested_operation_count INTEGER DEFAULT 0,
+    applied_count INTEGER DEFAULT 0,
+    skipped_count INTEGER DEFAULT 0,
+    request_json TEXT,
+    result_json TEXT,
+    warnings_json TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    finished_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS agent_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
@@ -150,4 +174,6 @@ CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_alias_key ON normalizat
 CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_status ON normalization_suggestions(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id);
+CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_status ON normalization_llm_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_type ON normalization_llm_tasks(task_type);
 CREATE INDEX IF NOT EXISTS idx_normalization_rule_keywords_rule_type ON normalization_rule_keywords(rule_id, match_type);

@@ -61,6 +61,10 @@ class AgentToolControllerTest {
     @MockitoBean
     private NormalizationAnalysisTaskService normalizationAnalysisTaskService;
     @MockitoBean
+    private NormalizationLlmTaskService normalizationLlmTaskService;
+    @MockitoBean
+    private NormalizationRuleSuggestionService normalizationRuleSuggestionService;
+    @MockitoBean
     private NormalizationLibraryService normalizationLibraryService;
     @MockitoBean
     private PurchaseRecordSearchService purchaseRecordSearchService;
@@ -589,7 +593,7 @@ class AgentToolControllerTest {
     @Test
     void analyzeNormalizationShouldPassKeywordFilters() throws Exception {
         when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
-                .thenReturn(new NormalizationAnalysisTaskCreateResult(99L, 7L, "pending",
+                .thenReturn(new NormalizationLlmTaskCreateResult(99L, "normalization_suggestion_analysis", "pending",
                         "归一化建议分析任务已创建"));
 
         mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
@@ -605,27 +609,51 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.taskId").value(99))
-                .andExpect(jsonPath("$.batchId").value(7))
+                .andExpect(jsonPath("$.taskType").value("normalization_suggestion_analysis"))
                 .andExpect(jsonPath("$.status").value("pending"));
 
         verify(normalizationAnalysisTaskService).create(any(AnalyzeNormalizationCommand.class));
     }
 
     @Test
-    void getNormalizationAnalysisTaskShouldReturnStatus() throws Exception {
-        when(normalizationAnalysisTaskService.get(99L))
-                .thenReturn(new NormalizationAnalysisTask(99L, 7L, "running", 10,
-                        false, List.of("cat"), List.of(), true, 3, 1,
-                        0, 1, 0, 0, 1, 2,
-                        null, null, "2026-06-07 10:00:00", "2026-06-07 10:00:01",
-                        null, "2026-06-07 10:00:02"));
+    void getNormalizationLlmTaskShouldReturnStatus() throws Exception {
+        when(normalizationLlmTaskService.get(99L))
+                .thenReturn(new NormalizationLlmTask(99L, "rule_suggestion", "running", 7L,
+                        "jtxw", false, false, "legacy_fallback", 10, 3, 1,
+                        0, 0, 0, List.of(), null, null,
+                        "2026-06-07 10:00:00", "2026-06-07 10:00:02"));
 
-        mockMvc.perform(get("/api/tools/normalization-analysis-tasks/99"))
+        mockMvc.perform(get("/api/tools/normalization-llm-tasks/99"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.taskId").value(99))
+                .andExpect(jsonPath("$.id").value(99))
+                .andExpect(jsonPath("$.taskType").value("rule_suggestion"))
                 .andExpect(jsonPath("$.batchId").value(7))
                 .andExpect(jsonPath("$.status").value("running"))
                 .andExpect(jsonPath("$.analyzedCount").value(1));
+    }
+
+    @Test
+    void createNormalizationRuleSuggestionTaskShouldUseDedicatedEntry() throws Exception {
+        when(normalizationRuleSuggestionService.create(any()))
+                .thenReturn(new NormalizationLlmTaskCreateResult(101L, "rule_suggestion", "pending",
+                        "normalization rule suggestion task created"));
+
+        mockMvc.perform(post("/api/tools/normalization-rule-suggestions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "batchId": 1,
+                                  "apply": false,
+                                  "candidateMode": "legacy_fallback",
+                                  "limit": 100
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(101))
+                .andExpect(jsonPath("$.taskType").value("rule_suggestion"))
+                .andExpect(jsonPath("$.status").value("pending"));
+
+        verify(normalizationRuleSuggestionService).create(any());
     }
 
     @Test
