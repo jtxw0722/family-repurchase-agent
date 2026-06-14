@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProductNameNormalizerTest {
-    private final ProductNameNormalizer normalizer = new ProductNameNormalizer(testRules());
+    private final ProductNameNormalizer normalizer = TestProductRuleProviders.productNameNormalizer(testRules());
 
     @Test
     void shouldNormalizeSpecificRuleBeforeGenericRule() {
@@ -37,7 +37,7 @@ class ProductNameNormalizerTest {
 
     @Test
     void shouldIgnoreBlankAliases() {
-        ProductNameNormalizer blankAliasNormalizer = new ProductNameNormalizer(java.util.List.of(
+        ProductNameNormalizer blankAliasNormalizer = TestProductRuleProviders.productNameNormalizer(java.util.List.of(
                 new NormalizationRule("blank_alias_rule", "空白别名商品", "件",
                         java.util.Arrays.asList("", "   ", null), 100)
         ));

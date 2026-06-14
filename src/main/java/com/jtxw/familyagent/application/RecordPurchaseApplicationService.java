@@ -465,7 +465,7 @@ public class RecordPurchaseApplicationService {
     /**
      * 构造手动录入显式归一化结果。
      *
-     * <p>用户已经明确指定归一化商品名称时，不再依赖 product-rules.yml 是否存在对应规则；
+     * <p>用户已经明确指定归一化商品名称时，不再依赖 SQLite 归一化规则库是否存在对应规则；
      * targetUnit 留空，避免因为规则缺失或单位族不明确制造归一化复核。</p>
      *
      * @param normalizedName 清洗后的归一化商品名称

@@ -12,10 +12,6 @@ import org.springframework.stereotype.Component;
 public class ProductNormalizer {
     private final ProductRuleMatcher productRuleMatcher;
 
-    public ProductNormalizer() {
-        this(new ProductRuleMatcher());
-    }
-
     @Autowired
     public ProductNormalizer(ProductRuleMatcher productRuleMatcher) {
         this.productRuleMatcher = productRuleMatcher;

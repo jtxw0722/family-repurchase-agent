@@ -11,10 +11,12 @@ import com.jtxw.familyagent.infrastructure.importer.ExcelPurchaseImporter;
 import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
+import com.jtxw.familyagent.infrastructure.persistence.NormalizationRuleRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
+import com.jtxw.familyagent.infrastructure.persistence.SqliteProductRuleProvider;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -440,9 +442,12 @@ class ImportSpecIntegrationTest {
         ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
-        ProductSpecParser productSpecParser = new ProductSpecParser();
-        OrderImportMapper orderImportMapper = new OrderImportMapper(productSpecParser);
-        ProductNormalizer productNormalizer = new ProductNormalizer();
+        NormalizationRuleRepository normalizationRuleRepository = new NormalizationRuleRepository(jdbcTemplate);
+        ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(new SqliteProductRuleProvider(normalizationRuleRepository));
+        ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
+        ProductSpecParser productSpecParser = new ProductSpecParser(
+                productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
+        OrderImportMapper orderImportMapper = new OrderImportMapper(productSpecParser, productRuleMatcher, new OwnerNormalizer());
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(productNormalizer, testRules());
         LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
                 new ProductTitleCleaner(),

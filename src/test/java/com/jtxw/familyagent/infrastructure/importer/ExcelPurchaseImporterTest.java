@@ -1,7 +1,7 @@
 package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
-import com.jtxw.familyagent.domain.policy.ProductSpecParser;
+import com.jtxw.familyagent.domain.policy.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -103,7 +103,12 @@ class ExcelPurchaseImporterTest {
     }
 
     private ExcelPurchaseImporter importer() {
-        return new ExcelPurchaseImporter(new OrderImportMapper(new ProductSpecParser()));
+        ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(TestProductRuleProviders.defaultRules());
+        ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
+        ProductSpecParser productSpecParser = new ProductSpecParser(
+                productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
+        return new ExcelPurchaseImporter(new OrderImportMapper(
+                productSpecParser, productRuleMatcher, new OwnerNormalizer()));
     }
 
     private Path testFile(String name) throws Exception {

@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.offset;
 
 class QuantityUnitParserTest {
-    private final ProductNameNormalizer normalizer = new ProductNameNormalizer(testRules());
+    private final ProductNameNormalizer normalizer = TestProductRuleProviders.productNameNormalizer(testRules());
     private final QuantityUnitParser parser = new QuantityUnitParser();
 
     @Test
@@ -82,7 +82,7 @@ class QuantityUnitParserTest {
 
     @Test
     void shouldParseCountUnitForInjectedProductWithoutHardcodedName() {
-        ProductNameNormalizer coffeeNormalizer = new ProductNameNormalizer(java.util.List.of(
+        ProductNameNormalizer coffeeNormalizer = TestProductRuleProviders.productNameNormalizer(java.util.List.of(
                 new NormalizationRule("test_coffee_capsule", "咖啡胶囊", "颗",
                         java.util.List.of("咖啡胶囊"), 100)
         ));

@@ -1,7 +1,7 @@
 package com.jtxw.familyagent.infrastructure.importer;
 
 import com.jtxw.familyagent.domain.model.RawPurchaseRecord;
-import com.jtxw.familyagent.domain.policy.ProductSpecParser;
+import com.jtxw.familyagent.domain.policy.*;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -221,7 +221,12 @@ class CsvPurchaseImporterTest {
     }
 
     private CsvPurchaseImporter importer() {
-        return new CsvPurchaseImporter(new OrderImportMapper(new ProductSpecParser()));
+        ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(TestProductRuleProviders.defaultRules());
+        ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
+        ProductSpecParser productSpecParser = new ProductSpecParser(
+                productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
+        return new CsvPurchaseImporter(new OrderImportMapper(
+                productSpecParser, productRuleMatcher, new OwnerNormalizer()));
     }
 
     private Path testFile(String name) throws Exception {

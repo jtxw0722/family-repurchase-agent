@@ -16,12 +16,24 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/07 15:10:28
- * @Description: 数据库初始化组件，负责创建运行目录并执行 SQLite 表结构脚本。
+ * @Date: 2026/06/14 17:05:00
+ * @Description: 数据库初始化组件，负责创建运行目录并按顺序执行 SQLite 表结构脚本和种子数据脚本。
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class DatabaseInitializer implements ApplicationRunner {
+    /**
+     * SQLite 表结构脚本路径，只允许包含 DDL 和索引定义。
+     */
+    private static final String SCHEMA_SQL_PATH = "db/schema.sql";
+    /**
+     * SQLite 默认数据脚本路径，只允许包含 DML 种子数据。
+     */
+    private static final String DATA_SQL_PATH = "db/data.sql";
+
+    /**
+     * SQLite 访问模板，用于执行初始化 SQL 和兼容性补齐语句。
+     */
     private final JdbcTemplate jdbcTemplate;
 
     public DatabaseInitializer(JdbcTemplate jdbcTemplate) {
@@ -34,7 +46,7 @@ public class DatabaseInitializer implements ApplicationRunner {
     }
 
     /**
-     * 初始化本地运行目录和 SQLite 表结构。
+     * 初始化本地运行目录、SQLite 表结构和默认种子数据。
      *
      * <p>该方法会在应用启动时自动执行，也会被 CLI 和应用服务显式调用，
      * 确保 REST Tool API 启动后即可直接使用。</p>
@@ -43,22 +55,35 @@ public class DatabaseInitializer implements ApplicationRunner {
         try {
             ensureRuntimeDirectories();
 
-            ClassPathResource resource = new ClassPathResource("db/schema.sql");
-            String sql = resource.getContentAsString(StandardCharsets.UTF_8);
-            for (String statement : sql.split(";")) {
-                String trimmed = statement.trim();
-                if (!trimmed.isBlank()) {
-                    jdbcTemplate.execute(trimmed);
-                }
-            }
+            executeSqlResource(SCHEMA_SQL_PATH);
             ensurePurchaseRecordColumns();
             ensureProductAliasColumns();
             ensureProductNegativeAliasTable();
             ensureReviewItemColumns();
             ensureNormalizationSuggestionTable();
             ensureNormalizationAnalysisTaskTable();
+            executeSqlResource(DATA_SQL_PATH);
         } catch (IOException e) {
             throw new IllegalStateException("初始化数据库失败", e);
+        }
+    }
+
+    /**
+     * 执行 classpath 下的 SQL 初始化脚本。
+     *
+     * <p>当前项目初始化脚本使用分号分隔独立语句，不支持存储过程或触发器内嵌分号。</p>
+     *
+     * @param resourcePath SQL 资源路径，不允许为空
+     * @throws IOException SQL 资源读取失败时抛出
+     */
+    private void executeSqlResource(String resourcePath) throws IOException {
+        ClassPathResource resource = new ClassPathResource(resourcePath);
+        String sql = resource.getContentAsString(StandardCharsets.UTF_8);
+        for (String statement : sql.split(";")) {
+            String trimmed = statement.trim();
+            if (!trimmed.isBlank()) {
+                jdbcTemplate.execute(trimmed);
+            }
         }
     }
 

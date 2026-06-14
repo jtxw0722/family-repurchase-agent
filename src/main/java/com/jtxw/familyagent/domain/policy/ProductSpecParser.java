@@ -15,10 +15,6 @@ public class ProductSpecParser {
     private final ProductNormalizer productNormalizer;
     private final List<UnitSpecParser> parsers;
 
-    public ProductSpecParser() {
-        this(new ProductNormalizer(), List.of(new WeightSpecParser(), new DrawCountSpecParser(), new VolumeSpecParser()));
-    }
-
     @Autowired
     public ProductSpecParser(ProductNormalizer productNormalizer, List<UnitSpecParser> parsers) {
         this.productNormalizer = productNormalizer;

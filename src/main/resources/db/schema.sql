@@ -58,6 +58,33 @@ CREATE TABLE IF NOT EXISTS product_negative_aliases (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS normalization_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_code TEXT NOT NULL UNIQUE,
+    normalized_name TEXT NOT NULL UNIQUE,
+    category TEXT,
+    standard_unit TEXT NOT NULL,
+    unit_family TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'system',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS normalization_rule_keywords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id INTEGER NOT NULL,
+    keyword TEXT NOT NULL,
+    match_type TEXT NOT NULL CHECK (match_type IN ('include', 'exclude')),
+    priority INTEGER NOT NULL DEFAULT 100,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'system',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(rule_id, keyword, match_type)
+);
+
 CREATE TABLE IF NOT EXISTS review_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     record_id INTEGER,
@@ -142,3 +169,4 @@ CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_alias_key ON normalizat
 CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_status ON normalization_suggestions(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id);
+CREATE INDEX IF NOT EXISTS idx_normalization_rule_keywords_rule_type ON normalization_rule_keywords(rule_id, match_type);

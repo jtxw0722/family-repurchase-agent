@@ -189,11 +189,15 @@ class NormalizationLearningIntegrationTest {
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
-        ProductNameNormalizer delegate = new ProductNameNormalizer(
-                new ProductNormalizer(new ProductRuleMatcher(new ProductRuleProperties(List.of()))), List.of());
+        ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(List::of);
+        ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
+        ProductNameNormalizer delegate = new ProductNameNormalizer(productNormalizer, List.of());
         LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(
                 cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
-        OrderImportMapper orderImportMapper = new OrderImportMapper(new ProductSpecParser());
+        ProductSpecParser productSpecParser = new ProductSpecParser(
+                productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
+        OrderImportMapper orderImportMapper = new OrderImportMapper(
+                productSpecParser, productRuleMatcher, new OwnerNormalizer());
         ImportApplicationService importService = new ImportApplicationService(
                 databaseInitializer,
                 new CsvPurchaseImporter(orderImportMapper),

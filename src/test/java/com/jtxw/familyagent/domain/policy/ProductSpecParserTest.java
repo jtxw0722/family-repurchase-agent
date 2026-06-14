@@ -10,8 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @Description: 复购品规格解析规则的单元测试。
  */
 class ProductSpecParserTest {
-    private final ProductSpecParser parser = new ProductSpecParser();
-    private final ProductRuleMatcher matcher = new ProductRuleMatcher();
+    private final ProductSpecParser parser = TestProductRuleProviders.productSpecParser();
+    private final ProductRuleMatcher matcher = new ProductRuleMatcher(TestProductRuleProviders.defaultRules());
 
     @Test
     void shouldParseKgMultipacks() {

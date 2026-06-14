@@ -213,22 +213,6 @@ public class OrderImportMapper {
     private final OwnerNormalizer ownerNormalizer;
 
     /**
-     * 创建订单导入字段映射器，使用默认规格解析器、规则匹配器和 owner 归一化器。
-     */
-    public OrderImportMapper() {
-        this(new ProductSpecParser(), new ProductRuleMatcher(), new OwnerNormalizer());
-    }
-
-    /**
-     * 创建订单导入字段映射器，使用自定义规格解析器和默认规则匹配器、owner 归一化器。
-     *
-     * @param productSpecParser 自定义规格解析器
-     */
-    public OrderImportMapper(ProductSpecParser productSpecParser) {
-        this(productSpecParser, new ProductRuleMatcher(), new OwnerNormalizer());
-    }
-
-    /**
      * 创建订单导入字段映射器，用于 Spring 注入完整依赖。
      *
      * @param productSpecParser  规格解析器

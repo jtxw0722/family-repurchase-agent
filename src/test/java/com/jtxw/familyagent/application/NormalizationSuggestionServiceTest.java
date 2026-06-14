@@ -1972,12 +1972,16 @@ class NormalizationSuggestionServiceTest {
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
         NormalizationSuggestionRepository suggestionRepository = new NormalizationSuggestionRepository(jdbcTemplate);
-        ProductRuleProperties ruleProperties = new ProductRuleProperties(List.of());
-        ProductNameNormalizer delegate = new ProductNameNormalizer(
-                new ProductNormalizer(new ProductRuleMatcher(ruleProperties)), List.of());
+        ProductRuleProvider productRuleProvider = List::of;
+        ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(productRuleProvider);
+        ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
+        ProductNameNormalizer delegate = new ProductNameNormalizer(productNormalizer, List.of());
         LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(
                 cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
-        OrderImportMapper orderImportMapper = new OrderImportMapper(new ProductSpecParser());
+        ProductSpecParser productSpecParser = new ProductSpecParser(
+                productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
+        OrderImportMapper orderImportMapper = new OrderImportMapper(
+                productSpecParser, productRuleMatcher, new OwnerNormalizer());
         ImportApplicationService importService = new ImportApplicationService(
                 databaseInitializer,
                 new CsvPurchaseImporter(orderImportMapper),
@@ -1995,7 +1999,7 @@ class NormalizationSuggestionServiceTest {
                 properties
         );
         NormalizationRagContextRetriever ragContextRetriever = new NormalizationRagContextRetriever(
-                cleaner, productAliasRepository, productNegativeAliasRepository, ruleProperties);
+                cleaner, productAliasRepository, productNegativeAliasRepository, productRuleProvider);
         NormalizationSuggestionService suggestionService = new NormalizationSuggestionService(
                 databaseInitializer,
                 purchaseRecordRepository,

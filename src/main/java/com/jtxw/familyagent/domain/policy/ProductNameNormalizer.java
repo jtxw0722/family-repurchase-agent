@@ -23,17 +23,9 @@ public class ProductNameNormalizer {
     private final ProductNormalizer productNormalizer;
     private final List<NormalizationRule> rules;
 
-    public ProductNameNormalizer() {
-        this(new ProductNormalizer(), DEFAULT_RULES);
-    }
-
     @Autowired
     public ProductNameNormalizer(ProductNormalizer productNormalizer) {
         this(productNormalizer, DEFAULT_RULES);
-    }
-
-    public ProductNameNormalizer(List<NormalizationRule> rules) {
-        this(new ProductNormalizer(), rules);
     }
 
     public ProductNameNormalizer(ProductNormalizer productNormalizer, List<NormalizationRule> rules) {

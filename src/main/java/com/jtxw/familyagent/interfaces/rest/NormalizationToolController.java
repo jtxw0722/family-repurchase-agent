@@ -1,14 +1,18 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.NormalizationAnalysisTaskService;
+import com.jtxw.familyagent.application.NormalizationLibraryService;
 import com.jtxw.familyagent.application.NormalizationSuggestionService;
 import com.jtxw.familyagent.application.AutoExcludedNormalizationSuggestionResult;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTask;
 import com.jtxw.familyagent.domain.model.NormalizationAnalysisTaskCreateResult;
 import com.jtxw.familyagent.domain.model.NormalizationBatchApplyResult;
+import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
+import com.jtxw.familyagent.domain.model.NormalizationLibraryOperationResult;
 import com.jtxw.familyagent.domain.model.NormalizationSuggestion;
 import com.jtxw.familyagent.interfaces.rest.request.AnalyzeNormalizationRequest;
 import com.jtxw.familyagent.interfaces.rest.request.BatchApplyNormalizationRequest;
+import com.jtxw.familyagent.interfaces.rest.request.NormalizationLibraryOperationRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -24,8 +28,8 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/08 17:45:00
- * @Description: 商品归一化工具 Controller，暴露归一化异步分析任务和归一化建议管理接口。
+ * @Date: 2026/06/14 16:50:03
+ * @Description: 商品归一化工具 Controller，暴露归一化异步分析任务、归一化建议管理和名称库查询接口。
  */
 @Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
 @RestController
@@ -39,17 +43,51 @@ public class NormalizationToolController {
      * 商品归一化建议服务，负责查询和批量应用 normalization_suggestions。
      */
     private final NormalizationSuggestionService normalizationSuggestionService;
+    /**
+     * 归一化名称库服务，负责查询 SQLite 规则库和动态样本数量。
+     */
+    private final NormalizationLibraryService normalizationLibraryService;
 
     /**
      * 创建商品归一化工具 Controller。
      *
      * @param normalizationAnalysisTaskService 商品归一化异步分析任务服务
      * @param normalizationSuggestionService   商品归一化建议服务
+     * @param normalizationLibraryService      归一化名称库服务
      */
     public NormalizationToolController(NormalizationAnalysisTaskService normalizationAnalysisTaskService,
-                                       NormalizationSuggestionService normalizationSuggestionService) {
+                                       NormalizationSuggestionService normalizationSuggestionService,
+                                       NormalizationLibraryService normalizationLibraryService) {
         this.normalizationAnalysisTaskService = normalizationAnalysisTaskService;
         this.normalizationSuggestionService = normalizationSuggestionService;
+        this.normalizationLibraryService = normalizationLibraryService;
+    }
+
+    /**
+     * 查询归一化名称库。
+     *
+     * @return 归一化名称库条目，包含标准单位、单位族、正负关键词和动态样本数量
+     */
+    @Operation(summary = "查询归一化名称库", description = "查询 SQLite normalization_rules 名称库，返回规则基础信息、关键词和动态历史样本数量。")
+    @GetMapping("/normalization-library")
+    public List<NormalizationLibraryItem> listNormalizationLibrary() {
+        return normalizationLibraryService.listLibraryItems();
+    }
+
+    /**
+     * 统一处理归一化规则库写操作。
+     *
+     * @param request 统一写操作请求，使用 action 区分 create_rule、update_rule、disable_rule、add_keyword、disable_keyword
+     * @return 统一写操作响应结果
+     */
+    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用和关键词维护。")
+    @PostMapping("/normalization-library")
+    public NormalizationLibraryOperationResult operateNormalizationLibrary(
+            @RequestBody NormalizationLibraryOperationRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("归一化规则库操作请求不能为空");
+        }
+        return normalizationLibraryService.operate(request.toCommand());
     }
 
     /**

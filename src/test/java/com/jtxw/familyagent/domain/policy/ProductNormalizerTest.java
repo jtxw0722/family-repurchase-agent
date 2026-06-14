@@ -12,14 +12,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductNormalizerTest {
     @Test
     void shouldNormalizeCatLitter() {
-        ProductNormalizer normalizer = new ProductNormalizer();
+        ProductNormalizer normalizer = TestProductRuleProviders.productNormalizer();
 
         assertThat(normalizer.normalize("名创优品钠基矿猫砂5kg*8包")).isEqualTo("猫砂");
     }
 
     @Test
     void shouldNotNormalizeCatLitterAccessoriesAsCatLitter() {
-        ProductNormalizer normalizer = new ProductNormalizer();
+        ProductNormalizer normalizer = TestProductRuleProviders.productNormalizer();
 
         assertThat(normalizer.normalize("猫砂盆全封闭抽屉顶入式")).isNotEqualTo("猫砂");
         assertThat(normalizer.normalize("猫砂铲")).isNotEqualTo("猫砂");
@@ -28,7 +28,7 @@ class ProductNormalizerTest {
 
     @Test
     void shouldNormalizeConfiguredRepurchaseProducts() {
-        ProductNormalizer normalizer = new ProductNormalizer();
+        ProductNormalizer normalizer = TestProductRuleProviders.productNormalizer();
 
         assertThat(normalizer.normalize("全价猫粮 10kg")).isEqualTo("猫粮");
         assertThat(normalizer.normalize("原生木浆抽纸 24包")).isEqualTo("纸巾");
@@ -37,7 +37,7 @@ class ProductNormalizerTest {
 
     @Test
     void shouldReturnStructuredNormalizationResultForTissue() {
-        ProductNormalizer normalizer = new ProductNormalizer();
+        ProductNormalizer normalizer = TestProductRuleProviders.productNormalizer();
 
         ProductNormalizationResult result = normalizer.normalizeProduct("维达超韧抽纸 3层130抽×24包（195×133mm）");
 

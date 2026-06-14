@@ -78,7 +78,7 @@ class LearningProductNameNormalizerTest {
         ProductRule rule = new ProductRule("cat_litter", "猫砂", 100,
                 List.of("猫砂"), List.of(), "kg", UnitFamily.WEIGHT);
         ProductNameNormalizer delegate = new ProductNameNormalizer(
-                new ProductNormalizer(new ProductRuleMatcher(new ProductRuleProperties(List.of(rule)))), List.of());
+                new ProductNormalizer(new ProductRuleMatcher(() -> List.of(rule))), List.of());
         LearningProductNameNormalizer normalizer = new LearningProductNameNormalizer(
                 cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
         return new Fixture(cleaner, productAliasRepository, productNegativeAliasRepository, normalizer);

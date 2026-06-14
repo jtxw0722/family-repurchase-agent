@@ -17,7 +17,7 @@ public record NormalizationRagContext(
          */
         List<String> negativeAliases,
         /**
-         * product-rules.yml 中相关规则摘要。
+         * SQLite 归一化规则库中相关规则摘要。
          */
         List<String> ruleSummaries,
         /**

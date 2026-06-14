@@ -616,7 +616,7 @@ class RecordPurchaseApplicationServiceTest {
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(
-                new ProductNormalizer(),
+                TestProductRuleProviders.productNormalizer(),
                 List.of(new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
                         List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100))
         );

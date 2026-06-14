@@ -3,6 +3,7 @@ package com.jtxw.familyagent.interfaces.rest;
 import com.jtxw.familyagent.application.*;
 import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
 import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
+import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
@@ -59,6 +60,8 @@ class AgentToolControllerTest {
     private NormalizationSuggestionService normalizationSuggestionService;
     @MockitoBean
     private NormalizationAnalysisTaskService normalizationAnalysisTaskService;
+    @MockitoBean
+    private NormalizationLibraryService normalizationLibraryService;
     @MockitoBean
     private PurchaseRecordSearchService purchaseRecordSearchService;
 
@@ -135,6 +138,195 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.matchedCount").value(0))
                 .andExpect(jsonPath("$.records").isArray())
                 .andExpect(jsonPath("$.records").isEmpty());
+    }
+
+    @Test
+    void listNormalizationLibraryShouldReturnRuleKeywordsAndSampleCount() throws Exception {
+        when(normalizationLibraryService.listLibraryItems())
+                .thenReturn(List.of(new NormalizationLibraryItem(
+                        "cat_litter",
+                        "猫砂",
+                        "宠物用品",
+                        "kg",
+                        "weight",
+                        List.of("猫砂", "豆腐砂"),
+                        List.of("猫砂盆"),
+                        3,
+                        100,
+                        true,
+                        "system"
+                )));
+
+        mockMvc.perform(get("/api/tools/normalization-library"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ruleCode").value("cat_litter"))
+                .andExpect(jsonPath("$[0].normalizedName").value("猫砂"))
+                .andExpect(jsonPath("$[0].category").value("宠物用品"))
+                .andExpect(jsonPath("$[0].standardUnit").value("kg"))
+                .andExpect(jsonPath("$[0].unitFamily").value("weight"))
+                .andExpect(jsonPath("$[0].keywords[0]").value("猫砂"))
+                .andExpect(jsonPath("$[0].excludeKeywords[0]").value("猫砂盆"))
+                .andExpect(jsonPath("$[0].sampleCount").value(3));
+    }
+
+    @Test
+    void createNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "create_rule", "归一化规则已新增", "body_wash", "沐浴露", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "create_rule",
+                                  "ruleCode": "body_wash",
+                                  "normalizedName": "沐浴露",
+                                  "category": "个护清洁",
+                                  "standardUnit": "L",
+                                  "unitFamily": "volume",
+                                  "priority": 80,
+                                  "keywords": ["沐浴露"],
+                                  "excludeKeywords": ["沐浴露瓶"]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
+                .andExpect(jsonPath("$.normalizedName").value("沐浴露"))
+                .andExpect(jsonPath("$.action").value("create_rule"))
+                .andExpect(jsonPath("$.message").value("归一化规则已新增"))
+                .andExpect(jsonPath("$.affectedRows").value(1))
+                .andExpect(jsonPath("$.warnings").isArray());
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        NormalizationLibraryOperationCommand command = captor.getValue();
+        assertThat(command.action()).isEqualTo("create_rule");
+        assertThat(command.ruleCode()).isEqualTo("body_wash");
+        assertThat(command.keywords()).containsExactly("沐浴露");
+        assertThat(command.excludeKeywords()).containsExactly("沐浴露瓶");
+    }
+
+    @Test
+    void updateNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "update_rule", "归一化规则已更新", "body_wash", "沐浴露", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "update_rule",
+                                  "ruleCode": "body_wash",
+                                  "normalizedName": "沐浴露",
+                                  "category": "个护清洁",
+                                  "standardUnit": "L",
+                                  "unitFamily": "volume",
+                                  "priority": 90,
+                                  "enabled": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
+                .andExpect(jsonPath("$.action").value("update_rule"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        assertThat(captor.getValue().action()).isEqualTo("update_rule");
+        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
+        assertThat(captor.getValue().priority()).isEqualTo(90);
+        assertThat(captor.getValue().enabled()).isTrue();
+    }
+
+    @Test
+    void addNormalizationRuleKeywordShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "add_keyword", "归一化关键词已新增", "body_wash", "沐浴露", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "add_keyword",
+                                  "ruleCode": "body_wash",
+                                  "keyword": "沐浴露",
+                                  "matchType": "include",
+                                  "priority": 100
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
+                .andExpect(jsonPath("$.action").value("add_keyword"))
+                .andExpect(jsonPath("$.affectedRows").value(1));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        assertThat(captor.getValue().action()).isEqualTo("add_keyword");
+        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
+        assertThat(captor.getValue().keyword()).isEqualTo("沐浴露");
+        assertThat(captor.getValue().matchType()).isEqualTo("include");
+    }
+
+    @Test
+    void disableNormalizationRuleKeywordShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "disable_keyword", "归一化关键词已禁用", "body_wash", "沐浴露", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "disable_keyword",
+                                  "ruleCode": "body_wash",
+                                  "keyword": "沐浴露瓶",
+                                  "matchType": "exclude"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
+                .andExpect(jsonPath("$.action").value("disable_keyword"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        assertThat(captor.getValue().action()).isEqualTo("disable_keyword");
+        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
+        assertThat(captor.getValue().keyword()).isEqualTo("沐浴露瓶");
+        assertThat(captor.getValue().matchType()).isEqualTo("exclude");
+    }
+
+    @Test
+    void disableNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "disable_rule", "归一化规则已禁用", "body_wash", "沐浴露", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "disable_rule",
+                                  "ruleCode": "body_wash"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
+                .andExpect(jsonPath("$.normalizedName").value("沐浴露"))
+                .andExpect(jsonPath("$.action").value("disable_rule"))
+                .andExpect(jsonPath("$.message").value("归一化规则已禁用"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        assertThat(captor.getValue().action()).isEqualTo("disable_rule");
+        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
     }
 
     @Test

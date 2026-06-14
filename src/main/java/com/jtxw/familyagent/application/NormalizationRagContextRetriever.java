@@ -2,7 +2,7 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
 import com.jtxw.familyagent.domain.policy.ProductRule;
-import com.jtxw.familyagent.domain.policy.ProductRuleProperties;
+import com.jtxw.familyagent.domain.policy.ProductRuleProvider;
 import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
 import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
@@ -15,8 +15,8 @@ import java.util.Set;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/06 13:13:18
- * @Description: 商品归一化轻量 RAG 上下文检索服务，从 SQLite 别名和本地规则构造 LLM 证据。
+ * @Date: 2026/06/14 16:50:03
+ * @Description: 商品归一化轻量 RAG 上下文检索服务，从 SQLite 别名和归一化规则 Provider 构造 LLM 证据。
  */
 @Service
 public class NormalizationRagContextRetriever {
@@ -27,16 +27,16 @@ public class NormalizationRagContextRetriever {
     private final ProductTitleCleaner productTitleCleaner;
     private final ProductAliasRepository productAliasRepository;
     private final ProductNegativeAliasRepository productNegativeAliasRepository;
-    private final ProductRuleProperties productRuleProperties;
+    private final ProductRuleProvider productRuleProvider;
 
     public NormalizationRagContextRetriever(ProductTitleCleaner productTitleCleaner,
                                             ProductAliasRepository productAliasRepository,
                                             ProductNegativeAliasRepository productNegativeAliasRepository,
-                                            ProductRuleProperties productRuleProperties) {
+                                            ProductRuleProvider productRuleProvider) {
         this.productTitleCleaner = productTitleCleaner;
         this.productAliasRepository = productAliasRepository;
         this.productNegativeAliasRepository = productNegativeAliasRepository;
-        this.productRuleProperties = productRuleProperties;
+        this.productRuleProvider = productRuleProvider;
     }
 
     /**
@@ -81,24 +81,33 @@ public class NormalizationRagContextRetriever {
     private List<String> matchedRuleSummaries(String productName, String sku, String category, String subCategory) {
         String text = String.join(" ", safeText(productName), safeText(sku), safeText(category), safeText(subCategory));
         Set<String> summaries = new LinkedHashSet<>();
-        for (ProductRule rule : productRuleProperties.rules()) {
+        List<ProductRule> rules = productRuleProvider.listEnabledRules();
+        boolean hasIncludedRuleKeyword = false;
+        for (ProductRule rule : rules) {
             if (summaries.size() >= RULE_LIMIT) {
                 break;
             }
-            if (overlaps(text, rule.includeKeywords())) {
+            boolean included = overlaps(text, rule.includeKeywords());
+            if (included) {
+                hasIncludedRuleKeyword = true;
+            }
+            // 与 ProductRuleMatcher 保持一致：exclude 只排除当前规则，且优先级高于 include。
+            if (included && !overlaps(text, rule.excludeKeywords())) {
                 summaries.add("规则：" + rule.id()
                         + "，normalizedName=" + rule.normalizedName()
+                        + "，category=" + safeText(rule.category())
                         + "，standardUnit=" + safeText(rule.standardUnit())
                         + "，unitFamily=" + rule.unitFamily()
                         + "，includeKeywords=" + rule.includeKeywords()
                         + "，excludeKeywords=" + rule.excludeKeywords());
             }
         }
-        if (summaries.isEmpty()) {
-            return productRuleProperties.rules().stream()
-                    .limit(Math.min(RULE_LIMIT, productRuleProperties.rules().size()))
+        if (summaries.isEmpty() && !hasIncludedRuleKeyword) {
+            return rules.stream()
+                    .limit(Math.min(RULE_LIMIT, rules.size()))
                     .map(rule -> "规则：" + rule.id()
                             + "，normalizedName=" + rule.normalizedName()
+                            + "，category=" + safeText(rule.category())
                             + "，standardUnit=" + safeText(rule.standardUnit())
                             + "，unitFamily=" + rule.unitFamily())
                     .toList();
