@@ -23,8 +23,10 @@ MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发
 | Tool                 | 说明                                  | 典型场景                            |
 | -------------------- | ----------------------------------- | ------------------------------- |
 | `import_file`        | 导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录 | “导入 examples/sample_orders.csv” |
+| `record_purchase`    | 录入手动购买记录或自然语言抽取后的结构化购买记录 | “记录一下，我在京东买了猫砂2.5kg*8，花了178.65元” |
 | `compare_price`      | 比较当前商品单位价格与本地历史价格，返回价格判断结果          | “猫砂 10.3 元 5kg 值得买吗？”           |
 | `get_price_baseline` | 查询某个复购品的本地历史价格基准线                   | “查一下猫砂历史最低价 / 中位价 / 平均价”        |
+| `search_purchase_records` | 根据关键词检索原始购买记录，查看历史订单明细和样本来源 | “查一下我之前买过哪些猫砂” |
 | `generate_report`    | 根据指定月份生成 Markdown 价格报告              | “生成 2026-05 的复购品报告”             |
 
 工具选择建议：
@@ -32,16 +34,11 @@ MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发
 | 用户意图                        | 推荐 Tool              |
 | --------------------------- | -------------------- |
 | 导入订单文件                      | `import_file`        |
+| 记录一笔购买记录 / 从自然语言补充历史样本 | `record_purchase`    |
 | 判断当前价格是否值得买                 | `compare_price`      |
 | 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `get_price_baseline` |
+| 查询具体购买记录 / 排查历史样本来源 | `search_purchase_records` |
 | 生成月度报告                      | `generate_report`    |
-
-`compare_price` 和 `get_price_baseline` 的区别：
-
-* `compare_price` 用于“我现在看到一个价格，是否值得买”，需要提供当前价格、数量和单位。
-* `get_price_baseline` 用于“我想查这个商品历史最低价 / 中位价 / 平均价”，不需要提供当前价格。
-* `generate_report` 会通过后端生成本地 Markdown 报告文件，因此不是 read-only tool。
-
 
 ## 构建
 
@@ -126,6 +123,19 @@ java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchas
 
 常见测试提示词：
 
+记录购买记录时，可以使用：
+
+```text
+调用 Family Repurchase Agent MCP tools，记录一下：我在京东买了猫砂2.5kg*8，花了178.65元。
+```
+
+预期调用：
+```text
+record_purchase
+```
+
+查询历史均价时，可以使用：
+
 ```text
 调用 Family Repurchase Agent MCP tools，查询猫砂历史最低价和历史平均价。
 ```
@@ -133,6 +143,17 @@ java -jar adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchas
 预期调用：
 ```text
 get_price_baseline
+```
+
+查询具体购买记录时，可以使用：
+
+```text
+调用 Family Repurchase Agent MCP tools，查一下我之前买过哪些猫砂。
+```
+
+预期调用：
+```text
+search_purchase_records
 ```
 
 判断当前价格是否值得买时，可以使用：
@@ -162,7 +183,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test-mcp.ps1
 期望结果：
 
 - `initialize` 返回成功
-- `tools/list` 返回 `import_file`、`compare_price`、`generate_report`
+- `tools/list` 返回 `import_file`、`record_purchase`、`compare_price`、`get_price_baseline`、`search_purchase_records`、`generate_report`
 - stdout 只输出 JSON-RPC 消息
 - `compare_price` 参数缺失时返回 MCP tool error，不会让 server 崩溃
 

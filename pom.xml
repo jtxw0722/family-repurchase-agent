@@ -12,7 +12,7 @@
 
     <groupId>com.jtxw</groupId>
     <artifactId>family-repurchase-agent</artifactId>
-    <version>0.5.0</version>
+    <version>0.6.0</version>
     <name>family-repurchase-agent</name>
     <description>Local-first household repurchase price decision Agent Capability</description>
 

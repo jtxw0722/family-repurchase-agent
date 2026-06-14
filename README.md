@@ -21,7 +21,8 @@
 * 自然语言 / 手动购买记录录入
 * SQLite 本地存储
 * 商品名称归一化与 alias 学习沉淀
-* LLM 辅助归一化建议分析
+* LLM 辅助归一化建议分析：异步分析 legacy_fallback 商品，生成 NORMALIZE / REVIEW / EXCLUDE 建议 
+* 高置信 EXCLUDE 自动排除，降低耐用品、优惠券、定金等样本复核噪音
 * 异常样本人工复核
 * 规格解析与单位价格计算
 * 当前价格与本地历史价格对比
@@ -91,6 +92,8 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/import-batches/{batchId}/analyze-normalization`
 - `/api/tools/normalization-suggestions`
 - `/api/tools/normalization-suggestions/batch-apply`
+- `/api/tools/normalization-analysis-tasks/{taskId}` 
+- `/api/tools/purchase-records/search`
 MCP tools：
 
 - `import_file`
@@ -166,6 +169,16 @@ curl -X POST "http://localhost:8080/api/tools/import-batches/1/analyze-normaliza
   -d "{\"limit\":10,\"forceReanalyze\":false,\"includeKeywords\":[\"主食罐\",\"猫罐头\",\"湿粮\",\"餐盒\"]}"
 ```
 
+### 查询归一化分析任务 
+```powershell
+curl -X GET "http://localhost:8080/api/tools/normalization-analysis-tasks/1"
+```
+
+### 查询自动排除建议
+```powershell
+curl -X GET "http://localhost:8080/api/tools/normalization-suggestions/auto-excluded?batchId=1&minConfidence=0.9"
+```
+
 ### 查询归一化建议
 
 ```powershell
@@ -202,6 +215,13 @@ curl -X POST "http://localhost:8080/api/tools/compare-price" `
 curl -X POST "http://localhost:8080/api/tools/get-price-baseline" `
   -H "Content-Type: application/json" `
   -d "{\"productName\":\"纸巾\",\"unit\":\"抽\"}"
+```
+
+### 搜索原始购买记录
+```powershell
+curl -X POST "http://localhost:8080/api/tools/purchase-records/search" ` 
+  -H "Content-Type: application/json" ` 
+  -d "{\"keyword\":\"猫砂\",\"limit\":10}"
 ```
 
 ### 生成报告

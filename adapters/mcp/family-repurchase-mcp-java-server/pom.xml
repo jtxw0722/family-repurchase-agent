@@ -5,7 +5,7 @@
 
     <groupId>com.jtxw</groupId>
     <artifactId>family-repurchase-mcp-java-server</artifactId>
-    <version>0.5.0</version>
+    <version>0.6.0</version>
     <packaging>jar</packaging>
 
     <name>family-repurchase-mcp-java-server</name>
