@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 /**
  * @Author: jtxw
  * @Date: 2026/06/15 00:44:27
- * @Description: 归一化 LLM 通用任务查询应用服务，负责统一查询旧商品归一化分析和新规则维护建议任务
+ * @Description: 归一化 LLM 通用任务查询应用服务，负责查询规则维护建议任务状态和结果
  */
 @Service
 public class NormalizationLlmTaskService {

@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @Author: jtxw
  * @Date: 2026/06/07 15:10:28
- * @Description: 数据库初始化兼容性测试，覆盖老库字段补齐和新增任务表补齐场景。
+ * @Description: 数据库初始化兼容性测试，覆盖老库字段补齐、规则表和归一化 LLM 通用任务表创建场景。
  */
 class DatabaseInitializerTest {
     @Test
@@ -67,10 +67,10 @@ class DatabaseInitializerTest {
     }
 
     @Test
-    void shouldNotCreateAliasTablesForNewDatabase() throws Exception {
+    void shouldNotCreateLegacyLearningTablesForNewDatabase() throws Exception {
         Path dir = Path.of("target", "database-initializer-test");
         Files.createDirectories(dir);
-        Path db = dir.resolve("no-alias-tables.sqlite");
+        Path db = dir.resolve("no-legacy-learning-tables.sqlite");
         Files.deleteIfExists(db);
         Files.deleteIfExists(Path.of(db + "-shm"));
         Files.deleteIfExists(Path.of(db + "-wal"));
@@ -89,10 +89,10 @@ class DatabaseInitializerTest {
     }
 
     @Test
-    void shouldCreateNormalizationAnalysisTaskTable() throws Exception {
+    void shouldCreateNormalizationLlmTaskTable() throws Exception {
         Path dir = Path.of("target", "database-initializer-test");
         Files.createDirectories(dir);
-        Path db = dir.resolve("normalization-analysis-tasks.sqlite");
+        Path db = dir.resolve("normalization-llm-tasks.sqlite");
         Files.deleteIfExists(db);
         Files.deleteIfExists(Path.of(db + "-shm"));
         Files.deleteIfExists(Path.of(db + "-wal"));
@@ -102,40 +102,33 @@ class DatabaseInitializerTest {
 
         new DatabaseInitializer(jdbcTemplate).initialize();
 
-        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(normalization_analysis_tasks)")
+        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(normalization_llm_tasks)")
                 .stream()
                 .map(row -> String.valueOf(row.get("name")))
                 .toList();
-        assertThat(columns).contains("id", "batch_id", "status", "limit_count",
-                "candidate_count", "failed_count", "error_message", "created_at", "updated_at");
+        assertThat(columns).contains("id", "task_type", "status", "batch_id", "limit_count",
+                "candidate_count", "suggested_operation_count", "error_message", "created_at", "updated_at");
     }
 
     @Test
-    void shouldAddNormalizationAnalysisTaskTableForLegacyDatabase() throws Exception {
+    void shouldNotCreateOldNormalizationLlmTablesForNewDatabase() throws Exception {
         Path dir = Path.of("target", "database-initializer-test");
         Files.createDirectories(dir);
-        Path db = dir.resolve("legacy-normalization-analysis-tasks.sqlite");
+        Path db = dir.resolve("no-old-normalization-llm-tables.sqlite");
         Files.deleteIfExists(db);
         Files.deleteIfExists(Path.of(db + "-shm"));
         Files.deleteIfExists(Path.of(db + "-wal"));
 
         DataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + db);
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        jdbcTemplate.execute("""
-                CREATE TABLE raw_import_batches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_file TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-                """);
 
         new DatabaseInitializer(jdbcTemplate).initialize();
 
-        Integer tableCount = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*) FROM sqlite_master
-                WHERE type = 'table' AND name = 'normalization_analysis_tasks'
-                """, Integer.class);
-        assertThat(tableCount).isEqualTo(1);
+        List<String> tables = jdbcTemplate.queryForList("""
+                SELECT name FROM sqlite_master WHERE type = 'table'
+                """, String.class);
+        assertThat(tables)
+                .contains("normalization_llm_tasks")
+                .doesNotContain("normalization_" + "suggestions", "normalization_" + "analysis_tasks");
     }
 }

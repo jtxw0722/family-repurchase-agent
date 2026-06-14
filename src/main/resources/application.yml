@@ -13,11 +13,8 @@ server:
 family-agent:
   reports-dir: ./reports
   normalization:
-    # legacy_fallback 处理模式：llm_suggestion 或 immediate_review
-    fallback-review-mode: llm_suggestion
-
     llm:
-      # 是否启用 LLM 归一化建议
+      # 是否启用 LLM 规则维护建议
       enabled: true
       # LLM 服务提供方
       provider: openai-compatible
@@ -27,10 +24,6 @@ family-agent:
       api-key: ${NORMALIZATION_LLM_API_KEY:}
       # LLM Base URL
       base-url: https://token-plan-cn.xiaomimimo.com/v1
-      # Prompt 版本号，用于审计和排查
-      prompt-version: normalization-v1
-      # Prompt 资源文件 classpath 路径，包含 system.md 和 user-template.md
-      prompt-resource-path: prompts/normalization/v1
 
       # LLM 最大输出 token 数；0 表示不传 max_tokens
       max-tokens: 0
@@ -38,23 +31,8 @@ family-agent:
       extra-body-json: '{"temperature":0.8,"top_p":0.95,"thinking":{"type":"disabled"}}'
       # LLM 请求超时时间，单位秒
       request-timeout-seconds: 180
-      # 单次 LLM 请求最多分析的商品数量
-      batch-size: 20
-
-      # 高置信 EXCLUDE 阈值
-      exclude-confidence-threshold: 0.9
-      # 高置信 NORMALIZE 阈值
-      normalize-confidence-threshold: 0.9
-      # REVIEW 参考阈值
-      review-confidence-threshold: 0.85
 
       # 是否生成 LLM debug dump 文件
       debug-log-enabled: true
-      # 是否在 debug dump 中写入完整 prompt
-      debug-log-full-prompt: true
-      # 是否在 debug dump 中写入完整 response
-      debug-log-full-response: true
       # LLM debug dump 文件目录
       debug-log-dir: logs/llm-debug
-      # debug dump 中 response body 最大保留字符数
-      debug-max-response-chars: 8000

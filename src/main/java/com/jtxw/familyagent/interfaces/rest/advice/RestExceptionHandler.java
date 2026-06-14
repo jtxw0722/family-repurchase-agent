@@ -1,6 +1,6 @@
 package com.jtxw.familyagent.interfaces.rest.advice;
 
-import com.jtxw.familyagent.application.NormalizationAnalysisTaskConflictException;
+import com.jtxw.familyagent.application.NormalizationLlmTaskConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -31,13 +31,13 @@ public class RestExceptionHandler {
     }
 
     /**
-     * 将归一化分析任务并发冲突转换为 409 响应，明确提示调用方稍后重试。
+     * 将归一化 LLM 通用任务并发冲突转换为 409 响应，明确提示调用方稍后重试。
      *
-     * @param exception 归一化分析任务冲突异常
+     * @param exception 归一化 LLM 通用任务冲突异常
      * @return 包含 error 字段的错误信息
      */
     @ResponseStatus(HttpStatus.CONFLICT)
-    @ExceptionHandler(NormalizationAnalysisTaskConflictException.class)
+    @ExceptionHandler(NormalizationLlmTaskConflictException.class)
     public Map<String, String> handleConflict(RuntimeException exception) {
         return Map.of("error", exception.getMessage());
     }

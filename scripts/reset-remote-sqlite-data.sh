@@ -54,6 +54,7 @@ BEGIN;
 DELETE FROM review_items;
 DELETE FROM purchase_records;
 DELETE FROM raw_import_batches;
+DELETE FROM normalization_llm_tasks;
 DELETE FROM agent_events;
 
 DELETE FROM sqlite_sequence
@@ -61,6 +62,7 @@ WHERE name IN (
   'review_items',
   'purchase_records',
   'raw_import_batches',
+  'normalization_llm_tasks',
   'agent_events'
 );
 
@@ -86,9 +88,10 @@ SELECT 'purchase_records', COUNT(*) FROM purchase_records
 UNION ALL
 SELECT 'review_items', COUNT(*) FROM review_items
 UNION ALL
-SELECT 'agent_events', COUNT(*) FROM agent_events
+SELECT 'normalization_llm_tasks', COUNT(*) FROM normalization_llm_tasks
 UNION ALL
-SELECT 'product_aliases', COUNT(*) FROM product_aliases;
+SELECT 'agent_events', COUNT(*) FROM agent_events
+;
 SQL
 
 echo

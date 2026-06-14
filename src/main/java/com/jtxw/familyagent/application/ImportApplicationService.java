@@ -69,16 +69,9 @@ public class ImportApplicationService {
      */
     private static final String REVIEW_REASON_ZERO_PAYMENT = "ZERO_PAYMENT";
     /**
-     * 负向别名规则标识，表示人工确认过的误判样本
-     */
-    /**
-     * 旧归一化兜底规则标识，LLM Advisor 的唯一候选来源
+     * 归一化兜底规则标识，表示当前商品未命中明确规则，需要进入人工复核或规则维护建议候选集。
      */
     private static final String NORMALIZATION_RULE_LEGACY_FALLBACK = "legacy_fallback";
-    /**
-     * 旧模式兜底复核模式：导入时立即创建复核项
-     */
-    private static final String FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW = "immediate_review";
     /**
      * 0 元可信支付关键词：赠品
      */
@@ -531,8 +524,7 @@ public class ImportApplicationService {
     /**
      * 判断商品名称归一化结果是否需要创建复核项。
      *
-     * <p>legacy_fallback 是 LLM Advisor 的唯一候选来源，新模式下默认跳过复核，
-     * 仅在配置了 immediate_review 时才创建。</p>
+     * <p>legacy_fallback 表示当前样本未命中明确规则，需要立即创建人工复核。</p>
      *
      * @param nameResult 商品名称归一化结果
      * @return 如果需要创建复核项则返回 true
@@ -541,7 +533,7 @@ public class ImportApplicationService {
         if (!nameResult.needReview()) {
             return false;
         }
-        // legacy_fallback 是 LLM Advisor 的唯一候选来源，新模式下先静默 exclude，避免导入时制造大量逐条复核噪音。
+        // 规则维护建议任务不参与导入同步决策，legacy_fallback 需要立即进入人工复核。
         if (NORMALIZATION_RULE_LEGACY_FALLBACK.equals(nameResult.matchedRule())) {
             return normalizationProperties.immediateFallbackReview();
         }
@@ -568,9 +560,7 @@ public class ImportApplicationService {
     }
 
     private static NormalizationProperties legacyReviewProperties() {
-        NormalizationProperties properties = new NormalizationProperties();
-        properties.setFallbackReviewMode(FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW);
-        return properties;
+        return new NormalizationProperties();
     }
 
     /**

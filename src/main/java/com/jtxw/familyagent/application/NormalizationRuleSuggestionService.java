@@ -71,7 +71,7 @@ public class NormalizationRuleSuggestionService {
      */
     private final NormalizationRuleSuggestionValidator validator;
     /**
-     * 归一化任务执行器，复用单线程执行能力避免并发写规则库。
+     * 归一化 LLM 通用任务执行器，复用单线程执行能力避免并发写规则库。
      */
     private final ExecutorService executorService;
 
@@ -92,7 +92,7 @@ public class NormalizationRuleSuggestionService {
                                               NormalizationLibraryService normalizationLibraryService,
                                               NormalizationRuleSuggestionAdvisor advisor,
                                               NormalizationRuleSuggestionValidator validator,
-                                              @Qualifier("normalizationAnalysisExecutor") ExecutorService executorService) {
+                                              @Qualifier("normalizationLlmTaskExecutor") ExecutorService executorService) {
         this.databaseInitializer = databaseInitializer;
         this.taskRepository = taskRepository;
         this.purchaseRecordRepository = purchaseRecordRepository;
@@ -112,7 +112,7 @@ public class NormalizationRuleSuggestionService {
         NormalizationRuleSuggestionCommand normalizedCommand = normalizeCommand(command);
         databaseInitializer.initialize();
         if (taskRepository.existsActiveTask()) {
-            throw new NormalizationAnalysisTaskConflictException("已有归一化 LLM 任务正在执行，请稍后再试");
+            throw new NormalizationLlmTaskConflictException("已有归一化 LLM 任务正在执行，请稍后再试");
         }
         long taskId = taskRepository.create(TASK_TYPE_RULE_SUGGESTION, normalizedCommand.batchId(),
                 blankToNull(normalizedCommand.owner()), normalizedCommand.fullScan(), normalizedCommand.apply(),

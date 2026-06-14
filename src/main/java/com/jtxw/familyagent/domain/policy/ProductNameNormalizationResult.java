@@ -19,7 +19,7 @@ public record ProductNameNormalizationResult(
          */
         double confidence,
         /**
-         * 命中的规则标识；未命中新规则时会保留旧归一化规则的 ruleId 或 fallback 标识。
+         * 命中的规则标识；未命中规则库时会保留兜底归一化规则的 ruleId 或 fallback 标识。
          */
         String matchedRule,
         /**

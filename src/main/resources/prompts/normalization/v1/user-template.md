@@ -1,1 +1,0 @@
-逐条输出 compact JSON Array：{{inputJson}}

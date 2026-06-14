@@ -33,7 +33,7 @@ public class ImportBatchRepository {
      * 将导入批次标记为完成并写入导入阶段统计结果。
      *
      * <p>raw_import_batches.review_count 只表示 import-file 或 record-purchase 导入阶段直接创建的复核数；
-     * analyze-normalization 后续新增的 PRODUCT_NAME_NORMALIZATION_REVIEW 不会回写该字段，避免混淆批次导入结果和后处理结果。</p>
+     * 后续新增的 PRODUCT_NAME_NORMALIZATION_REVIEW 不会回写该字段，避免混淆批次导入结果和后处理结果。</p>
      *
      * @param batchId       导入批次 ID
      * @param totalCount    文件总记录数

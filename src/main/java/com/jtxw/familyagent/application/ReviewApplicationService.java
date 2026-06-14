@@ -120,7 +120,7 @@ public class ReviewApplicationService {
     public List<ReviewItemDetail> listReviewItems(ReviewItemQuery query) {
         databaseInitializer.initialize();
         ReviewItemQuery normalized = query.normalize();
-        // 不传 status 时保持旧行为，默认查询 pending
+        // 不传 status 时保持默认行为，默认查询 pending
         if (normalized.status() == null || normalized.status().isBlank()) {
             normalized = new ReviewItemQuery(REVIEW_STATUS_PENDING, normalized.batchId(), normalized.owner(),
                     normalized.reasonCode(), normalized.decision(), normalized.sourceFile(),
@@ -224,7 +224,7 @@ public class ReviewApplicationService {
         }
         resolveReviewItem(reviewId, RESULT_ACTION_CONFIRM_NORMALIZATION, note);
         return new ReviewApplyResult(reviewId, context.record().id(), RESULT_ACTION_CONFIRM_NORMALIZATION, decision,
-                REVIEW_STATUS_RESOLVED, "归一化已确认；alias persistence is deprecated; normalization knowledge should be maintained through normalization_rules / normalization_rule_keywords.：" + finalNormalizedName);
+                REVIEW_STATUS_RESOLVED, "归一化已确认；长期规则请通过 normalization_rules / normalization_rule_keywords 维护：" + finalNormalizedName);
     }
 
     /**
@@ -310,7 +310,7 @@ public class ReviewApplicationService {
         purchaseRecordRepository.updateDecision(context.record().id(), ACTION_EXCLUDE);
         resolveReviewItem(reviewId, RESULT_ACTION_REJECT_NORMALIZATION, note);
         return new ReviewApplyResult(reviewId, context.record().id(), RESULT_ACTION_REJECT_NORMALIZATION, ACTION_EXCLUDE,
-                REVIEW_STATUS_RESOLVED, "归一化已拒绝；alias persistence is deprecated; normalization knowledge should be maintained through normalization_rules / normalization_rule_keywords.：" + finalRejectedName);
+                REVIEW_STATUS_RESOLVED, "归一化已拒绝；长期规则请通过 normalization_rules / normalization_rule_keywords 维护：" + finalRejectedName);
     }
 
     /**

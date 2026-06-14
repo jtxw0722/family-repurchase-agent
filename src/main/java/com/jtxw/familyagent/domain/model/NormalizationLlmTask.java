@@ -6,10 +6,10 @@ import java.util.Map;
 /**
  * @Author: jtxw
  * @Date: 2026/06/15 00:44:27
- * @Description: 归一化 LLM 通用异步任务查询结果，承载旧商品归一化分析和新规则维护建议任务的状态、统计与结果
+ * @Description: 归一化 LLM 通用异步任务查询结果，承载规则维护建议任务的状态、统计与结果
  *
  * @param id                      任务 ID，来自 normalization_llm_tasks.id，不允许为空
- * @param taskType                任务类型，取值为 normalization_suggestion_analysis 或 rule_suggestion
+ * @param taskType                任务类型，当前取值为 rule_suggestion
  * @param status                  任务状态，取值为 pending、running、completed、failed
  * @param batchId                 导入批次 ID，按批次筛选时不为空
  * @param owner                   订单归属人，按家庭成员筛选时不为空

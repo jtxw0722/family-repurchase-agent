@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @Author: jtxw
  * @Date: 2026/06/14 17:15:00
- * @Description: 配置化商品规则匹配的单元测试，通过显式 ProductRuleProvider 构造测试规则，避免混用旧本地配置 fallback。
+ * @Description: 配置化商品规则匹配的单元测试，通过显式 ProductRuleProvider 构造测试规则，避免混用本地配置 fallback。
  */
 class ProductRuleMatcherTest {
     /**

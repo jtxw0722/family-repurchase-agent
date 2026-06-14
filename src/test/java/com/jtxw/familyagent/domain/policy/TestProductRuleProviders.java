@@ -14,7 +14,7 @@ public final class TestProductRuleProviders {
     /**
      * 构造与 SQLite 初始化种子一致的测试规则提供器。
      *
-     * @return 测试用商品规则提供器，不依赖旧本地配置文件
+     * @return 测试用商品规则提供器，不依赖本地配置文件
      */
     public static ProductRuleProvider defaultRules() {
         return () -> List.of(

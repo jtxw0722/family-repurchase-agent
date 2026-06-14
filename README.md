@@ -20,9 +20,9 @@
 * CSV / Excel 订单文件导入
 * 自然语言 / 手动购买记录录入
 * SQLite 本地存储
-* 商品名称归一化与 alias 学习沉淀
-* LLM 辅助归一化建议分析：异步分析 legacy_fallback 商品，生成 NORMALIZE / REVIEW / EXCLUDE 建议 
-* 高置信 EXCLUDE 自动排除，降低耐用品、优惠券、定金等样本复核噪音
+* 商品名称归一化规则库维护
+* LLM 辅助规则维护建议：从历史购买记录筛选候选商品，建议新增规则或关键词
+* 人工复核与规则库维护闭环，避免低置信结果直接污染价格基准
 * 异常样本人工复核
 * 规格解析与单位价格计算
 * 当前价格与本地历史价格对比
@@ -89,10 +89,9 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/review-items`
 - `/api/tools/review-items/{id}/apply`
 - `/api/tools/review-items/{id}/apply-normalization`
-- `/api/tools/import-batches/{batchId}/analyze-normalization`
-- `/api/tools/normalization-suggestions`
-- `/api/tools/normalization-suggestions/batch-apply`
-- `/api/tools/normalization-analysis-tasks/{taskId}` 
+- `/api/tools/normalization-library`
+- `/api/tools/normalization-rule-suggestions`
+- `/api/tools/normalization-llm-tasks/{taskId}`
 - `/api/tools/purchase-records/search`
 MCP tools：
 
@@ -161,36 +160,32 @@ curl -X POST "http://localhost:8080/api/tools/review-items/12/apply-normalizatio
   -d "{\"action\":\"confirm\",\"normalizedName\":\"沐浴露\",\"targetUnit\":\"L\",\"includeInBaseline\":true,\"note\":\"确认该商品归一化为沐浴露\"}"
 ```
 
-### LLM 归一化建议分析
+### 查询归一化规则库
 
 ```powershell
-curl -X POST "http://localhost:8080/api/tools/import-batches/1/analyze-normalization" `
+curl -X GET "http://localhost:8080/api/tools/normalization-library"
+```
+
+### LLM 规则维护建议
+
+```powershell
+curl -X POST "http://localhost:8080/api/tools/normalization-rule-suggestions" `
   -H "Content-Type: application/json" `
-  -d "{\"limit\":10,\"forceReanalyze\":false,\"includeKeywords\":[\"主食罐\",\"猫罐头\",\"湿粮\",\"餐盒\"]}"
+  -d "{\"batchId\":1,\"candidateMode\":\"legacy_fallback\",\"limit\":100,\"apply\":false}"
 ```
 
-### 查询归一化分析任务 
+### 查询归一化 LLM 任务
+
 ```powershell
-curl -X GET "http://localhost:8080/api/tools/normalization-analysis-tasks/1"
+curl -X GET "http://localhost:8080/api/tools/normalization-llm-tasks/1"
 ```
 
-### 查询自动排除建议
-```powershell
-curl -X GET "http://localhost:8080/api/tools/normalization-suggestions/auto-excluded?batchId=1&minConfidence=0.9"
-```
-
-### 查询归一化建议
+### 写入归一化规则库
 
 ```powershell
-curl -X GET "http://localhost:8080/api/tools/normalization-suggestions?batchId=1"
-```
-
-### 批量应用归一化建议
-
-```powershell
-curl -X POST "http://localhost:8080/api/tools/normalization-suggestions/batch-apply" `
+curl -X POST "http://localhost:8080/api/tools/normalization-library" `
   -H "Content-Type: application/json" `
--d "{\"batchId\":1,\"action\":\"approve_normalize\",\"minConfidence\":0.9,\"onlyStatus\":\"pending_batch_approval\"}"
+  -d "{\"action\":\"add_keyword\",\"ruleCode\":\"cat_litter\",\"keyword\":\"豆腐猫砂\",\"matchType\":\"include\",\"priority\":90}"
 ```
 
 ### 手动 / 自然语言购买记录录入
@@ -355,8 +350,8 @@ Family Repurchase Agent 默认本地运行。
 - 工具计算优先：LLM 负责理解意图和解释结果，价格判断由后端基于历史样本计算。
 - 价格判断阈值当前采用可配置的启发式 MVP 规则：当前单价低于历史最低价，或低于历史中位价一定比例时判断为好价；明显高于历史中位价时判断为偏贵。具体阈值和工具返回契约见 [Tool Contract](docs/tool_contract.md)。
 - 自然语言录入：用于补足京东、拼多多、线下超市等不方便导出订单的平台。LLM 只负责从自然语言中抽取结构化字段，后端负责最终校验和入库决策。
-- 归一化学习闭环：系统不会让未确认的低置信归一化结果直接进入价格基准。人工确认后的正向别名会沉淀到 `product_aliases`，人工拒绝的误判会沉淀到 `product_negative_aliases`，后续导入和查询优先使用这些确定性样本，避免重复复核和规则膨胀。 
-- LLM 辅助归一化而非自动入库：LLM Advisor 只用于分析 legacy_fallback 商品并生成归一化建议，导入主链路仍保持确定性和安全边界。未确认建议不会直接进入价格基准，高置信建议也需要经过批量确认后才会沉淀为 alias，避免 LLM 误判污染历史样本。 
+- 归一化规则闭环：系统不会让未确认的低置信归一化结果直接进入价格基准。人工复核用于修正购买记录；长期知识通过 `normalization_rules` 和 `normalization_rule_keywords` 维护，避免规则膨胀和样本污染。
+- LLM 辅助规则维护而非自动入库：LLM 只负责从历史购买记录中发现规则库缺口，并建议新增规则或 include / exclude keyword。是否写入规则库由 `apply` 控制，写入前仍经过本地校验和 `NormalizationLibraryService`。
 - 后端确定性收敛标准品类与单位：LLM 可以辅助理解复杂商品标题，但最终 normalizedName 和 targetUnit 仍由后端规则收敛。这样可以避免同类商品被拆成多个价格基准，也避免把规格值或不稳定包装单位误当成统计单位。
 ---
 

@@ -78,55 +78,6 @@ CREATE TABLE IF NOT EXISTS review_items (
     resolved_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS normalization_suggestions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id INTEGER,
-    raw_product_name TEXT NOT NULL,
-    sku TEXT,
-    alias_key TEXT NOT NULL,
-    action TEXT NOT NULL,
-    suggested_normalized_name TEXT,
-    rejected_normalized_name TEXT,
-    product_type TEXT,
-    target_unit TEXT,
-    unit_family TEXT,
-    confidence REAL NOT NULL,
-    review_required INTEGER NOT NULL DEFAULT 1,
-    reason TEXT,
-    evidence_json TEXT,
-    llm_provider TEXT,
-    llm_model TEXT,
-    prompt_version TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    reviewed_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS normalization_analysis_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    limit_count INTEGER NOT NULL DEFAULT 100,
-    force_reanalyze INTEGER NOT NULL DEFAULT 0,
-    include_keywords_json TEXT NOT NULL DEFAULT '[]',
-    exclude_keywords_json TEXT NOT NULL DEFAULT '[]',
-    only_failed INTEGER NOT NULL DEFAULT 0,
-    candidate_count INTEGER NOT NULL DEFAULT 0,
-    analyzed_count INTEGER NOT NULL DEFAULT 0,
-    auto_excluded_count INTEGER NOT NULL DEFAULT 0,
-    pending_batch_approval_count INTEGER NOT NULL DEFAULT 0,
-    pending_review_count INTEGER NOT NULL DEFAULT 0,
-    failed_count INTEGER NOT NULL DEFAULT 0,
-    current_batch_index INTEGER NOT NULL DEFAULT 0,
-    total_batch_count INTEGER NOT NULL DEFAULT 0,
-    message TEXT,
-    error_message TEXT,
-    created_at TEXT NOT NULL,
-    started_at TEXT,
-    finished_at TEXT,
-    updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS normalization_llm_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_type TEXT NOT NULL,
@@ -169,11 +120,6 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 CREATE INDEX IF NOT EXISTS idx_purchase_normalized_name ON purchase_records(normalized_name);
 CREATE INDEX IF NOT EXISTS idx_purchase_order_time ON purchase_records(order_time);
 CREATE INDEX IF NOT EXISTS idx_review_status ON review_items(status);
-CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_batch_id ON normalization_suggestions(batch_id);
-CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_alias_key ON normalization_suggestions(alias_key);
-CREATE INDEX IF NOT EXISTS idx_normalization_suggestions_status ON normalization_suggestions(status);
-CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_status ON normalization_analysis_tasks(status);
-CREATE INDEX IF NOT EXISTS idx_normalization_analysis_tasks_batch_id ON normalization_analysis_tasks(batch_id);
 CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_status ON normalization_llm_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_normalization_llm_tasks_type ON normalization_llm_tasks(task_type);
 CREATE INDEX IF NOT EXISTS idx_normalization_rule_keywords_rule_type ON normalization_rule_keywords(rule_id, match_type);

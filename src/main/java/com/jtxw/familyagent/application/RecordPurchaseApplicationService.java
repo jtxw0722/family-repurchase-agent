@@ -76,7 +76,7 @@ public class RecordPurchaseApplicationService {
      */
     private static final String REVIEW_REASON_PRICE_OUT_OF_BASELINE_RANGE = "PRICE_OUT_OF_BASELINE_RANGE";
     /**
-     * 旧归一化兜底规则标识
+     * 归一化兜底规则标识，表示当前商品未命中明确规则，需要进入人工复核或规则维护建议候选集。
      */
     private static final String NORMALIZATION_RULE_LEGACY_FALLBACK = "legacy_fallback";
     /**
@@ -144,10 +144,6 @@ public class RecordPurchaseApplicationService {
      */
     private static final String PLATFORM_ALIAS_CONVENIENCE_STORE = "便利店";
     /**
-     * 旧模式兜底复核模式：导入时立即创建复核项
-     */
-    private static final String FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW = "immediate_review";
-    /**
      * 用户未提供 SKU 时的缺省占位值
      */
     private static final String DEFAULT_SKU_PLACEHOLDER = "暂无";
@@ -201,9 +197,9 @@ public class RecordPurchaseApplicationService {
     }
 
     /**
-     * 创建手动购买记录录入应用服务，使用旧模式兜底归一化配置。
+     * 创建手动购买记录录入应用服务，使用默认兜底归一化配置。
      *
-     * <p>该构造器用于兼容旧测试或未注入 NormalizationProperties 的场景，
+     * <p>该构造器用于兼容测试或未注入 NormalizationProperties 的场景，
      * 内部使用 {@link #legacyReviewProperties()} 生成默认配置。</p>
      *
      * @param databaseInitializer      数据库初始化组件
@@ -466,8 +462,8 @@ public class RecordPurchaseApplicationService {
     /**
      * 判断当前归一化结果是否需要创建商品名称归一化复核项。
      *
-     * <p>legacy_fallback 规则在 llm_suggestion/silent_exclude 模式下不立即创建逐条复核，
-     * 避免导入时制造大量复核噪音；其余低置信结果均需要创建复核项。</p>
+     * <p>legacy_fallback 表示当前样本未命中明确规则，需要立即创建人工复核；
+     * 其余低置信结果也需要创建复核项。</p>
      *
      * @param nameResult 商品名称归一化结果
      * @return 需要创建复核项时返回 true
@@ -476,7 +472,7 @@ public class RecordPurchaseApplicationService {
         if (!nameResult.needReview()) {
             return false;
         }
-        // legacy_fallback 在 llm_suggestion/silent_exclude 模式下不立即创建逐条归一化复核。
+        // 规则维护建议任务不参与录入同步决策，legacy_fallback 需要立即进入人工复核。
         if (NORMALIZATION_RULE_LEGACY_FALLBACK.equals(nameResult.matchedRule())) {
             return normalizationProperties.immediateFallbackReview();
         }
@@ -567,7 +563,7 @@ public class RecordPurchaseApplicationService {
      * 解析 SKU 值，用户未提供时返回默认占位值。
      *
      * <p>SKU 为空或空白时使用 {@link #DEFAULT_SKU_PLACEHOLDER} 作为缺省值，
-     * 避免商品名称归一化和 aliasKey 生成缺少规格上下文。</p>
+     * 避免商品名称归一化缺少规格上下文。</p>
      *
      * @param value 用户输入的 SKU 值，允许为 null 或空白
      * @return 非空的 SKU 字符串
@@ -595,16 +591,14 @@ public class RecordPurchaseApplicationService {
     }
 
     /**
-     * 创建旧模式兜底归一化配置。
+     * 创建默认兜底归一化配置。
      *
-     * <p>该方法用于兼容旧测试或未注入 NormalizationProperties 的构造场景，
+     * <p>该方法用于兼容测试或未注入 NormalizationProperties 的构造场景，
      * 默认使用 immediate_review 模式，确保 legacy_fallback 商品在导入时立即创建复核项。</p>
      *
      * @return 包含兜底配置的 NormalizationProperties 实例
      */
     private static NormalizationProperties legacyReviewProperties() {
-        NormalizationProperties properties = new NormalizationProperties();
-        properties.setFallbackReviewMode(FALLBACK_REVIEW_MODE_IMMEDIATE_REVIEW);
-        return properties;
+        return new NormalizationProperties();
     }
 }

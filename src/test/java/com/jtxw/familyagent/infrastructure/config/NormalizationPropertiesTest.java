@@ -16,12 +16,9 @@ class NormalizationPropertiesTest {
 
         assertThat(properties.getLlm().getBaseUrl()).isEqualTo("https://api.openai.com/v1");
         assertThat(properties.getLlm().getProvider()).isEqualTo("openai-compatible");
-        assertThat(properties.getLlm().getBatchSize()).isEqualTo(10);
         assertThat(properties.getLlm().isEnabled()).isFalse();
         assertThat(properties.getLlm().isDebugLogEnabled()).isFalse();
-        assertThat(properties.getLlm().isDebugLogFullPrompt()).isFalse();
-        assertThat(properties.getLlm().isDebugLogFullResponse()).isFalse();
         assertThat(properties.getLlm().getDebugLogDir()).isEqualTo("logs/llm-debug");
-        assertThat(properties.getLlm().getDebugMaxResponseChars()).isEqualTo(8000);
+        assertThat(properties.immediateFallbackReview()).isTrue();
     }
 }

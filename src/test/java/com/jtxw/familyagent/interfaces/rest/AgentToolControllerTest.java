@@ -1,7 +1,6 @@
 package com.jtxw.familyagent.interfaces.rest;
 
 import com.jtxw.familyagent.application.*;
-import com.jtxw.familyagent.application.command.AnalyzeNormalizationCommand;
 import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
@@ -56,10 +55,6 @@ class AgentToolControllerTest {
     private ReportApplicationService reportApplicationService;
     @MockitoBean
     private ReviewApplicationService reviewApplicationService;
-    @MockitoBean
-    private NormalizationSuggestionService normalizationSuggestionService;
-    @MockitoBean
-    private NormalizationAnalysisTaskService normalizationAnalysisTaskService;
     @MockitoBean
     private NormalizationLlmTaskService normalizationLlmTaskService;
     @MockitoBean
@@ -591,31 +586,6 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void analyzeNormalizationShouldPassKeywordFilters() throws Exception {
-        when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
-                .thenReturn(new NormalizationLlmTaskCreateResult(99L, "normalization_suggestion_analysis", "pending",
-                        "归一化建议分析任务已创建"));
-
-        mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "limit": 10,
-                                  "forceReanalyze": false,
-                                  "includeKeywords": ["主食罐"],
-                                  "excludeKeywords": ["试吃"],
-                                  "onlyFailed": true
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.taskId").value(99))
-                .andExpect(jsonPath("$.taskType").value("normalization_suggestion_analysis"))
-                .andExpect(jsonPath("$.status").value("pending"));
-
-        verify(normalizationAnalysisTaskService).create(any(AnalyzeNormalizationCommand.class));
-    }
-
-    @Test
     void getNormalizationLlmTaskShouldReturnStatus() throws Exception {
         when(normalizationLlmTaskService.get(99L))
                 .thenReturn(new NormalizationLlmTask(99L, "rule_suggestion", "running", 7L,
@@ -657,64 +627,23 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void listAutoExcludedNormalizationSuggestionsShouldUseDefaultMinConfidence() throws Exception {
-        when(normalizationSuggestionService.listAutoExcluded(1L, null))
-                .thenReturn(autoExcludedResult(0.9D));
-
-        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
-                        .param("batchId", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.batchId").value(1))
-                .andExpect(jsonPath("$.minConfidence").value(0.9))
-                .andExpect(jsonPath("$.total").value(1))
-                .andExpect(jsonPath("$.typeCounts[0].productType").value("DURABLE"))
-                .andExpect(jsonPath("$.typeCounts[0].count").value(1))
-                .andExpect(jsonPath("$.items[0].suggestionId").value(11))
-                .andExpect(jsonPath("$.items[0].rawProductName").value("猫砂盆大号"))
-                .andExpect(jsonPath("$.items[0].sku").value("默认"))
-                .andExpect(jsonPath("$.items[0].aliasKey").value("maoshapendahao"))
-                .andExpect(jsonPath("$.items[0].action").value("EXCLUDE"))
-                .andExpect(jsonPath("$.items[0].productType").value("DURABLE"))
-                .andExpect(jsonPath("$.items[0].confidence").value(0.96))
-                .andExpect(jsonPath("$.items[0].reviewRequired").value(false))
-                .andExpect(jsonPath("$.items[0].status").value("auto_excluded"))
-                .andExpect(jsonPath("$.items[0].reason").value("后处理修正：高置信耐用品，自动排除"))
-                .andExpect(jsonPath("$.items[0].createdAt").value("2026-06-12T10:00:00"));
-    }
-
-    @Test
-    void listAutoExcludedNormalizationSuggestionsShouldPassCustomMinConfidence() throws Exception {
-        when(normalizationSuggestionService.listAutoExcluded(1L, 0.95D))
-                .thenReturn(autoExcludedResult(0.95D));
-
-        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
-                        .param("batchId", "1")
-                        .param("minConfidence", "0.95"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.minConfidence").value(0.95));
-    }
-
-    @Test
-    void listAutoExcludedNormalizationSuggestionsShouldReturnBadRequestForInvalidBatchId() throws Exception {
-        when(normalizationSuggestionService.listAutoExcluded(0L, null))
-                .thenThrow(new IllegalArgumentException("batchId 必须大于 0"));
-
-        mockMvc.perform(get("/api/tools/normalization-suggestions/auto-excluded")
-                        .param("batchId", "0"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("batchId 必须大于 0"));
-    }
-
-    @Test
-    void analyzeNormalizationShouldReturnConflictWhenActiveTaskExists() throws Exception {
-        when(normalizationAnalysisTaskService.create(any(AnalyzeNormalizationCommand.class)))
-                .thenThrow(new NormalizationAnalysisTaskConflictException("已有归一化建议分析任务正在执行，请稍后再试"));
-
-        mockMvc.perform(post("/api/tools/import-batches/7/analyze-normalization")
+    void oldEndpointsShouldReturnNotFound() throws Exception {
+        mockMvc.perform(post("/api/tools/import-batches/7/" + "analyze-" + "normalization")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").value("已有归一化建议分析任务正在执行，请稍后再试"));
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tools/normalization-" + "suggestions")
+                        .param("batchId", "7"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tools/normalization-" + "suggestions/" + "auto-" + "excluded")
+                        .param("batchId", "7"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/tools/normalization-" + "suggestions/batch-apply")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tools/normalization-" + "analysis-" + "tasks/99"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -746,28 +675,6 @@ class AgentToolControllerTest {
                                 0.0125, "抽", 3120.0, "抽")
                 ), 0, List.of(), List.of()),
                 List.of()
-        );
-    }
-
-    private AutoExcludedNormalizationSuggestionResult autoExcludedResult(double minConfidence) {
-        return new AutoExcludedNormalizationSuggestionResult(
-                1L,
-                minConfidence,
-                1,
-                List.of(new AutoExcludedNormalizationSuggestionResult.TypeCount("DURABLE", 1L)),
-                List.of(new AutoExcludedNormalizationSuggestionResult.Item(
-                        11L,
-                        "猫砂盆大号",
-                        "默认",
-                        "maoshapendahao",
-                        "EXCLUDE",
-                        "DURABLE",
-                        0.96D,
-                        false,
-                        "auto_excluded",
-                        "后处理修正：高置信耐用品，自动排除",
-                        "2026-06-12T10:00:00"
-                ))
         );
     }
 

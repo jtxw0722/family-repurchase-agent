@@ -65,7 +65,7 @@ public class ProductNameNormalizer {
             return fromRuleMatch(skuMatch);
         }
 
-        // 兼容旧逻辑：未命中任何规则时仍返回旧 ProductNormalizer 的结果，不改变历史品类行为。
+        // 兼容既有逻辑：未命中任何规则时仍返回 ProductNormalizer 的结果，不改变历史品类行为。
         ProductNormalizationResult fallback = productNormalizer.normalizeProduct(productName);
         return new ProductNameNormalizationResult(
                 fallback.normalizedName(),

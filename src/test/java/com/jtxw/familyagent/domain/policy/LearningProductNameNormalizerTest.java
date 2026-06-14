@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @Author: jtxw
  * @Date: 2026/06/15 00:02:39
- * @Description: 学习型商品归一化组件测试，验证 alias 主链路废弃后仅委托规则链路并保留低置信复核兜底
+ * @Description: 学习型商品归一化组件测试，验证商品名称归一化仅委托规则链路并保留低置信复核兜底
  */
 class LearningProductNameNormalizerTest {
     @Test
@@ -24,7 +24,7 @@ class LearningProductNameNormalizerTest {
     }
 
     @Test
-    void shouldUseRuleMatchWithoutAliasLookup() {
+    void shouldUseRuleMatchWithoutExtraLookup() {
         Fixture fixture = fixture();
 
         ProductNameNormalizationResult result = fixture.normalizer().normalize("猫砂 10kg", "默认");

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class NormalizationLearningIntegrationTest {
     @Test
-    void confirmNormalizationShouldUpdatePurchaseRecordWithoutAliasPersistence() throws Exception {
+    void confirmNormalizationShouldUpdatePurchaseRecordWithoutRulePersistence() throws Exception {
         Fixture fixture = fixture("confirm-normalization.sqlite");
         fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
@@ -41,11 +41,11 @@ class NormalizationLearningIntegrationTest {
         PurchaseRecord record = fixture.purchaseRecordRepository().findById(review.recordId()).orElseThrow();
         assertThat(record.normalizedName()).isEqualTo("沐浴露");
         assertThat(record.decision()).isEqualTo("include");
-        assertThat(result.message()).contains("alias persistence is deprecated");
+        assertThat(result.message()).contains("长期规则请通过 normalization_rules / normalization_rule_keywords 维护");
     }
 
     @Test
-    void rejectNormalizationShouldUpdateDecisionWithoutNegativeAliasPersistence() throws Exception {
+    void rejectNormalizationShouldUpdateDecisionWithoutRulePersistence() throws Exception {
         Fixture fixture = fixture("reject-normalization.sqlite");
         fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
@@ -57,7 +57,7 @@ class NormalizationLearningIntegrationTest {
         assertThat(result.decision()).isEqualTo("exclude");
         PurchaseRecord record = fixture.purchaseRecordRepository().findById(review.recordId()).orElseThrow();
         assertThat(record.decision()).isEqualTo("exclude");
-        assertThat(result.message()).contains("alias persistence is deprecated");
+        assertThat(result.message()).contains("长期规则请通过 normalization_rules / normalization_rule_keywords 维护");
     }
 
     @Test

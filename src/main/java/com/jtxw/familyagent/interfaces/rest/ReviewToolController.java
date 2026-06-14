@@ -45,7 +45,7 @@ public class ReviewToolController {
     /**
      * 查询复核记录，支持按状态、批次、归属人、复核原因码、统计决策和来源文件筛选。
      *
-     * <p>不传任何参数时保持旧行为，默认查询 pending 状态的复核项。
+     * <p>不传任何参数时保持默认行为，默认查询 pending 状态的复核项。
      * 分页参数 page 默认 1，size 默认 100，最大 500。</p>
      *
      * @param status     复核项状态筛选，不传时默认 pending

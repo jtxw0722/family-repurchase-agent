@@ -191,7 +191,7 @@ public class QuantityUnitParser {
     }
 
     /**
-     * 非新增标准品类走透传路径，避免破坏旧导入器已经解析好的 quantity/unit。
+     * 非新增标准品类走透传路径，避免破坏既有导入器已经解析好的 quantity/unit。
      */
     private QuantityUnitParseResult passThrough(String targetUnit, Double price, Double rawQuantity, String rawUnit) {
         if (rawQuantity != null && rawQuantity > 0D) {

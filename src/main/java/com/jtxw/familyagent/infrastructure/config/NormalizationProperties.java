@@ -5,26 +5,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * @Author: jtxw
  * @Date: 2026/06/06 11:45:16
- * @Description: 商品归一化配置，控制 legacy_fallback 复核模式和 LLM Advisor 参数。
+ * @Description: 商品归一化配置，控制规则维护建议链路的通用 LLM 参数。
  */
 @ConfigurationProperties(prefix = "family-agent.normalization")
 public class NormalizationProperties {
     /**
-     * legacy_fallback 复核模式，默认进入 LLM suggestion 后处理链路。
-     */
-    private String fallbackReviewMode = "llm_suggestion";
-    /**
-     * LLM Advisor 配置。
+     * LLM 调用配置。
      */
     private Llm llm = new Llm();
-
-    public String getFallbackReviewMode() {
-        return fallbackReviewMode;
-    }
-
-    public void setFallbackReviewMode(String fallbackReviewMode) {
-        this.fallbackReviewMode = fallbackReviewMode;
-    }
 
     public Llm getLlm() {
         return llm;
@@ -37,26 +25,20 @@ public class NormalizationProperties {
     /**
      * 判断 legacy_fallback 是否应立即创建商品归一化复核项。
      *
-     * @return true 表示保持旧行为立即创建 PRODUCT_NAME_NORMALIZATION_REVIEW
+     * @return 固定返回 true，表示低置信兜底样本立即进入人工复核
      */
     public boolean immediateFallbackReview() {
-        return "immediate_review".equalsIgnoreCase(safeMode());
-    }
-
-    private String safeMode() {
-        return fallbackReviewMode == null || fallbackReviewMode.isBlank()
-                ? "llm_suggestion"
-                : fallbackReviewMode.trim();
+        return true;
     }
 
     /**
      * @Author: jtxw
      * @Date: 2026/06/07 21:07:05
-     * @Description: Normalization LLM Advisor 调用和阈值配置。
+     * @Description: Normalization LLM 调用配置，供规则维护建议链路构造请求和访问模型。
      */
     public static class Llm {
         /**
-         * 是否启用 LLM Advisor；关闭时导入不受影响，分析接口返回明确错误。
+         * 是否启用 LLM 规则维护建议；关闭时规则建议任务返回明确错误。
          */
         private boolean enabled = false;
         /**
@@ -84,53 +66,17 @@ public class NormalizationProperties {
          */
         private String apiKey = "";
         /**
-         * 提示词版本，用于审计和回放。
-         */
-        private String promptVersion = "normalization-v1";
-        /**
-         * prompt 资源文件在 classpath 中的基础路径，包含 system.md 和 user-template.md。
-         */
-        private String promptResourcePath = "prompts/normalization/v1";
-        /**
          * 请求超时时间，单位秒。
          */
         private int requestTimeoutSeconds = 30;
-        /**
-         * 单次 LLM 请求最多处理的商品数量，默认 10，服务层会限制最大 20。
-         */
-        private int batchSize = 10;
-        /**
-         * 高置信 EXCLUDE 阈值，默认 0.9。
-         */
-        private double excludeConfidenceThreshold = 0.9D;
-        /**
-         * 高置信 NORMALIZE 阈值，默认 0.9。
-         */
-        private double normalizeConfidenceThreshold = 0.9D;
-        /**
-         * REVIEW 参考阈值，默认 0.85。
-         */
-        private double reviewConfidenceThreshold = 0.85D;
         /**
          * 是否写入 LLM 调试 dump 文件，默认关闭。
          */
         private boolean debugLogEnabled = false;
         /**
-         * 是否在调试 dump 中写入完整 prompt / request body。
-         */
-        private boolean debugLogFullPrompt = false;
-        /**
-         * 是否在调试 dump 中写入完整 response body 和提取后的模型内容。
-         */
-        private boolean debugLogFullResponse = false;
-        /**
          * LLM 调试 dump 文件目录。
          */
         private String debugLogDir = "logs/llm-debug";
-        /**
-         * 调试 dump 中 response body 最大保留字符数。
-         */
-        private int debugMaxResponseChars = 8000;
 
         public boolean isEnabled() {
             return enabled;
@@ -188,60 +134,12 @@ public class NormalizationProperties {
             this.apiKey = apiKey;
         }
 
-        public String getPromptVersion() {
-            return promptVersion;
-        }
-
-        public void setPromptVersion(String promptVersion) {
-            this.promptVersion = promptVersion;
-        }
-
-        public String getPromptResourcePath() {
-            return promptResourcePath;
-        }
-
-        public void setPromptResourcePath(String promptResourcePath) {
-            this.promptResourcePath = promptResourcePath;
-        }
-
         public int getRequestTimeoutSeconds() {
             return requestTimeoutSeconds;
         }
 
         public void setRequestTimeoutSeconds(int requestTimeoutSeconds) {
             this.requestTimeoutSeconds = requestTimeoutSeconds;
-        }
-
-        public int getBatchSize() {
-            return batchSize;
-        }
-
-        public void setBatchSize(int batchSize) {
-            this.batchSize = batchSize;
-        }
-
-        public double getExcludeConfidenceThreshold() {
-            return excludeConfidenceThreshold;
-        }
-
-        public void setExcludeConfidenceThreshold(double excludeConfidenceThreshold) {
-            this.excludeConfidenceThreshold = excludeConfidenceThreshold;
-        }
-
-        public double getNormalizeConfidenceThreshold() {
-            return normalizeConfidenceThreshold;
-        }
-
-        public void setNormalizeConfidenceThreshold(double normalizeConfidenceThreshold) {
-            this.normalizeConfidenceThreshold = normalizeConfidenceThreshold;
-        }
-
-        public double getReviewConfidenceThreshold() {
-            return reviewConfidenceThreshold;
-        }
-
-        public void setReviewConfidenceThreshold(double reviewConfidenceThreshold) {
-            this.reviewConfidenceThreshold = reviewConfidenceThreshold;
         }
 
         public boolean isDebugLogEnabled() {
@@ -252,22 +150,6 @@ public class NormalizationProperties {
             this.debugLogEnabled = debugLogEnabled;
         }
 
-        public boolean isDebugLogFullPrompt() {
-            return debugLogFullPrompt;
-        }
-
-        public void setDebugLogFullPrompt(boolean debugLogFullPrompt) {
-            this.debugLogFullPrompt = debugLogFullPrompt;
-        }
-
-        public boolean isDebugLogFullResponse() {
-            return debugLogFullResponse;
-        }
-
-        public void setDebugLogFullResponse(boolean debugLogFullResponse) {
-            this.debugLogFullResponse = debugLogFullResponse;
-        }
-
         public String getDebugLogDir() {
             return debugLogDir;
         }
@@ -276,12 +158,5 @@ public class NormalizationProperties {
             this.debugLogDir = debugLogDir;
         }
 
-        public int getDebugMaxResponseChars() {
-            return debugMaxResponseChars;
-        }
-
-        public void setDebugMaxResponseChars(int debugMaxResponseChars) {
-            this.debugMaxResponseChars = debugMaxResponseChars;
-        }
     }
 }
