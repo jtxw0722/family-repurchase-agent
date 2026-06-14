@@ -475,23 +475,6 @@ class RecordPurchaseApplicationServiceTest {
                 .anyMatch(reason -> reason.contains("商品归一化置信度较低"));
     }
 
-    @Test
-    void shouldNotIncludeManualRecordWhenNegativeAliasMatchesEvenIfNormalizedNameProvided() throws Exception {
-        Fixture fixture = fixture("manual-normalized-negative-alias.sqlite");
-        String aliasKey = fixture.productTitleCleaner.aliasKey("某耐用品", "暂无");
-        fixture.productNegativeAliasRepository.upsert("某耐用品", aliasKey, "某商品", "耐用品不能纳入复购基线");
-
-        RecordPurchaseResult result = fixture.service.record(command(true,
-                new RecordPurchaseCommand.Item(
-                        "某耐用品", "某商品", 99D, 1D, "件", "拼多多", "2026-06-02 08:12:41",
-                        "jtxw", "未知店铺", "暂无", "手动录入", "负向别名测试", false
-                )));
-
-        assertThat(result.records()).hasSize(1);
-        assertThat(result.records().get(0).decision()).isEqualTo("exclude");
-        assertThat(result.records().get(0).normalizedName()).isEqualTo("某耐用品");
-    }
-
     private void assertStoredPlatform(String dbName, String inputPlatform, String expectedPlatform) throws Exception {
         Fixture fixture = fixture(dbName);
         fixture.service.record(command(false, catLitterRecordWith(inputPlatform, "2026-06-04", "6kg*4包")));
@@ -611,8 +594,6 @@ class RecordPurchaseApplicationServiceTest {
         DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
         databaseInitializer.initialize();
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
-        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
-        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(
@@ -620,13 +601,8 @@ class RecordPurchaseApplicationServiceTest {
                 List.of(new NormalizationRule("test_laundry_beads", "洗衣凝珠", "颗",
                         List.of("洗衣凝珠", "凝珠", "洗衣珠"), 100))
         );
-        ProductTitleCleaner productTitleCleaner = new ProductTitleCleaner();
-        LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
-                productTitleCleaner,
-                productAliasRepository,
-                productNegativeAliasRepository,
-                productNameNormalizer
-        );
+        LearningProductNameNormalizer learningProductNameNormalizer =
+                new LearningProductNameNormalizer(productNameNormalizer);
         RecordPurchaseApplicationService service = new RecordPurchaseApplicationService(
                 databaseInitializer,
                 learningProductNameNormalizer,
@@ -638,14 +614,11 @@ class RecordPurchaseApplicationServiceTest {
                 purchaseRecordRepository,
                 reviewItemRepository
         );
-        return new Fixture(service, purchaseRecordRepository, reviewItemRepository, productTitleCleaner,
-                productNegativeAliasRepository);
+        return new Fixture(service, purchaseRecordRepository, reviewItemRepository);
     }
 
     private record Fixture(RecordPurchaseApplicationService service,
                            PurchaseRecordRepository purchaseRecordRepository,
-                           ReviewItemRepository reviewItemRepository,
-                           ProductTitleCleaner productTitleCleaner,
-                           ProductNegativeAliasRepository productNegativeAliasRepository) {
+                           ReviewItemRepository reviewItemRepository) {
     }
 }

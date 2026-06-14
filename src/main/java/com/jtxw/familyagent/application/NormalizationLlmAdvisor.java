@@ -643,84 +643,9 @@ public class NormalizationLlmAdvisor implements ProductNormalizationAdvisor {
             item.put("sku", safeText(request.sku()));
             item.put("category", safeText(request.category()));
             item.put("subCategory", safeText(request.subCategory()));
-            addItemAliases(item, request.context());
             items.add(item);
         }
         return items;
-    }
-
-    /**
-     * 向 prompt item 中添加压缩后的正向和负向别名证据。
-     *
-     * @param item    当前 prompt item
-     * @param context 本地 RAG 上下文；为空时不添加别名
-     */
-    private void addItemAliases(Map<String, Object> item, NormalizationRagContext context) {
-        if (context == null) {
-            return;
-        }
-        List<String> positiveAliases = compactAliases(context.positiveAliases(), true);
-        if (!positiveAliases.isEmpty()) {
-            item.put("positiveAliases", positiveAliases);
-        }
-        List<String> negativeAliases = compactAliases(context.negativeAliases(), false);
-        if (!negativeAliases.isEmpty()) {
-            item.put("negativeAliases", negativeAliases);
-        }
-    }
-
-    /**
-     * 压缩别名证据。
-     *
-     * <p>正向别名保留 alias 到标准品类和目标单位的关系，负向别名保留 alias 到拒绝品类的关系；
-     * 每类最多保留 3 条，避免 prompt 因历史证据过多而膨胀。</p>
-     *
-     * @param aliases  原始别名证据
-     * @param positive true 表示正向别名，false 表示负向别名
-     * @return 压缩后的别名证据列表
-     */
-    private List<String> compactAliases(List<String> aliases, boolean positive) {
-        if (aliases == null || aliases.isEmpty()) {
-            return List.of();
-        }
-        return aliases.stream()
-                .map(alias -> positive ? compactPositiveAlias(alias) : compactNegativeAlias(alias))
-                .filter(alias -> !alias.isBlank())
-                .limit(3)
-                .toList();
-    }
-
-    /**
-     * 压缩正向别名证据。
-     *
-     * @param alias 原始正向别名文本
-     * @return alias=>normalizedName/targetUnit 格式；无法解析时返回截断后的原文
-     */
-    private String compactPositiveAlias(String alias) {
-        String text = safeText(alias).replace("正向别名：", "");
-        String normalizedName = between(text, "=>", "，targetUnit=");
-        String targetUnit = after(text, "，targetUnit=");
-        String aliasName = before(text, "=>");
-        if (aliasName.isBlank() || normalizedName.isBlank()) {
-            return truncate(text, LEGACY_REASON_MAX_LENGTH);
-        }
-        return aliasName.trim() + "=>" + normalizedName.trim() + "/" + targetUnit.trim();
-    }
-
-    /**
-     * 压缩负向别名证据。
-     *
-     * @param alias 原始负向别名文本
-     * @return alias!=>rejectedName 格式；无法解析时返回截断后的原文
-     */
-    private String compactNegativeAlias(String alias) {
-        String text = safeText(alias).replace("负向别名：", "");
-        String aliasName = before(text, "，拒绝品类=");
-        String rejectedName = between(text, "，拒绝品类=", "，reason=");
-        if (aliasName.isBlank() || rejectedName.isBlank()) {
-            return truncate(text, LEGACY_REASON_MAX_LENGTH);
-        }
-        return aliasName.trim() + "!=>" + rejectedName.trim();
     }
 
     /**

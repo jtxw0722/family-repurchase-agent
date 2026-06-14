@@ -427,8 +427,6 @@ class NormalizationLlmAdvisorTest {
         NormalizationProperties properties = new NormalizationProperties();
         NormalizationLlmAdvisor promptAdvisor = new NormalizationLlmAdvisor(properties, objectMapper);
         NormalizationRagContext context = new NormalizationRagContext(
-                List.of("正向别名：尾巴生活主食餐盒 => 猫主食罐，targetUnit=g"),
-                List.of("负向别名：猫粮勺，拒绝品类=猫粮，reason=耐用品"),
                 List.of("规则：cat_main_can，normalizedName=猫主食罐，standardUnit=g，unitFamily=WEIGHT，includeKeywords=[主食罐]"),
                 List.of("这类长 categoryHints 不应在每个 item 中重复"));
         List<NormalizationAdvisorRequest> requests = List.of(
@@ -445,11 +443,8 @@ class NormalizationLlmAdvisorTest {
         assertThat(promptInput.path("context").path("rules")).hasSize(1);
         assertThat(promptInput.path("items")).hasSize(2);
         assertThat(promptInput.path("items").path(0).has("categoryHints")).isFalse();
-        assertThat(promptInput.path("items").path(0).has("positiveAliases")).isTrue();
-        assertThat(promptInput.path("items").path(0).path("positiveAliases").path(0).asText())
-                .isEqualTo("尾巴生活主食餐盒=>猫主食罐/g");
-        assertThat(promptInput.path("items").path(0).path("negativeAliases").path(0).asText())
-                .isEqualTo("猫粮勺!=>猫粮");
+        assertThat(promptInput.path("items").path(0).has("positive" + "Aliases")).isFalse();
+        assertThat(promptInput.path("items").path(0).has("negative" + "Aliases")).isFalse();
     }
 
     @Test
@@ -610,14 +605,14 @@ class NormalizationLlmAdvisorTest {
     }
 
     private List<NormalizationAdvisorRequest> requests(String... productNames) {
-        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of(), List.of(), List.of());
+        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of());
         return java.util.Arrays.stream(productNames)
                 .map(productName -> new NormalizationAdvisorRequest(productName, "默认", "测试分类", "测试子类", context))
                 .toList();
     }
 
     private NormalizationAdvisorRequest request(String productName, String sku) {
-        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of(), List.of(), List.of());
+        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of());
         return new NormalizationAdvisorRequest(productName, sku, "测试分类", "测试子类", context);
     }
 

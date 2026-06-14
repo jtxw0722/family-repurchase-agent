@@ -17,8 +17,6 @@ import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
 import com.jtxw.familyagent.infrastructure.config.NormalizationProperties;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.NormalizationSuggestionRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import org.slf4j.Logger;
@@ -46,7 +44,7 @@ import java.util.regex.Pattern;
 @Service
 public class NormalizationSuggestionService {
     /**
-     * 日志组件，只记录批量大小、耗时和 aliasKey 摘要，不记录 Prompt、API Key 或商品全文。
+     * 日志组件，只记录批量大小、耗时和候选去重 key 摘要，不记录 Prompt、API Key 或商品全文。
      */
     private static final Logger LOGGER = LoggerFactory.getLogger(NormalizationSuggestionService.class);
     /**
@@ -62,7 +60,7 @@ public class NormalizationSuggestionService {
      */
     private static final String STATUS_AUTO_EXCLUDED = "auto_excluded";
     /**
-     * 高置信归一化建议状态，等待批量确认写入别名。
+     * 高置信归一化建议状态，等待批量确认 suggestion。
      */
     private static final String STATUS_PENDING_BATCH_APPROVAL = "pending_batch_approval";
     /**
@@ -302,23 +300,15 @@ public class NormalizationSuggestionService {
      */
     private final ReviewItemRepository reviewItemRepository;
     /**
-     * 商品标题清洗器，用于生成稳定 aliasKey。
+     * 商品标题清洗器，用于生成 normalization_suggestions 候选去重 key。
      */
     private final ProductTitleCleaner productTitleCleaner;
-    /**
-     * 正向别名仓储，批量应用时只写入 product_aliases。
-     */
-    private final ProductAliasRepository productAliasRepository;
-    /**
-     * 负向别名仓储，用于跳过已确认排除的候选。
-     */
-    private final ProductNegativeAliasRepository productNegativeAliasRepository;
     /**
      * LLM 归一化建议仓储，一条候选商品对应一条建议记录。
      */
     private final NormalizationSuggestionRepository normalizationSuggestionRepository;
     /**
-     * 本地轻量 RAG 上下文检索器，用于给 LLM 提供别名、负例和品类提示。
+     * 本地轻量 RAG 上下文检索器，用于给 LLM 提供规则证据和品类提示。
      */
     private final NormalizationRagContextRetriever ragContextRetriever;
     /**
@@ -338,7 +328,7 @@ public class NormalizationSuggestionService {
      */
     private final NormalizationProperties normalizationProperties;
     /**
-     * JSON 序列化组件，用于保存 RAG evidence 快照。
+     * JSON 序列化组件，用于保存 LLM 建议证据快照。
      */
     private final ObjectMapper objectMapper;
 
@@ -346,8 +336,6 @@ public class NormalizationSuggestionService {
                                           PurchaseRecordRepository purchaseRecordRepository,
                                           ReviewItemRepository reviewItemRepository,
                                           ProductTitleCleaner productTitleCleaner,
-                                          ProductAliasRepository productAliasRepository,
-                                          ProductNegativeAliasRepository productNegativeAliasRepository,
                                           NormalizationSuggestionRepository normalizationSuggestionRepository,
                                           NormalizationRagContextRetriever ragContextRetriever,
                                           ProductNormalizationAdvisor productNormalizationAdvisor,
@@ -359,8 +347,6 @@ public class NormalizationSuggestionService {
         this.purchaseRecordRepository = purchaseRecordRepository;
         this.reviewItemRepository = reviewItemRepository;
         this.productTitleCleaner = productTitleCleaner;
-        this.productAliasRepository = productAliasRepository;
-        this.productNegativeAliasRepository = productNegativeAliasRepository;
         this.normalizationSuggestionRepository = normalizationSuggestionRepository;
         this.ragContextRetriever = ragContextRetriever;
         this.productNormalizationAdvisor = productNormalizationAdvisor;
@@ -374,7 +360,7 @@ public class NormalizationSuggestionService {
      * 分析指定导入批次内的 legacy_fallback 商品。
      *
      * <p>该方法只生成 normalization_suggestions 审计记录，最多为低置信或失败样本创建复核项；
-     * 不会把 purchase_records 改为 include，也不会直接写 product_aliases。</p>
+     * 不会把 purchase_records 改为 include，也不会维护归一化规则库。</p>
      *
      * @param batchId         导入批次 ID
      * @param limit           最大分析候选数，小于等于 0 时默认 100
@@ -439,7 +425,7 @@ public class NormalizationSuggestionService {
      * 分析指定导入批次内的 legacy_fallback 商品。
      *
      * <p>该方法只生成 normalization_suggestions 审计记录，最多为低置信或失败样本创建复核项；
-     * 不会把 purchase_records 改为 include，也不会直接写 product_aliases。</p>
+     * 不会把 purchase_records 改为 include，也不会维护归一化规则库。</p>
      *
      * @param command 商品归一化分析命令
      * @return 批次分析统计结果
@@ -586,7 +572,7 @@ public class NormalizationSuggestionService {
      * 查询指定批次中已自动排除且无需人工复核的高置信 EXCLUDE 建议。
      *
      * <p>该方法只读取 normalization_suggestions，用于展示 LLM 自动减少人工复核的记录明细；
-     * 不写入 product_aliases，不修改 purchase_records.decision，也不更新 suggestion 状态。</p>
+     * 不维护归一化规则库，不修改 purchase_records.decision，也不更新 suggestion 状态。</p>
      *
      * @param batchId       导入批次 ID，必须大于 0
      * @param minConfidence 最低置信度阈值，允许为空；为空时使用默认值 0.9
@@ -621,10 +607,10 @@ public class NormalizationSuggestionService {
     }
 
     /**
-     * 批量确认高置信 NORMALIZE 建议并写入 product_aliases。
+     * 批量确认高置信 NORMALIZE 建议。
      *
-     * <p>该操作只沉淀正向别名并更新 suggestion 状态，不修改历史 purchase_records.decision，
-     * 后续同类商品会通过 product_aliases 的确定性命中进入常规导入链路。</p>
+     * <p>该操作只更新 suggestion 状态，不修改历史 purchase_records.decision，
+     * 后续规则维护应通过 normalization_rules / normalization_rule_keywords 完成。</p>
      *
      * @param batchId       导入批次 ID
      * @param action        批量动作，当前仅支持 approve_normalize
@@ -637,10 +623,10 @@ public class NormalizationSuggestionService {
     }
 
     /**
-     * 批量确认高置信 NORMALIZE 建议并写入 product_aliases。
+     * 批量确认高置信 NORMALIZE 建议。
      *
-     * <p>该操作只沉淀正向别名并更新 suggestion 状态，不修改历史 purchase_records.decision，
-     * 后续同类商品会通过 product_aliases 的确定性命中进入常规导入链路。</p>
+     * <p>该操作只更新 suggestion 状态，不修改历史 purchase_records.decision，
+     * 后续规则维护应通过 normalization_rules / normalization_rule_keywords 完成。</p>
      *
      * @param command 归一化建议批量应用命令
      * @return 批量应用结果
@@ -672,13 +658,13 @@ public class NormalizationSuggestionService {
                         appendReason(suggestion.reason(), "targetUnit 不适合批量确认：" + targetUnitResult.unsafeReason()));
                 continue;
             }
-            productAliasRepository.upsert(suggestion.rawProductName(), suggestion.aliasKey(),
-                    canonicalNormalizedName, targetUnitResult.targetUnit(), null);
             normalizationSuggestionRepository.updateStatus(suggestion.id(), STATUS_APPROVED);
             appliedCount++;
         }
         return new NormalizationBatchApplyResult(command.batchId(), suggestions.size(), appliedCount,
-                "批量应用完成：写入 product_aliases " + appliedCount + " 条；purchase_records.decision 未修改。");
+                "批量应用完成：已确认 suggestions " + appliedCount
+                        + " 条；未写入 alias。alias persistence has been deprecated; "
+                        + "use normalization-library operations to maintain rules and keywords.");
     }
 
     private List<Candidate> candidates(long batchId, boolean forceReanalyze, CandidateFilter filter) {
@@ -688,7 +674,7 @@ public class NormalizationSuggestionService {
                 continue;
             }
             String aliasKey = productTitleCleaner.aliasKey(record.productName(), record.sku());
-            if (aliasKey.isBlank() || hasConfirmedAlias(aliasKey)) {
+            if (aliasKey.isBlank()) {
                 continue;
             }
             if (!matchesCandidateFilter(record, aliasKey, batchId, filter)) {
@@ -698,7 +684,7 @@ public class NormalizationSuggestionService {
                 continue;
             }
             // TODO 后续若需要严格回放审计，forceReanalyze=true 时应先将旧 suggestion 标记为 replaced/superseded。
-            // 当前第一版允许同一 batch + alias_key 存在多条建议，避免为收尾修复扩展状态机。
+            // 当前第一版允许同一 batch + normalization_suggestions.alias_key 存在多条建议，避免为收尾修复扩展状态机。
             uniqueRecords.putIfAbsent(aliasKey, record);
         }
         List<Candidate> candidates = new ArrayList<>();
@@ -762,11 +748,6 @@ public class NormalizationSuggestionService {
         return record.normalizationRule() == null
                 && "exclude".equals(record.decision())
                 && safeText(record.normalizedName()).equals(safeText(record.productName()));
-    }
-
-    private boolean hasConfirmedAlias(String aliasKey) {
-        return productAliasRepository.findByAliasKey(aliasKey).isPresent()
-                || productNegativeAliasRepository.findByAliasKey(aliasKey).isPresent();
     }
 
     private void saveOrReplaceFailed(NormalizationSuggestion suggestion) {
@@ -1236,7 +1217,7 @@ public class NormalizationSuggestionService {
     }
 
     /**
-     * 高置信耐用品直接排除，避免形成无意义的人工复核噪音或正向别名。
+     * 高置信耐用品直接排除，避免形成无意义的人工复核噪音。
      *
      * @param result   LLM 原始结构化建议
      * @param decision 当前安全决策

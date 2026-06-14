@@ -227,7 +227,7 @@ class LlmNormalizationOutputParserTest {
     }
 
     private List<NormalizationAdvisorRequest> requests(String... productNames) {
-        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of(), List.of(), List.of());
+        NormalizationRagContext context = new NormalizationRagContext(List.of(), List.of());
         return java.util.Arrays.stream(productNames)
                 .map(productName -> new NormalizationAdvisorRequest(productName, "默认", "测试分类", "测试子类", context))
                 .toList();

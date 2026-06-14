@@ -14,7 +14,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -29,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class NormalizationLearningIntegrationTest {
     @Test
-    void confirmNormalizationShouldWriteAliasAndUpdatePurchaseRecord() throws Exception {
+    void confirmNormalizationShouldUpdatePurchaseRecordWithoutAliasPersistence() throws Exception {
         Fixture fixture = fixture("confirm-normalization.sqlite");
         fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
@@ -42,16 +41,11 @@ class NormalizationLearningIntegrationTest {
         PurchaseRecord record = fixture.purchaseRecordRepository().findById(review.recordId()).orElseThrow();
         assertThat(record.normalizedName()).isEqualTo("沐浴露");
         assertThat(record.decision()).isEqualTo("include");
-        assertThat(fixture.productAliasRepository()
-                .findByAliasKey(fixture.cleaner().aliasKey(record.productName(), record.sku())))
-                .isPresent()
-                .get()
-                .extracting(ProductAliasRepository.ProductAlias::normalizedName)
-                .isEqualTo("沐浴露");
+        assertThat(result.message()).contains("alias persistence is deprecated");
     }
 
     @Test
-    void rejectNormalizationShouldWriteNegativeAlias() throws Exception {
+    void rejectNormalizationShouldUpdateDecisionWithoutNegativeAliasPersistence() throws Exception {
         Fixture fixture = fixture("reject-normalization.sqlite");
         fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
         ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
@@ -62,36 +56,8 @@ class NormalizationLearningIntegrationTest {
         assertThat(result.action()).isEqualTo("reject_normalization");
         assertThat(result.decision()).isEqualTo("exclude");
         PurchaseRecord record = fixture.purchaseRecordRepository().findById(review.recordId()).orElseThrow();
-        assertThat(fixture.productNegativeAliasRepository()
-                .findByAliasKey(fixture.cleaner().aliasKey(record.productName(), record.sku())))
-                .isPresent()
-                .get()
-                .extracting(ProductNegativeAliasRepository.ProductNegativeAlias::rejectedNormalizedName)
-                .isEqualTo("沐浴露");
-    }
-
-    @Test
-    void negativeAliasShouldAutoExcludeWithoutNormalizationReviewOnNextImport() throws Exception {
-        Fixture fixture = fixture("negative-alias-next-import.sqlite");
-        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
-        ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
-        fixture.reviewService().rejectNormalization(review.id(), "沐浴露", "人工确认不是沐浴露");
-
-        Path file = fixture.dir().resolve("negative-orders.csv");
-        Files.writeString(file, """
-                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
-                2026-05-02 00:00:00,jd,jtxw,舒肤佳沐浴露清香型720ml,家庭装,日用品,洗浴用品,0.72,L,39.9,CNY
-                """, StandardCharsets.UTF_8);
-        fixture.importService().importFile(file, null);
-
-        assertThat(fixture.reviewItemRepository().listPendingDetails())
-                .extracting(ReviewItemDetail::reasonCode)
-                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
-        List<String> decisions = fixture.jdbcTemplate().queryForList("""
-                SELECT decision FROM purchase_records
-                WHERE product_name = ? AND order_time = ?
-                """, String.class, "舒肤佳沐浴露清香型720ml", "2026-05-02 00:00:00");
-        assertThat(decisions).contains("exclude");
+        assertThat(record.decision()).isEqualTo("exclude");
+        assertThat(result.message()).contains("alias persistence is deprecated");
     }
 
     @Test
@@ -140,26 +106,6 @@ class NormalizationLearningIntegrationTest {
                 .hasMessageContaining("targetUnit 与购买记录当前 unit 不一致");
     }
 
-    @Test
-    void confirmedAliasShouldAvoidNormalizationReviewOnNextImport() throws Exception {
-        Fixture fixture = fixture("confirmed-alias-next-import.sqlite");
-        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
-        ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
-        fixture.reviewService().confirmNormalization(review.id(), "沐浴露", "L", false, "确认别名");
-
-        Path file = fixture.dir().resolve("orders.csv");
-        Files.writeString(file, """
-                order_time,platform,owner,product_name,sku,category,sub_category,quantity,unit,total_amount,currency
-                2026-05-02 00:00:00,jd,jtxw,舒肤佳沐浴露清香型720ml,家庭装,日用品,洗浴用品,0.72,L,39.9,CNY
-                """, StandardCharsets.UTF_8);
-        fixture.importService().importFile(file, null);
-
-        assertThat(fixture.purchaseRecordRepository().listPriceHistoryRecords("沐浴露")).hasSize(1);
-        assertThat(fixture.reviewItemRepository().listPendingDetails())
-                .extracting(ReviewItemDetail::reasonCode)
-                .doesNotContain("PRODUCT_NAME_NORMALIZATION_REVIEW");
-    }
-
     private RecordPurchaseCommand command(boolean dryRun, RecordPurchaseCommand.Item... records) {
         return new RecordPurchaseCommand(dryRun, List.of(records));
     }
@@ -183,17 +129,13 @@ class NormalizationLearningIntegrationTest {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
         databaseInitializer.initialize();
-        ProductTitleCleaner cleaner = new ProductTitleCleaner();
-        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
-        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
         ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(List::of);
         ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
         ProductNameNormalizer delegate = new ProductNameNormalizer(productNormalizer, List.of());
-        LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(
-                cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
+        LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(delegate);
         ProductSpecParser productSpecParser = new ProductSpecParser(
                 productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
         OrderImportMapper orderImportMapper = new OrderImportMapper(
@@ -227,20 +169,14 @@ class NormalizationLearningIntegrationTest {
         ReviewApplicationService reviewService = new ReviewApplicationService(
                 databaseInitializer,
                 purchaseRecordRepository,
-                reviewItemRepository,
-                cleaner,
-                productAliasRepository,
-                productNegativeAliasRepository
+                reviewItemRepository
         );
-        return new Fixture(dir, jdbcTemplate, cleaner, productAliasRepository, productNegativeAliasRepository,
+        return new Fixture(dir, jdbcTemplate,
                 purchaseRecordRepository, reviewItemRepository, importService, recordService, reviewService);
     }
 
     private record Fixture(Path dir,
                            JdbcTemplate jdbcTemplate,
-                           ProductTitleCleaner cleaner,
-                           ProductAliasRepository productAliasRepository,
-                           ProductNegativeAliasRepository productNegativeAliasRepository,
                            PurchaseRecordRepository purchaseRecordRepository,
                            ReviewItemRepository reviewItemRepository,
                            ImportApplicationService importService,

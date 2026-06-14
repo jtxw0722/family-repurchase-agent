@@ -7,7 +7,6 @@ import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
-import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
 import com.jtxw.familyagent.infrastructure.persistence.*;
 import org.springframework.stereotype.Service;
 
@@ -81,9 +80,6 @@ public class ReviewApplicationService {
     private final DatabaseInitializer databaseInitializer;
     private final PurchaseRecordRepository purchaseRecordRepository;
     private final ReviewItemRepository reviewItemRepository;
-    private final ProductTitleCleaner productTitleCleaner;
-    private final ProductAliasRepository productAliasRepository;
-    private final ProductNegativeAliasRepository productNegativeAliasRepository;
 
     /**
      * 创建复核应用服务。
@@ -91,22 +87,13 @@ public class ReviewApplicationService {
      * @param databaseInitializer            数据库初始化组件
      * @param purchaseRecordRepository       购买记录仓储
      * @param reviewItemRepository           复核项仓储
-     * @param productTitleCleaner            商品标题清洗器
-     * @param productAliasRepository         正向别名仓储
-     * @param productNegativeAliasRepository 负向别名仓储
      */
     public ReviewApplicationService(DatabaseInitializer databaseInitializer,
                                     PurchaseRecordRepository purchaseRecordRepository,
-                                    ReviewItemRepository reviewItemRepository,
-                                    ProductTitleCleaner productTitleCleaner,
-                                    ProductAliasRepository productAliasRepository,
-                                    ProductNegativeAliasRepository productNegativeAliasRepository) {
+                                    ReviewItemRepository reviewItemRepository) {
         this.databaseInitializer = databaseInitializer;
         this.purchaseRecordRepository = purchaseRecordRepository;
         this.reviewItemRepository = reviewItemRepository;
-        this.productTitleCleaner = productTitleCleaner;
-        this.productAliasRepository = productAliasRepository;
-        this.productNegativeAliasRepository = productNegativeAliasRepository;
     }
 
     /**
@@ -208,7 +195,7 @@ public class ReviewApplicationService {
     }
 
     /**
-     * 确认商品归一化结果，并将人工确认沉淀为正向别名。
+     * 确认商品归一化结果，并更新关联购买记录与复核项状态。
      *
      * @param reviewId          复核项 ID
      * @param normalizedName    人工确认的标准品类
@@ -229,10 +216,6 @@ public class ReviewApplicationService {
         if (includeInBaseline) {
             validateCanIncludeAfterNormalization(reviewId, context.record(), finalTargetUnit);
         }
-        String aliasKey = productTitleCleaner.aliasKey(context.record().productName(), context.record().sku());
-        productAliasRepository.upsert(context.record().productName(), aliasKey, finalNormalizedName, finalTargetUnit,
-                context.record().category());
-
         String decision = includeInBaseline ? ACTION_INCLUDE : context.record().decision();
         int updatedRecordCount = purchaseRecordRepository.updateNormalizationAndDecision(context.record().id(),
                 finalNormalizedName, decision);
@@ -241,7 +224,7 @@ public class ReviewApplicationService {
         }
         resolveReviewItem(reviewId, RESULT_ACTION_CONFIRM_NORMALIZATION, note);
         return new ReviewApplyResult(reviewId, context.record().id(), RESULT_ACTION_CONFIRM_NORMALIZATION, decision,
-                REVIEW_STATUS_RESOLVED, "归一化已确认，并写入商品别名：" + finalNormalizedName);
+                REVIEW_STATUS_RESOLVED, "归一化已确认；alias persistence is deprecated; normalization knowledge should be maintained through normalization_rules / normalization_rule_keywords.：" + finalNormalizedName);
     }
 
     /**
@@ -311,7 +294,7 @@ public class ReviewApplicationService {
     }
 
     /**
-     * 拒绝当前归一化结果，并沉淀为负向别名。
+     * 拒绝当前归一化结果，并将关联购买记录排除出价格基准。
      *
      * @param reviewId               复核项 ID
      * @param rejectedNormalizedName 被拒绝的标准品类；为空时使用购买记录当前 normalized_name
@@ -324,16 +307,14 @@ public class ReviewApplicationService {
         String finalRejectedName = rejectedNormalizedName == null || rejectedNormalizedName.isBlank()
                 ? context.record().normalizedName()
                 : rejectedNormalizedName.trim();
-        String aliasKey = productTitleCleaner.aliasKey(context.record().productName(), context.record().sku());
-        productNegativeAliasRepository.upsert(context.record().productName(), aliasKey, finalRejectedName, note);
         purchaseRecordRepository.updateDecision(context.record().id(), ACTION_EXCLUDE);
         resolveReviewItem(reviewId, RESULT_ACTION_REJECT_NORMALIZATION, note);
         return new ReviewApplyResult(reviewId, context.record().id(), RESULT_ACTION_REJECT_NORMALIZATION, ACTION_EXCLUDE,
-                REVIEW_STATUS_RESOLVED, "归一化已拒绝，并写入商品负向别名：" + finalRejectedName);
+                REVIEW_STATUS_RESOLVED, "归一化已拒绝；alias persistence is deprecated; normalization knowledge should be maintained through normalization_rules / normalization_rule_keywords.：" + finalRejectedName);
     }
 
     /**
-     * 忽略归一化复核项，不沉淀别名知识。
+     * 忽略归一化复核项，仅关闭当前复核记录。
      *
      * @param reviewId 复核项 ID
      * @param note     复核备注

@@ -111,7 +111,7 @@ public class PurchaseRecord {
      */
     private final String sourceText;
     /**
-     * 商品归一化命中的规则标识，例如 product_alias、product_negative_alias、legacy_fallback。
+     * 商品归一化命中的规则标识，例如 normalization_rules 中的 rule_code 或 legacy_fallback。
      */
     private final String normalizationRule;
     /**

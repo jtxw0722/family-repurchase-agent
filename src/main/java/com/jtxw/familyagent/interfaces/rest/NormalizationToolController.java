@@ -150,12 +150,12 @@ public class NormalizationToolController {
     /**
      * 批量应用高置信 NORMALIZE 商品归一化建议。
      *
-     * <p>该接口只写入 product_aliases 和更新 suggestion 状态，不修改历史购买记录 decision。</p>
+     * <p>该接口只更新 suggestion 状态，不修改历史购买记录 decision，也不再写入别名表。</p>
      *
      * @param request 批量应用请求
      * @return 批量应用结果
      */
-    @Operation(summary = "批量应用商品归一化建议", description = "批量确认 pending_batch_approval 的 NORMALIZE suggestions，并写入 product_aliases。")
+    @Operation(summary = "批量应用商品归一化建议", description = "批量确认 pending_batch_approval 的 NORMALIZE suggestions；别名持久化已废弃，请通过 normalization-library 维护规则和关键词。")
     @PostMapping("/normalization-suggestions/batch-apply")
     public NormalizationBatchApplyResult applyNormalizationSuggestions(@Valid @RequestBody BatchApplyNormalizationRequest request) {
         return normalizationSuggestionService.batchApply(request.toCommand());

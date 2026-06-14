@@ -9,14 +9,6 @@ import java.util.List;
  */
 public record NormalizationRagContext(
         /**
-         * 相似正向别名证据，来自 product_aliases。
-         */
-        List<String> positiveAliases,
-        /**
-         * 相似负向别名证据，来自 product_negative_aliases。
-         */
-        List<String> negativeAliases,
-        /**
          * SQLite 归一化规则库中相关规则摘要。
          */
         List<String> ruleSummaries,

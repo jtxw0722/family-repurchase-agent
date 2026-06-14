@@ -2,19 +2,12 @@ package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
 import com.jtxw.familyagent.domain.policy.ProductRule;
-import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
 import com.jtxw.familyagent.domain.policy.UnitFamily;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * @Author: jtxw
@@ -24,14 +17,7 @@ import static org.mockito.Mockito.when;
 class NormalizationRagContextRetrieverTest {
     @Test
     void shouldNotSummarizeRuleWhenExcludeKeywordMatchesCurrentRule() {
-        ProductAliasRepository productAliasRepository = mock(ProductAliasRepository.class);
-        ProductNegativeAliasRepository productNegativeAliasRepository = mock(ProductNegativeAliasRepository.class);
-        when(productAliasRepository.listSimilar(anyString(), anyInt())).thenReturn(List.of());
-        when(productNegativeAliasRepository.listSimilar(anyString(), anyInt())).thenReturn(List.of());
         NormalizationRagContextRetriever retriever = new NormalizationRagContextRetriever(
-                new ProductTitleCleaner(),
-                productAliasRepository,
-                productNegativeAliasRepository,
                 () -> List.of(new ProductRule("cat_litter", "猫砂", "宠物用品", 100,
                         List.of("猫砂"), List.of("猫砂盆"), "kg", UnitFamily.WEIGHT))
         );

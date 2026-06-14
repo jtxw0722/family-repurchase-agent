@@ -76,10 +76,6 @@ public class RecordPurchaseApplicationService {
      */
     private static final String REVIEW_REASON_PRICE_OUT_OF_BASELINE_RANGE = "PRICE_OUT_OF_BASELINE_RANGE";
     /**
-     * 负向别名规则标识，表示人工确认过的误判样本
-     */
-    private static final String NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS = "product_negative_alias";
-    /**
      * 旧归一化兜底规则标识
      */
     private static final String NORMALIZATION_RULE_LEGACY_FALLBACK = "legacy_fallback";
@@ -316,10 +312,8 @@ public class RecordPurchaseApplicationService {
         String productName = input.productName().trim();
         String sku = resolveSku(input.sku());
         ProductNameNormalizationResult detectedNameResult = productNameNormalizer.normalize(productName, sku);
-        // 负向别名是人工确认过的误判样本：自动排除，但不再创建商品归一化复核项。
-        boolean negativeAliasExcluded = isProductNegativeAlias(detectedNameResult);
         String manualNormalizedName = normalizeManualNormalizedName(input.normalizedName());
-        ProductNameNormalizationResult nameResult = manualNormalizedName != null && !negativeAliasExcluded
+        ProductNameNormalizationResult nameResult = manualNormalizedName != null
                 ? manualNameResult(manualNormalizedName)
                 : detectedNameResult;
 
@@ -376,7 +370,7 @@ public class RecordPurchaseApplicationService {
         if (reviewReasons.isEmpty() && !Boolean.TRUE.equals(input.confirmOutOfRange())) {
             detectPriceOutOfBaselineRange(candidate, reviewReasons);
         }
-        String decision = reviewReasons.isEmpty() && !nameResult.needReview() && !negativeAliasExcluded ? DECISION_INCLUDE : DECISION_EXCLUDE;
+        String decision = reviewReasons.isEmpty() && !nameResult.needReview() ? DECISION_INCLUDE : DECISION_EXCLUDE;
         PurchaseRecord record = new PurchaseRecord(
                 null, batchId, candidate.orderTime(), candidate.platform(), candidate.owner(), candidate.productName(),
                 candidate.normalizedName(), candidate.sku(), candidate.category(), candidate.subCategory(),
@@ -435,18 +429,6 @@ public class RecordPurchaseApplicationService {
                             "当前单价 %.6f 元/%s 明显高于历史最高 %.6f 元/%s，疑似规格、单位或商品归一化错误，需要用户确认。",
                             unitPrice, candidate.unit(), stats.historicalMax(), candidate.unit())));
         }
-    }
-
-    /**
-     * 判断商品归一化结果是否命中负向别名规则。
-     *
-     * <p>负向别名是人工确认过的误判样本，命中时应自动排除，但不再创建商品归一化复核项。</p>
-     *
-     * @param nameResult 商品名称归一化结果
-     * @return 命中 product_negative_alias 规则时返回 true
-     */
-    private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
-        return NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS.equals(nameResult.matchedRule());
     }
 
     /**

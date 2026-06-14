@@ -3,9 +3,6 @@ package com.jtxw.familyagent.application;
 import com.jtxw.familyagent.domain.model.NormalizationRagContext;
 import com.jtxw.familyagent.domain.policy.ProductRule;
 import com.jtxw.familyagent.domain.policy.ProductRuleProvider;
-import com.jtxw.familyagent.domain.policy.ProductTitleCleaner;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -16,26 +13,15 @@ import java.util.Set;
 /**
  * @Author: jtxw
  * @Date: 2026/06/14 16:50:03
- * @Description: 商品归一化轻量 RAG 上下文检索服务，从 SQLite 别名和归一化规则 Provider 构造 LLM 证据。
+ * @Description: 商品归一化轻量 RAG 上下文检索服务，从归一化规则 Provider 构造 LLM 规则证据。
  */
 @Service
 public class NormalizationRagContextRetriever {
-    private static final int POSITIVE_ALIAS_LIMIT = 5;
-    private static final int NEGATIVE_ALIAS_LIMIT = 5;
     private static final int RULE_LIMIT = 10;
 
-    private final ProductTitleCleaner productTitleCleaner;
-    private final ProductAliasRepository productAliasRepository;
-    private final ProductNegativeAliasRepository productNegativeAliasRepository;
     private final ProductRuleProvider productRuleProvider;
 
-    public NormalizationRagContextRetriever(ProductTitleCleaner productTitleCleaner,
-                                            ProductAliasRepository productAliasRepository,
-                                            ProductNegativeAliasRepository productNegativeAliasRepository,
-                                            ProductRuleProvider productRuleProvider) {
-        this.productTitleCleaner = productTitleCleaner;
-        this.productAliasRepository = productAliasRepository;
-        this.productNegativeAliasRepository = productNegativeAliasRepository;
+    public NormalizationRagContextRetriever(ProductRuleProvider productRuleProvider) {
         this.productRuleProvider = productRuleProvider;
     }
 
@@ -51,15 +37,6 @@ public class NormalizationRagContextRetriever {
      * @return 轻量 RAG 上下文
      */
     public NormalizationRagContext retrieve(String productName, String sku, String category, String subCategory) {
-        String aliasKey = productTitleCleaner.aliasKey(productName, sku);
-        List<String> positiveAliases = productAliasRepository.listSimilar(aliasKey, POSITIVE_ALIAS_LIMIT).stream()
-                .map(alias -> "正向别名：" + alias.alias() + " => " + alias.normalizedName()
-                        + "，targetUnit=" + safeText(alias.targetUnit()))
-                .toList();
-        List<String> negativeAliases = productNegativeAliasRepository.listSimilar(aliasKey, NEGATIVE_ALIAS_LIMIT).stream()
-                .map(alias -> "负向别名：" + alias.alias() + "，拒绝品类=" + alias.rejectedNormalizedName()
-                        + "，reason=" + safeText(alias.reason()))
-                .toList();
         List<String> ruleSummaries = matchedRuleSummaries(productName, sku, category, subCategory);
         List<String> categoryHints = List.of(
                 "系统面向家庭 / 个人长期复购消耗品，不只面向家庭共享物品。",
@@ -75,7 +52,7 @@ public class NormalizationRagContextRetriever {
                 "NON_REPURCHASE：酒店住宿、一次性礼品、临时购买品、服务类订单、偶发性商品等不适合作为本地复购价格基准的商品或服务。",
                 "猫主食罐、猫条、猫粮、猫零食、猫汤包不要混成同一个 normalizedName。"
         );
-        return new NormalizationRagContext(positiveAliases, negativeAliases, ruleSummaries, categoryHints);
+        return new NormalizationRagContext(ruleSummaries, categoryHints);
     }
 
     private List<String> matchedRuleSummaries(String productName, String sku, String category, String subCategory) {

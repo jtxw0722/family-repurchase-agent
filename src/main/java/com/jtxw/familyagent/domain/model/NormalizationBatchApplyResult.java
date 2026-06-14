@@ -15,7 +15,7 @@ public record NormalizationBatchApplyResult(
          */
         int matchedCount,
         /**
-         * 实际写入 product_aliases 的建议数量。
+         * 实际确认的建议数量；alias 主链路废弃后不再代表别名表写入数量。
          */
         int appliedCount,
         /**

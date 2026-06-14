@@ -92,7 +92,6 @@ class NormalizationSuggestionServiceTest {
         assertThat(result.pendingBatchApprovalCount()).isEqualTo(1);
         NormalizationSuggestion suggestion = fixture.suggestionRepository().listByBatchId(batchId).get(0);
         assertThat(suggestion.status()).isEqualTo("pending_batch_approval");
-        assertThat(fixture.productAliasRepository().findByAliasKey(suggestion.aliasKey())).isEmpty();
         assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
     }
 
@@ -1462,22 +1461,6 @@ class NormalizationSuggestionServiceTest {
     }
 
     @Test
-    void analyzeBatchShouldSkipConfirmedPositiveAndNegativeAlias() throws Exception {
-        StubAdvisor advisor = advisor(exclude("手机壳透明款", "NON_REPURCHASE"));
-        Fixture fixture = fixture("analyze-skip-alias.sqlite", properties(true, "llm_suggestion"), advisor);
-        String positiveAliasKey = fixture.cleaner().aliasKey("手机壳透明款", "默认");
-        String negativeAliasKey = fixture.cleaner().aliasKey("猫砂盆大号", "默认");
-        fixture.productAliasRepository().upsert("手机壳透明款", positiveAliasKey, "手机壳", "件", "NON_REPURCHASE");
-        fixture.productNegativeAliasRepository().upsert("猫砂盆大号", negativeAliasKey, "猫砂", "耐用品");
-        long batchId = batchWithLegacyRecords(fixture, "手机壳透明款", "猫砂盆大号");
-
-        NormalizationAnalyzeResult result = fixture.suggestionService().analyzeBatch(batchId, 100, false);
-
-        assertThat(result.candidateCount()).isZero();
-        assertThat(advisor.callCount()).isZero();
-    }
-
-    @Test
     void listAutoExcludedShouldOnlyReturnHighConfidenceAutoExcludedExcludeSuggestions() throws Exception {
         Fixture fixture = fixture("list-auto-excluded-filter.sqlite", properties(true, "llm_suggestion"), advisor());
         long batchId = 1L;
@@ -1581,7 +1564,7 @@ class NormalizationSuggestionServiceTest {
         DatabaseInitializer databaseInitializer = mock(DatabaseInitializer.class);
         NormalizationSuggestionRepository suggestionRepository = mock(NormalizationSuggestionRepository.class);
         NormalizationSuggestionService service = new NormalizationSuggestionService(
-                databaseInitializer, null, null, null, null, null, suggestionRepository,
+                databaseInitializer, null, null, null, suggestionRepository,
                 null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.listAutoExcluded(0L, null))
@@ -1594,7 +1577,7 @@ class NormalizationSuggestionServiceTest {
     }
 
     @Test
-    void batchApplyShouldWriteAliasWithoutChangingPurchaseRecordDecision() throws Exception {
+    void batchApplyShouldApproveSuggestionWithoutWritingAlias() throws Exception {
         StubAdvisor advisor = advisor(normalize("猫条三文鱼口味", "猫条", "g"));
         Fixture fixture = fixture("batch-apply.sqlite", properties(true, "llm_suggestion"), advisor);
         long batchId = batchWithLegacyRecords(fixture, "猫条三文鱼口味");
@@ -1605,17 +1588,13 @@ class NormalizationSuggestionServiceTest {
                 .batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
 
         assertThat(result.appliedCount()).isEqualTo(1);
-        assertThat(fixture.productAliasRepository().findByAliasKey(suggestion.aliasKey()))
-                .isPresent()
-                .get()
-                .extracting(ProductAliasRepository.ProductAlias::category)
-                .isNull();
         assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status()).isEqualTo("approved");
         assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
+        assertThat(result.message()).contains("alias persistence has been deprecated");
     }
 
     @Test
-    void batchApplyShouldCanonicalizeOldSuggestionBeforeWritingAlias() throws Exception {
+    void batchApplyShouldCanonicalizeOldSuggestionBeforeApproval() throws Exception {
         Fixture fixture = fixture("batch-apply-canonicalize.sqlite", properties(true, "llm_suggestion"), advisor());
         long batchId = batchWithLegacyRecords(fixture, "猫罐头主食罐鸡肉味");
         String aliasKey = fixture.cleaner().aliasKey("猫罐头主食罐鸡肉味", "默认");
@@ -1627,16 +1606,7 @@ class NormalizationSuggestionServiceTest {
 
         fixture.suggestionService().batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
 
-        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey))
-                .isPresent()
-                .get()
-                .extracting(ProductAliasRepository.ProductAlias::normalizedName)
-                .isEqualTo("猫主食罐");
-        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey))
-                .isPresent()
-                .get()
-                .extracting(ProductAliasRepository.ProductAlias::targetUnit)
-                .isEqualTo("g");
+        assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status()).isEqualTo("approved");
         assertThat(fixture.purchaseRecordRepository().listByBatchId(batchId).get(0).decision()).isEqualTo("exclude");
     }
 
@@ -1655,7 +1625,6 @@ class NormalizationSuggestionServiceTest {
                 .batchApply(batchId, "approve_normalize", 0.9D, "pending_batch_approval");
 
         assertThat(result.appliedCount()).isZero();
-        assertThat(fixture.productAliasRepository().findByAliasKey(aliasKey)).isEmpty();
         assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).status()).isEqualTo("pending_review");
         assertThat(fixture.suggestionRepository().listByBatchId(batchId).get(0).reason())
                 .contains("targetUnit 不适合批量确认");
@@ -1966,8 +1935,6 @@ class NormalizationSuggestionServiceTest {
         databaseInitializer.initialize();
         ObjectMapper objectMapper = new ObjectMapper();
         ProductTitleCleaner cleaner = new ProductTitleCleaner();
-        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
-        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
@@ -1976,8 +1943,7 @@ class NormalizationSuggestionServiceTest {
         ProductRuleMatcher productRuleMatcher = new ProductRuleMatcher(productRuleProvider);
         ProductNormalizer productNormalizer = new ProductNormalizer(productRuleMatcher);
         ProductNameNormalizer delegate = new ProductNameNormalizer(productNormalizer, List.of());
-        LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(
-                cleaner, productAliasRepository, productNegativeAliasRepository, delegate);
+        LearningProductNameNormalizer learningNormalizer = new LearningProductNameNormalizer(delegate);
         ProductSpecParser productSpecParser = new ProductSpecParser(
                 productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
         OrderImportMapper orderImportMapper = new OrderImportMapper(
@@ -1998,15 +1964,12 @@ class NormalizationSuggestionServiceTest {
                 reviewItemRepository,
                 properties
         );
-        NormalizationRagContextRetriever ragContextRetriever = new NormalizationRagContextRetriever(
-                cleaner, productAliasRepository, productNegativeAliasRepository, productRuleProvider);
+        NormalizationRagContextRetriever ragContextRetriever = new NormalizationRagContextRetriever(productRuleProvider);
         NormalizationSuggestionService suggestionService = new NormalizationSuggestionService(
                 databaseInitializer,
                 purchaseRecordRepository,
                 reviewItemRepository,
                 cleaner,
-                productAliasRepository,
-                productNegativeAliasRepository,
                 suggestionRepository,
                 ragContextRetriever,
                 advisor,
@@ -2015,7 +1978,7 @@ class NormalizationSuggestionServiceTest {
                 properties,
                 objectMapper
         );
-        return new Fixture(dir, jdbcTemplate, cleaner, productAliasRepository, productNegativeAliasRepository,
+        return new Fixture(dir, jdbcTemplate, cleaner,
                 purchaseRecordRepository, reviewItemRepository, importBatchRepository, suggestionRepository,
                 importService, suggestionService);
     }
@@ -2123,8 +2086,6 @@ class NormalizationSuggestionServiceTest {
     private record Fixture(Path dir,
                            JdbcTemplate jdbcTemplate,
                            ProductTitleCleaner cleaner,
-                           ProductAliasRepository productAliasRepository,
-                           ProductNegativeAliasRepository productNegativeAliasRepository,
                            PurchaseRecordRepository purchaseRecordRepository,
                            ReviewItemRepository reviewItemRepository,
                            ImportBatchRepository importBatchRepository,

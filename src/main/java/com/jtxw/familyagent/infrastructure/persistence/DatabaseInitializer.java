@@ -57,8 +57,6 @@ public class DatabaseInitializer implements ApplicationRunner {
 
             executeSqlResource(SCHEMA_SQL_PATH);
             ensurePurchaseRecordColumns();
-            ensureProductAliasColumns();
-            ensureProductNegativeAliasTable();
             ensureReviewItemColumns();
             ensureNormalizationSuggestionTable();
             ensureNormalizationAnalysisTaskTable();
@@ -85,34 +83,6 @@ public class DatabaseInitializer implements ApplicationRunner {
                 jdbcTemplate.execute(trimmed);
             }
         }
-    }
-
-    private void ensureProductAliasColumns() {
-        List<String> columns = jdbcTemplate.queryForList("PRAGMA table_info(product_aliases)")
-                .stream()
-                .map(row -> String.valueOf(row.get("name")))
-                .toList();
-        if (!columns.contains("alias_key")) {
-            jdbcTemplate.execute("ALTER TABLE product_aliases ADD COLUMN alias_key TEXT");
-        }
-        if (!columns.contains("target_unit")) {
-            jdbcTemplate.execute("ALTER TABLE product_aliases ADD COLUMN target_unit TEXT");
-        }
-        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_alias_key ON product_aliases(alias_key)");
-    }
-
-    private void ensureProductNegativeAliasTable() {
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS product_negative_aliases (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    alias TEXT NOT NULL,
-                    alias_key TEXT NOT NULL UNIQUE,
-                    rejected_normalized_name TEXT NOT NULL,
-                    reason TEXT,
-                    created_at TEXT NOT NULL
-                )
-                """);
-        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_negative_alias_key ON product_negative_aliases(alias_key)");
     }
 
     private void ensurePurchaseRecordColumns() {

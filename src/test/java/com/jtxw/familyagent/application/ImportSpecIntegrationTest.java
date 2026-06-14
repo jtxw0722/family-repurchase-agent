@@ -12,8 +12,6 @@ import com.jtxw.familyagent.infrastructure.importer.OrderImportMapper;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.ImportBatchRepository;
 import com.jtxw.familyagent.infrastructure.persistence.NormalizationRuleRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductAliasRepository;
-import com.jtxw.familyagent.infrastructure.persistence.ProductNegativeAliasRepository;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import com.jtxw.familyagent.infrastructure.persistence.SqliteProductRuleProvider;
@@ -438,8 +436,6 @@ class ImportSpecIntegrationTest {
         DatabaseInitializer databaseInitializer = new DatabaseInitializer(jdbcTemplate);
         databaseInitializer.initialize();
         ImportBatchRepository importBatchRepository = new ImportBatchRepository(jdbcTemplate);
-        ProductAliasRepository productAliasRepository = new ProductAliasRepository(jdbcTemplate);
-        ProductNegativeAliasRepository productNegativeAliasRepository = new ProductNegativeAliasRepository(jdbcTemplate);
         PurchaseRecordRepository purchaseRecordRepository = new PurchaseRecordRepository(jdbcTemplate);
         ReviewItemRepository reviewItemRepository = new ReviewItemRepository(jdbcTemplate);
         NormalizationRuleRepository normalizationRuleRepository = new NormalizationRuleRepository(jdbcTemplate);
@@ -449,12 +445,8 @@ class ImportSpecIntegrationTest {
                 productNormalizer, TestProductRuleProviders.defaultUnitSpecParsers());
         OrderImportMapper orderImportMapper = new OrderImportMapper(productSpecParser, productRuleMatcher, new OwnerNormalizer());
         ProductNameNormalizer productNameNormalizer = new ProductNameNormalizer(productNormalizer, testRules());
-        LearningProductNameNormalizer learningProductNameNormalizer = new LearningProductNameNormalizer(
-                new ProductTitleCleaner(),
-                productAliasRepository,
-                productNegativeAliasRepository,
-                productNameNormalizer
-        );
+        LearningProductNameNormalizer learningProductNameNormalizer =
+                new LearningProductNameNormalizer(productNameNormalizer);
         ImportApplicationService importService = new ImportApplicationService(
                 databaseInitializer,
                 new CsvPurchaseImporter(orderImportMapper),

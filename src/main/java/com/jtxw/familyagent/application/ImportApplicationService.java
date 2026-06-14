@@ -71,7 +71,6 @@ public class ImportApplicationService {
     /**
      * 负向别名规则标识，表示人工确认过的误判样本
      */
-    private static final String NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS = "product_negative_alias";
     /**
      * 旧归一化兜底规则标识，LLM Advisor 的唯一候选来源
      */
@@ -298,7 +297,6 @@ public class ImportApplicationService {
         ProductNameNormalizationResult nameResult = productNameNormalizer.normalize(raw.productName(), raw.sku());
         String normalizedName = nameResult.normalizedName();
         // 负向别名是人工确认过的误判样本：自动排除，但不再生成归一化复核噪音。
-        boolean negativeAliasExcluded = isProductNegativeAlias(nameResult);
         PaymentAdjustmentPolicy.PaymentAdjustmentResult amountResult = paymentAdjustmentPolicy.adjust(raw);
         Double totalAmount = amountResult.totalAmount();
 
@@ -337,7 +335,7 @@ public class ImportApplicationService {
         PurchaseRecord record = buildPurchaseRecord(
                 batchId, normalizedOrderTime, raw, normalizedOwner, normalizedName,
                 resolvedQuantity, resolvedUnit, totalAmount, amountResult, unitPrice,
-                duplicate, normalizationReviewRequired, negativeAliasExcluded, nameResult, file);
+                duplicate, normalizationReviewRequired, nameResult, file);
 
         long recordId = purchaseRecordRepository.save(record);
 
@@ -388,7 +386,7 @@ public class ImportApplicationService {
     /**
      * 构造最终入库的购买记录。
      *
-     * <p>根据 duplicate、normalizationReviewRequired、amountReviewRequired、negativeAliasExcluded 和规格复核决定 decision；
+     * <p>根据 duplicate、normalizationReviewRequired、amountReviewRequired 和规格复核决定 decision；
      * 根据 duplicate 决定 dedupe 状态。疑似重复、低置信归一化、金额不可信和规格待确认的记录默认排除出价格基准。</p>
      *
      * @param batchId                     导入批次 ID
@@ -403,7 +401,6 @@ public class ImportApplicationService {
      * @param unitPrice                   单价
      * @param duplicate                   是否疑似重复
      * @param normalizationReviewRequired 是否需要归一化复核
-     * @param negativeAliasExcluded       是否因负向别名被排除
      * @param nameResult                  商品名称归一化结果
      * @param file                        源文件路径
      * @return 最终入库的购买记录
@@ -420,11 +417,10 @@ public class ImportApplicationService {
                                                Double unitPrice,
                                                boolean duplicate,
                                                boolean normalizationReviewRequired,
-                                               boolean negativeAliasExcluded,
                                                ProductNameNormalizationResult nameResult,
                                                Path file) {
         String decision = duplicate || normalizationReviewRequired || amountResult.reviewRequired()
-                || negativeAliasExcluded || raw.specReviewRequired()
+                || raw.specReviewRequired()
                 ? DECISION_EXCLUDE : DECISION_INCLUDE;
         String dedupeStatus = duplicate ? DEDUPE_STATUS_DUPLICATE : DEDUPE_STATUS_UNIQUE;
         return new PurchaseRecord(
@@ -530,16 +526,6 @@ public class ImportApplicationService {
         return new ImportResult(batchId, rawCount, workflowResult.importedCount(), workflowResult.reviewCount(),
                 "导入完成：共 " + rawCount + " 条，成功 " + workflowResult.importedCount() + " 条，疑似重复 "
                         + workflowResult.duplicateCount() + " 条，待复核 " + workflowResult.reviewCount() + " 条。");
-    }
-
-    /**
-     * 判断商品归一化结果是否为负向别名（人工确认过的误判样本）。
-     *
-     * @param nameResult 商品名称归一化结果
-     * @return 如果 matchedRule 为 product_negative_alias 则返回 true
-     */
-    private boolean isProductNegativeAlias(ProductNameNormalizationResult nameResult) {
-        return NORMALIZATION_RULE_PRODUCT_NEGATIVE_ALIAS.equals(nameResult.matchedRule());
     }
 
     /**
