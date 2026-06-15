@@ -61,7 +61,7 @@ public class NormalizationToolController {
      *
      * @return 归一化名称库条目，包含标准单位、单位族、正负关键词和动态样本数量
      */
-    @Operation(summary = "查询归一化名称库", description = "查询 SQLite normalization_rules 名称库，返回规则基础信息、关键词和动态历史样本数量。")
+    @Operation(summary = "查询归一化名称库", description = "查询 SQLite normalization_rules 全家庭规则库，返回规则基础信息、关键词和动态历史样本数量。")
     @GetMapping("/normalization-library")
     public List<NormalizationLibraryItem> listNormalizationLibrary() {
         return normalizationLibraryService.listLibraryItems();
@@ -73,7 +73,7 @@ public class NormalizationToolController {
      * @param request 统一写操作请求，使用 action 区分 create_rule、update_rule、disable_rule、add_keyword、disable_keyword
      * @return 统一写操作响应结果；apply_rule_to_records 返回历史记录回填预览或执行结果
      */
-    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用、关键词维护和受控历史记录回填。")
+    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用、关键词维护和受控历史记录回填；apply_rule_to_records 默认扫描全家庭历史样本，owner 仅为显式回填过滤条件。")
     @PostMapping("/normalization-library")
     public Object operateNormalizationLibrary(
             @RequestBody NormalizationLibraryOperationRequest request) {
@@ -89,7 +89,7 @@ public class NormalizationToolController {
      * @param request 规则维护建议请求，包含候选筛选条件和 apply 开关
      * @return 异步任务创建结果
      */
-    @Operation(summary = "创建归一化规则维护建议任务", description = "从历史购买记录筛选候选商品，调用 LLM 建议新增规则或关键词；是否写库由 apply 控制。")
+    @Operation(summary = "创建归一化规则维护建议任务", description = "默认从全家庭历史购买记录筛选候选商品，owner 仅为显式候选过滤条件；调用 LLM 建议新增规则或关键词，是否写库由 apply 控制。")
     @PostMapping("/normalization-rule-suggestions")
     public NormalizationLlmTaskCreateResult createNormalizationRuleSuggestionTask(
             @RequestBody NormalizationRuleSuggestionRequest request) {

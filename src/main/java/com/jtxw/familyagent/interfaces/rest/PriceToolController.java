@@ -40,7 +40,7 @@ public class PriceToolController {
      * @param request 价格分析请求；只传 productName 时为 baseline-only 模式，同时传 price、quantity、unit 时为 compare 模式
      * @return 价格分析结果；baseline-only 模式下 current 和 decision 为 null，compare 模式下包含当前价格和判断结论
      */
-    @Operation(summary = "价格分析", description = "不传 price、quantity、unit 时返回历史价格基准线；同时传入三者时返回价格基准线和价格比较结果。")
+    @Operation(summary = "价格分析", description = "不传 price、quantity、unit 时返回全家庭历史价格基准线；同时传入三者时返回全家庭价格基准线和价格比较结果。")
     @PostMapping("/compare-price")
     public PriceDecisionResult comparePrice(@Valid @RequestBody ComparePriceRequest request) {
         return priceAnalysisApplicationService.comparePrice(request.toQuery());

@@ -119,7 +119,7 @@ public class NormalizationRuleSuggestionService {
                 normalizedCommand.candidateMode(), normalizedCommand.limit(), normalizedCommand);
         executorService.submit(() -> runTask(taskId, normalizedCommand));
         return new NormalizationLlmTaskCreateResult(taskId, TASK_TYPE_RULE_SUGGESTION,
-                "pending", "normalization rule suggestion task created");
+                "pending", "归一化规则建议任务已创建");
     }
 
     private void runTask(long taskId, NormalizationRuleSuggestionCommand command) {
@@ -194,11 +194,6 @@ public class NormalizationRuleSuggestionService {
     private NormalizationRuleSuggestionCommand normalizeCommand(NormalizationRuleSuggestionCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("规则维护建议命令不能为空");
-        }
-        boolean hasBatchId = command.batchId() != null;
-        boolean hasOwner = command.owner() != null && !command.owner().isBlank();
-        if (!hasBatchId && !hasOwner && !command.fullScan()) {
-            throw new IllegalArgumentException("batchId、owner、fullScan=true 至少满足一个");
         }
         String candidateMode = normalizeCandidateMode(command.candidateMode());
         int limit = normalizeLimit(command.limit());

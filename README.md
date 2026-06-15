@@ -92,11 +92,15 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/normalization-rule-suggestions`
 - `/api/tools/normalization-llm-tasks/{taskId}`
 - `/api/tools/purchase-records/search`
+
+`owner` 统一表示订单归属人，用于溯源、检索过滤和重复检测辅助。默认价格基准、比价分析和归一化规则维护均使用全家庭样本；只有在明确传入 owner 过滤条件的检索、复核、规则建议候选或规则回填场景中，才会缩小到指定订单归属人的样本范围。
+
 MCP tools：
 
 - `import_file`
 - `record_purchase`
 - `compare_price`
+- `search_purchase_records`
 - `generate_report`
 
 ---
@@ -169,8 +173,10 @@ curl -X GET "http://localhost:8080/api/tools/normalization-library"
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/normalization-rule-suggestions" `
   -H "Content-Type: application/json" `
-  -d "{\"batchId\":1,\"candidateMode\":\"legacy_fallback\",\"limit\":100,\"apply\":false}"
+  -d "{\"candidateMode\":\"legacy_fallback\",\"limit\":100,\"apply\":false}"
 ```
+
+不传 `batchId` 和 `owner` 时，默认从全家庭候选样本分析规则建议；传入 `owner` 只会缩小候选订单来源，方便排障或局部分析。
 
 ### 查询归一化 LLM 任务
 
@@ -185,6 +191,8 @@ curl -X POST "http://localhost:8080/api/tools/normalization-library" `
   -H "Content-Type: application/json" `
   -d "{\"action\":\"add_keyword\",\"ruleCode\":\"cat_litter\",\"keyword\":\"豆腐猫砂\",\"matchType\":\"include\",\"priority\":90}"
 ```
+
+`apply_rule_to_records` 默认扫描全家庭历史样本。`batchId` 和 `owner` 都是可选过滤条件；只有显式传入 `owner` 时才缩小回填范围。
 
 ### 手动 / 自然语言购买记录录入
 
@@ -249,7 +257,8 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude
 |---|---|---|
 | `import_file` | 导入本地 CSV / Excel 订单文件 | “导入 examples/sample_orders.csv” |
 | `record_purchase` | 录入手动购买记录或自然语言抽取后的结构化购买记录 | “记录一下，我在京东买了猫砂2.5kg*8，花了178.65元” |
-| `compare_price` | 不传 price / quantity / unit 时查询历史价格基准线；同时传入三者时返回价格比较结果 | “猫砂历史最低价是多少？” / “猫砂 10.3 元 5kg 值得买吗？” |
+| `compare_price` | 不传 price / quantity / unit 时查询全家庭历史价格基准线；同时传入三者时返回与全家庭价格基准线的比较结果 | “猫砂历史最低价是多少？” / “猫砂 10.3 元 5kg 值得买吗？” |
+| `search_purchase_records` | 按关键词检索原始购买记录；owner 仅是订单归属过滤条件，不生成价格基线 | “查一下我之前买过哪些猫砂” |
 | `generate_report` | 生成指定月份的本地 Markdown 价格报告 | “生成 2026-05 的复购品报告” |
 
 工具选择建议：
@@ -260,6 +269,7 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude
 | 记录一笔购买记录 / 从自然语言补充历史样本 | `record_purchase` |
 | 判断当前价格是否值得买 | `compare_price` |
 | 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `compare_price`（只传 productName） |
+| 查询具体购买记录 / 排查历史样本来源 | `search_purchase_records` |
 | 生成月度报告 | `generate_report` |
 
 调用链路：

@@ -72,7 +72,7 @@ public record RecordPurchaseRequest(
             @Schema(description = "购买日期，yyyy-MM-dd；缺省为当前日期", example = "2026-06-04")
             String purchaseDate,
 
-            @Schema(description = "订单归属人，缺省为 jtxw", example = "jtxw")
+            @Schema(description = "订单归属人，用于溯源和重复检测辅助，缺省为 jtxw", example = "jtxw")
             String owner,
 
             @Schema(description = "店铺名称", example = "京东自营")

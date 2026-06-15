@@ -24,7 +24,7 @@ public class ImportFileRequest {
     /**
      * 导入时指定的订单归属人。
      */
-    @Schema(description = "导入时指定的订单归属人；为空时使用 CSV owner 字段或文件名后缀识别", example = "jtxw")
+    @Schema(description = "导入时指定的订单归属人，用于溯源和重复检测辅助；为空时使用 CSV owner 字段或文件名后缀识别", example = "jtxw")
     private String owner;
 
     public ImportFileRequest() {

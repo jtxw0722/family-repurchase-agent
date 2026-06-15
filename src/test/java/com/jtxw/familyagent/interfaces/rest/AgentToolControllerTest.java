@@ -762,7 +762,7 @@ class AgentToolControllerTest {
     void createNormalizationRuleSuggestionTaskShouldUseDedicatedEntry() throws Exception {
         when(normalizationRuleSuggestionService.create(any()))
                 .thenReturn(new NormalizationLlmTaskCreateResult(101L, "rule_suggestion", "pending",
-                        "normalization rule suggestion task created"));
+                        "归一化规则建议任务已创建"));
 
         mockMvc.perform(post("/api/tools/normalization-rule-suggestions")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -13,19 +13,19 @@ import java.util.List;
 @Schema(description = "归一化规则维护建议任务创建请求")
 public class NormalizationRuleSuggestionRequest {
     /**
-     * 导入批次 ID，允许为空；为空时必须传 owner 或显式 fullScan=true。
+     * 导入批次 ID，允许为空；为空时不按批次筛选候选样本。
      */
     @Schema(description = "导入批次 ID", example = "17")
     private Long batchId;
     /**
-     * 订单归属人，允许为空；用于按家庭成员筛选候选样本。
+     * 订单归属人，允许为空；仅用于缩小候选来源，空值表示分析全家庭候选样本。
      */
-    @Schema(description = "订单归属人", example = "jtxw")
+    @Schema(description = "订单归属人过滤条件；为空时分析全家庭候选样本", example = "jtxw")
     private String owner;
     /**
-     * 是否显式全量扫描，默认 false；未传 batchId 和 owner 时必须显式为 true。
+     * 是否显式标记全家庭扫描，默认 false；未传 batchId 和 owner 时按全家庭候选样本分析。
      */
-    @Schema(description = "是否显式全量扫描", example = "false")
+    @Schema(description = "是否显式标记全家庭扫描；默认不传 owner 时仍分析全家庭候选样本", example = "false")
     private boolean fullScan = false;
     /**
      * 候选模式，默认 legacy_fallback；all 只在用户显式传入时启用。

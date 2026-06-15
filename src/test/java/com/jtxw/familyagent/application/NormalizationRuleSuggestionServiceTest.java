@@ -26,7 +26,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -143,12 +142,38 @@ class NormalizationRuleSuggestionServiceTest {
     }
 
     @Test
-    void createShouldRejectImplicitFullScan() throws Exception {
-        try (Fixture fixture = fixture("rule-suggestion-implicit-full-scan.sqlite")) {
-            assertThatThrownBy(() -> fixture.service().create(new NormalizationRuleSuggestionCommand(
-                    null, null, false, "legacy_fallback", 100, false, List.of(), List.of())))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("batchId、owner、fullScan=true");
+    void createShouldAnalyzeFamilyCandidatesByDefaultWhenOwnerOmitted() throws Exception {
+        try (Fixture fixture = fixture("rule-suggestion-family-default.sqlite")) {
+            fixture.saveLegacyFallbackRecord(1L, "jtxw", "舒肤佳沐浴露 720ml", "沐浴露");
+            fixture.saveLegacyFallbackRecord(2L, "lj", "舒肤佳沐浴乳 1L", "沐浴乳");
+            when(fixture.advisor().advise(anyList(), anyList()))
+                    .thenReturn(new NormalizationRuleSuggestionResult(List.of(), List.of("family scan")));
+
+            NormalizationLlmTaskCreateResult createResult = fixture.service().create(new NormalizationRuleSuggestionCommand(
+                    null, null, false, "legacy_fallback", 100, false, List.of(), List.of()));
+            NormalizationLlmTask task = awaitStatus(fixture.taskRepository(), createResult.taskId(), "completed");
+
+            assertThat(task.batchId()).isNull();
+            assertThat(task.owner()).isNull();
+            assertThat(task.candidateCount()).isEqualTo(2);
+            assertThat(task.warnings()).contains("family scan");
+        }
+    }
+
+    @Test
+    void createShouldTreatOwnerAsCandidateFilterOnly() throws Exception {
+        try (Fixture fixture = fixture("rule-suggestion-owner-filter.sqlite")) {
+            fixture.saveLegacyFallbackRecord(1L, "jtxw", "舒肤佳沐浴露 720ml", "沐浴露");
+            fixture.saveLegacyFallbackRecord(2L, "lj", "舒肤佳沐浴乳 1L", "沐浴乳");
+            when(fixture.advisor().advise(anyList(), anyList()))
+                    .thenReturn(new NormalizationRuleSuggestionResult(List.of(), List.of()));
+
+            NormalizationLlmTaskCreateResult createResult = fixture.service().create(new NormalizationRuleSuggestionCommand(
+                    null, "lj", false, "legacy_fallback", 100, false, List.of(), List.of()));
+            NormalizationLlmTask task = awaitStatus(fixture.taskRepository(), createResult.taskId(), "completed");
+
+            assertThat(task.owner()).isEqualTo("lj");
+            assertThat(task.candidateCount()).isEqualTo(1);
         }
     }
 

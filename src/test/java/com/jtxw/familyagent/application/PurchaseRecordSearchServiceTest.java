@@ -76,7 +76,7 @@ class PurchaseRecordSearchServiceTest {
     }
 
     @Test
-    void searchShouldReturnFamilyScopeWhenOwnerOmitted() throws Exception {
+    void searchShouldReturnFamilyRawRecordScopeWhenOwnerOmitted() throws Exception {
         Fixture fixture = fixture("owner-omitted.sqlite");
         fixture.save(record("2026-05-21 10:30:00", "jtxw", "猫砂 A", "默认",
                 "宠物用品", "猫砂", "猫砂", 10D));
@@ -92,7 +92,7 @@ class PurchaseRecordSearchServiceTest {
     }
 
     @Test
-    void searchShouldReturnOnlySpecifiedOwnerWhenOwnerProvided() throws Exception {
+    void searchShouldTreatOwnerAsRawRecordFilterWhenProvided() throws Exception {
         Fixture fixture = fixture("owner-provided.sqlite");
         fixture.save(record("2026-05-21 10:30:00", "jtxw", "猫砂 A", "默认",
                 "宠物用品", "猫砂", "猫砂", 10D));

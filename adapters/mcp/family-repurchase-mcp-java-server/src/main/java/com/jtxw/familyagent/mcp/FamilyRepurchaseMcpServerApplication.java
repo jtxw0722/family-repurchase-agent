@@ -108,13 +108,14 @@ public class FamilyRepurchaseMcpServerApplication {
                         .description("""
                                 导入本地订单文件，适合处理淘宝 / 京东 / 拼多多等平台导出的 CSV 或 Excel 历史订单。
                                 工具只接受已配置安全目录下的文件路径；后端会完成表头识别、金额分摊、商品归一化、规格解析、去重和待复核项生成。
+                                owner 表示订单归属人，用于溯源和重复检测辅助，不参与价格基准隔离。
                                 适用于批量沉淀历史样本，不适用于实时访问电商账号或读取浏览器数据。
                                 """)
                         .annotations(toolAnnotations("Import Order File", false, false, false))
                         .inputSchema(objectSchema(
                                 properties(
                                         property("filePath", stringSchema("本地 CSV 或 Excel 文件路径")),
-                                        property("owner", stringSchema("订单所属人，可选"))
+                                        property("owner", stringSchema("订单归属人，可选，用于溯源和重复检测辅助"))
                                 ),
                                 List.of("filePath")
                         ))
@@ -146,7 +147,8 @@ public class FamilyRepurchaseMcpServerApplication {
                 McpSchema.Tool.builder("record_purchase")
                         .title(title)
                         .description("""
-                                录入已经结构化的购买样本，适合把用户手动确认的购买记录、截图解析结果或自然语言整理结果写入样本库。
+                                录入已经结构化的购买样本，适合把用户手动确认的购买记录、截图解析结果或自然语言整理结果写入全家庭样本库。
+                                owner 表示订单归属人，用于溯源和重复检测辅助，不参与价格基准隔离。
                                 调用方只负责提供商品名、价格、数量、单位等字段；是否纳入价格基准、是否需要复核、是否疑似重复，均由后端规则判断。
                                 dryRun=true 时仅预览校验和归一化结果，dryRun=false 时才写入 purchase_records。
                                 """)
@@ -184,14 +186,14 @@ public class FamilyRepurchaseMcpServerApplication {
                         .description("""
                                 按关键词检索原始历史购买记录，用于排查 compare_price 无可靠基线、商品归一化遗漏、历史样本来源或订单明细。
                                 该工具返回的是原始订单样本，不会生成标准价格基线，也不能直接替代 compare_price 的价格判断。
-                                owner 只是订单归属和溯源过滤条件；不传、空字符串或 null 时检索全家庭样本。
+                                owner 只是订单归属过滤条件；不传、空字符串或 null 时检索全家庭原始记录。
                                 使用本工具回答时，应明确说明结果来自原始记录检索，可靠性低于已归一化的价格基线。
                                 """)
                         .annotations(toolAnnotations(title, true, false, true))
                         .inputSchema(objectSchema(
                                 properties(
                                         property("keyword", stringSchema("查询关键词，例如 猫砂；按原始商品名、SKU、分类和归一化名称检索")),
-                                        property("owner", nullableStringSchema("订单所属人，可选；不传、空字符串或 null 时查询全家庭样本")),
+                                        property("owner", nullableStringSchema("订单归属人过滤条件，可选；不传、空字符串或 null 时检索全家庭原始记录")),
                                         property("limit", integerSchema("可选返回条数；后端默认 20，最大 50")),
                                         property("fromDate", nullableStringSchema("可选开始日期，格式 yyyy-MM-dd")),
                                         property("toDate", nullableStringSchema("可选结束日期，格式 yyyy-MM-dd"))
@@ -200,8 +202,8 @@ public class FamilyRepurchaseMcpServerApplication {
                         ))
                         .outputSchema(objectSchema(properties(
                                 property("keyword", stringSchema("清洗后的查询关键词")),
-                                property("scope", stringSchema("查询范围，FAMILY 表示全家庭样本，OWNER 表示指定归属人样本")),
-                                property("owner", nullableStringSchema("指定归属人；全家庭查询时为空")),
+                                property("scope", stringSchema("原始记录检索范围，FAMILY 表示全家庭原始记录，OWNER 表示指定订单归属人的原始记录")),
+                                property("owner", nullableStringSchema("指定订单归属人过滤条件；全家庭查询时为空")),
                                 property("matchedCount", numberSchema("符合查询条件的原始记录总数")),
                                 property("returnedCount", numberSchema("实际返回的记录数量")),
                                 property("records", arraySchema(searchPurchaseRecordItemOutputSchema())),
@@ -228,9 +230,9 @@ public class FamilyRepurchaseMcpServerApplication {
                         .title("Compare Product Price")
                         .description("""
                                 家庭复购品价格分析主工具。
-                                只传 productName 时，返回该商品的历史价格基线，包括样本数、历史最低价、中位数、均价和代表性历史记录。
-                                同时传入 price、quantity、unit 时，会先计算当前单位价格，再与家庭历史价格基线比较，输出好价、正常价格、偏贵或数据不足等判断。
-                                price、quantity、unit 必须同时提供或同时省略；默认使用全家庭历史样本，不按 owner 划分个人价格体系。
+                                只传 productName 时，返回该商品的全家庭历史价格基线，包括样本数、历史最低价、中位数、均价和代表性历史记录。
+                                同时传入 price、quantity、unit 时，会先计算当前单位价格，再与全家庭历史价格基线比较，输出好价、正常价格、偏贵或数据不足等判断。
+                                price、quantity、unit 必须同时提供或同时省略；默认价格基准、比价分析和规则维护均使用全家庭样本。
                                 """)
                         .annotations(toolAnnotations("Compare Product Price", true, false, true))
                         .inputSchema(objectSchema(
@@ -654,7 +656,7 @@ public class FamilyRepurchaseMcpServerApplication {
                 property("recordId", nullableNumberSchema("购买记录 ID")),
                 property("orderTime", nullableStringSchema("订单发生时间")),
                 property("platform", nullableStringSchema("购买平台")),
-                property("owner", nullableStringSchema("订单归属人")),
+                property("owner", nullableStringSchema("订单归属人，仅用于溯源和原始记录检索过滤")),
                 property("productName", stringSchema("原始商品名称")),
                 property("sku", nullableStringSchema("商品规格或 SKU")),
                 property("category", nullableStringSchema("一级商品分类")),
@@ -677,7 +679,7 @@ public class FamilyRepurchaseMcpServerApplication {
                 property("unit", stringSchema("数量单位")),
                 property("platform", stringSchema("购买平台，可选，缺省为 MANUAL")),
                 property("purchaseDate", stringSchema("购买日期 yyyy-MM-dd，可选")),
-                property("owner", stringSchema("订单所属人，可选，缺省为 jtxw")),
+                property("owner", stringSchema("订单归属人，可选，缺省为 jtxw，用于溯源和重复检测辅助")),
                 property("shopName", stringSchema("店铺名称，可选")),
                 property("sku", stringSchema("商品规格或 SKU，可选")),
                 property("note", stringSchema("备注，可选")),

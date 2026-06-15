@@ -20,7 +20,8 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。
 
 * `import_file`：导入本地 CSV / Excel 订单文件
 * `record_purchase`：录入手动购买记录或自然语言抽取后的结构化购买记录
-* `compare_price`：不传 price / quantity / unit 时查询历史价格基准线；同时传入三者时进行当前价格比较
+* `compare_price`：不传 price / quantity / unit 时查询全家庭历史价格基准线；同时传入三者时进行当前价格比较
+* `search_purchase_records`：按关键词检索原始购买记录，owner 仅是订单归属过滤条件，不生成价格基线
 * `generate_report`：生成指定月份的复购品价格报告
 
 OpenClaw 应通过 MCP Server 调用这些 tools。Agent Host 不应直接访问 SQLite、Repository、Domain Service，也不应绕过 Spring Boot 后端自行计算价格结论。

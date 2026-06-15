@@ -42,7 +42,7 @@ public class PurchaseRecordSearchController {
      * @param request 原始购买记录检索请求
      * @return 原始购买记录检索结果
      */
-    @Operation(summary = "检索原始购买记录", description = "按关键词检索原始历史购买记录样本，仅供无可靠基线时参考，不生成价格基线。")
+    @Operation(summary = "检索原始购买记录", description = "按关键词检索原始历史购买记录样本；owner 仅为订单归属过滤条件，仅供无可靠基线时参考，不生成价格基线。")
     @PostMapping("/purchase-records/search")
     public SearchPurchaseRecordsResult searchPurchaseRecords(@Valid @RequestBody SearchPurchaseRecordsRequest request) {
         return purchaseRecordSearchService.search(request.toQuery());

@@ -8,8 +8,8 @@ import java.util.List;
  * @Description: 规则维护建议任务创建命令，承载候选筛选条件、候选上限和是否应用建议的控制参数
  *
  * @param batchId         可选导入批次 ID，按批次筛选候选购买记录
- * @param owner           可选订单归属人，按家庭成员筛选候选购买记录
- * @param fullScan        是否显式允许全量扫描，未传 batchId 和 owner 时必须为 true
+ * @param owner           可选订单归属人过滤条件，仅用于缩小候选来源；为空时分析全家庭候选样本
+ * @param fullScan        是否显式标记全家庭扫描，保留给任务记录和兼容调用方使用，不作为 owner 隔离条件
  * @param candidateMode   候选模式，支持 legacy_fallback 和 all
  * @param limit           最大候选数量，默认 100，上限 500
  * @param apply           是否将通过校验的建议写入规则库

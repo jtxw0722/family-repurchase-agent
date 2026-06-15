@@ -201,8 +201,8 @@ public class PurchaseRecordSearchService {
      */
     private List<String> warnings(String owner) {
         String scopeWarning = owner == null
-                ? "当前查询范围为全家庭样本，可能包含不同家庭成员的购买记录。"
-                : "当前查询范围为指定 owner 样本，但仍可能包含不同规格、单位或组合装。";
+                ? "当前查询范围为全家庭原始记录，可能包含不同家庭成员的购买记录。"
+                : "当前查询范围为指定订单归属人的原始记录，owner 仅是检索过滤条件，仍可能包含不同规格、单位或组合装。";
         return List.of(
                 "该结果来自原始订单记录检索，不代表已完成商品归一化。",
                 scopeWarning,

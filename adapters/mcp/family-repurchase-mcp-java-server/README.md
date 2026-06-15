@@ -24,8 +24,8 @@ MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发
 | -------------------- | ----------------------------------- | ------------------------------- |
 | `import_file`        | 导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录 | “导入 examples/sample_orders.csv” |
 | `record_purchase`    | 录入手动购买记录或自然语言抽取后的结构化购买记录 | “记录一下，我在京东买了猫砂2.5kg*8，花了178.65元” |
-| `compare_price`      | 不传 price / quantity / unit 时查询历史价格基准线；同时传入三者时返回价格比较结果 | “猫砂历史最低价是多少？” / “猫砂 10.3 元 5kg 值得买吗？” |
-| `search_purchase_records` | 根据关键词检索原始购买记录，查看历史订单明细和样本来源 | “查一下我之前买过哪些猫砂” |
+| `compare_price`      | 不传 price / quantity / unit 时查询全家庭历史价格基准线；同时传入三者时返回与全家庭基准线的价格比较结果 | “猫砂历史最低价是多少？” / “猫砂 10.3 元 5kg 值得买吗？” |
+| `search_purchase_records` | 根据关键词检索原始购买记录，查看历史订单明细和样本来源；owner 仅是订单归属过滤条件 | “查一下我之前买过哪些猫砂” |
 | `generate_report`    | 根据指定月份生成 Markdown 价格报告              | “生成 2026-05 的复购品报告”             |
 
 工具选择建议：
@@ -38,6 +38,8 @@ MCP Server 只做协议适配、参数校验、文件路径防护和 HTTP 转发
 | 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `compare_price`（只传 productName） |
 | 查询具体购买记录 / 排查历史样本来源 | `search_purchase_records` |
 | 生成月度报告                      | `generate_report`    |
+
+`owner` 表示订单归属人，用于溯源、检索过滤和重复检测辅助。默认价格基准、比价分析和规则维护使用全家庭样本；`search_purchase_records` 返回原始记录，不生成可靠价格基线。
 
 ## 构建
 
@@ -61,6 +63,7 @@ adapters/mcp/family-repurchase-mcp-java-server/target/family-repurchase-mcp-java
 mvn package
 java -jar target/family-repurchase-agent.jar
 ```
+
 
 再启动 MCP Server：
 
@@ -218,4 +221,3 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test-mcp.ps1
 mvn package
 java -jar target/family-repurchase-agent.jar
 ```
-

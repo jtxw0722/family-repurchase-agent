@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
  */
 class PriceAnalysisApplicationServiceTest {
     @Test
-    void comparePriceShouldReturnBaselineOnlyWhenCurrentSampleIsOmitted() {
+    void comparePriceShouldUseFamilyHistoryByDefault() {
         PriceAnalysisApplicationService service = serviceWithHistory(List.of(
                 record(1L, "2026-04-01", "纸巾 100抽*10包", 20D, 1000D, 0.02D, "抽"),
                 record(2L, "2026-05-01", "纸巾 120抽*10包", 24D, 1200D, 0.02D, "抽")
