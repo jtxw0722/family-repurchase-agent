@@ -1,10 +1,6 @@
 package com.jtxw.familyagent.application;
 
-import com.jtxw.familyagent.application.command.AddNormalizationRuleKeywordCommand;
-import com.jtxw.familyagent.application.command.CreateNormalizationRuleCommand;
-import com.jtxw.familyagent.application.command.DisableNormalizationRuleKeywordCommand;
-import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
-import com.jtxw.familyagent.application.command.UpdateNormalizationRuleCommand;
+import com.jtxw.familyagent.application.command.*;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryOperationResult;
 import com.jtxw.familyagent.domain.model.NormalizationRuleMutationResult;
@@ -15,11 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
@@ -103,6 +95,13 @@ public class NormalizationLibraryService {
      */
     private final NormalizationRuleApplyService normalizationRuleApplyService;
 
+    /**
+     * 创建归一化名称库应用服务。
+     *
+     * @param databaseInitializer           数据库初始化组件
+     * @param normalizationRuleRepository   归一化规则仓储
+     * @param normalizationRuleApplyService 归一化规则历史记录回填服务
+     */
     @Autowired
     public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
                                        NormalizationRuleRepository normalizationRuleRepository,
@@ -117,7 +116,7 @@ public class NormalizationLibraryService {
      *
      * <p>该构造器用于不涉及历史记录回填的单元测试场景；生产运行由 Spring 注入完整构造器。</p>
      *
-     * @param databaseInitializer        数据库初始化组件
+     * @param databaseInitializer         数据库初始化组件
      * @param normalizationRuleRepository 归一化规则仓储
      */
     public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
@@ -143,7 +142,7 @@ public class NormalizationLibraryService {
      * @param command 统一写操作命令，不能为空
      * @return 统一写操作响应结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Object operate(NormalizationLibraryOperationCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("归一化规则库操作请求不能为空");
@@ -161,6 +160,12 @@ public class NormalizationLibraryService {
         };
     }
 
+    /**
+     * 分派 apply_rule_to_records 操作到历史记录回填服务。
+     *
+     * @param command 统一操作命令，包含规则编码、筛选范围和 dry-run 配置
+     * @return 历史记录回填预览或执行结果
+     */
     private Object applyRuleToRecords(NormalizationLibraryOperationCommand command) {
         if (normalizationRuleApplyService == null) {
             throw new IllegalStateException("归一化规则历史记录回填服务未初始化");
@@ -174,7 +179,7 @@ public class NormalizationLibraryService {
      * @param command 新增规则命令
      * @return 规则新增结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public NormalizationRuleMutationResult createRule(CreateNormalizationRuleCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("新增归一化规则请求不能为空");
@@ -186,6 +191,7 @@ public class NormalizationLibraryService {
         UnitSpec unitSpec = normalizeUnitSpec(command.standardUnit(), command.unitFamily());
         List<String> keywords = normalizeKeywords(command.keywords());
         List<String> excludeKeywords = normalizeKeywords(command.excludeKeywords());
+        keywords = appendNormalizedNameKeyword(keywords, normalizedName);
         validateKeywordListsNotConflict(keywords, excludeKeywords);
         if (normalizationRuleRepository.existsRuleCode(ruleCode)) {
             throw new IllegalArgumentException("归一化规则编码已存在：" + ruleCode);
@@ -207,7 +213,7 @@ public class NormalizationLibraryService {
      * @param command 更新规则命令
      * @return 规则更新结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public NormalizationRuleMutationResult updateRule(UpdateNormalizationRuleCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("更新归一化规则请求不能为空");
@@ -239,7 +245,7 @@ public class NormalizationLibraryService {
      * @param command 新增关键词命令
      * @return 关键词维护结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public NormalizationRuleMutationResult addKeyword(AddNormalizationRuleKeywordCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("新增归一化关键词请求不能为空");
@@ -275,7 +281,7 @@ public class NormalizationLibraryService {
      * @param command 禁用关键词命令
      * @return 关键词禁用结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public NormalizationRuleMutationResult disableKeyword(DisableNormalizationRuleKeywordCommand command) {
         if (command == null) {
             throw new IllegalArgumentException("禁用归一化关键词请求不能为空");
@@ -301,7 +307,7 @@ public class NormalizationLibraryService {
      * @param ruleCode 规则业务编码
      * @return 规则禁用结果
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public NormalizationRuleMutationResult disableRule(String ruleCode) {
         databaseInitializer.initialize();
         String normalizedRuleCode = normalizeRuleCode(ruleCode);
@@ -313,6 +319,13 @@ public class NormalizationLibraryService {
                 "rule_disabled", "归一化规则已禁用");
     }
 
+    /**
+     * 将统一操作命令转换为新增规则命令并执行。
+     *
+     * @param action  统一入口 action 名称
+     * @param command 统一操作命令
+     * @return 统一格式的操作结果
+     */
     private NormalizationLibraryOperationResult operateCreateRule(String action,
                                                                   NormalizationLibraryOperationCommand command) {
         NormalizationRuleMutationResult result = createRule(new CreateNormalizationRuleCommand(
@@ -328,6 +341,13 @@ public class NormalizationLibraryService {
         return toOperationResult(action, result);
     }
 
+    /**
+     * 将统一操作命令转换为更新规则命令并执行。
+     *
+     * @param action  统一入口 action 名称
+     * @param command 统一操作命令
+     * @return 统一格式的操作结果
+     */
     private NormalizationLibraryOperationResult operateUpdateRule(String action,
                                                                   NormalizationLibraryOperationCommand command) {
         NormalizationRuleMutationResult result = updateRule(new UpdateNormalizationRuleCommand(
@@ -342,6 +362,13 @@ public class NormalizationLibraryService {
         return toOperationResult(action, result);
     }
 
+    /**
+     * 将统一操作命令转换为新增关键词命令并执行。
+     *
+     * @param action  统一入口 action 名称
+     * @param command 统一操作命令
+     * @return 统一格式的操作结果
+     */
     private NormalizationLibraryOperationResult operateAddKeyword(String action,
                                                                   NormalizationLibraryOperationCommand command) {
         NormalizationRuleMutationResult result = addKeyword(new AddNormalizationRuleKeywordCommand(
@@ -353,31 +380,69 @@ public class NormalizationLibraryService {
         return toOperationResult(action, result);
     }
 
+    /**
+     * 将规则或关键词维护结果转换为 normalization-library 统一响应。
+     *
+     * @param action 统一入口 action 名称
+     * @param result 规则或关键词维护结果
+     * @return 统一操作响应
+     */
     private NormalizationLibraryOperationResult toOperationResult(String action,
-                                                                 NormalizationRuleMutationResult result) {
+                                                                  NormalizationRuleMutationResult result) {
         return NormalizationLibraryOperationResult.success(action, result.message(), result.ruleCode(),
                 result.normalizedName(), affectedRows(result));
     }
 
+    /**
+     * 根据维护动作计算影响行数。
+     *
+     * @param result 规则或关键词维护结果
+     * @return 已存在关键词返回 0，其余成功维护动作返回 1
+     */
     private int affectedRows(NormalizationRuleMutationResult result) {
         return "keyword_exists".equals(result.action()) ? 0 : 1;
     }
 
+    /**
+     * 返回显式优先级或默认优先级。
+     *
+     * @param priority 外部传入优先级，允许为空
+     * @return 非空优先级或默认优先级
+     */
     private int priorityOrDefault(Integer priority) {
         return priority == null ? DEFAULT_PRIORITY : priority;
     }
 
+    /**
+     * 批量写入规则关键词。
+     *
+     * @param ruleId    规则主键
+     * @param keywords  已归一化并去重的关键词列表
+     * @param matchType 关键词类型，include 或 exclude
+     */
     private void insertKeywords(long ruleId, List<String> keywords, String matchType) {
         for (String keyword : keywords) {
             normalizationRuleRepository.insertKeyword(ruleId, keyword, matchType, 100, SOURCE_MANUAL);
         }
     }
 
+    /**
+     * 按规则编码查询规则，不存在时抛出业务异常。
+     *
+     * @param ruleCode 规则编码
+     * @return 规则数据库行
+     */
     private NormalizationRuleRepository.NormalizationRuleRow requireRule(String ruleCode) {
         return normalizationRuleRepository.findRuleByCode(ruleCode)
                 .orElseThrow(() -> new IllegalArgumentException("归一化规则不存在：" + ruleCode));
     }
 
+    /**
+     * 校验并规范化规则编码。
+     *
+     * @param ruleCode 原始规则编码
+     * @return 通过格式校验的规则编码
+     */
     private String normalizeRuleCode(String ruleCode) {
         String value = requiredText(ruleCode, "ruleCode 不能为空");
         if (!RULE_CODE_PATTERN.matcher(value).matches()) {
@@ -386,6 +451,12 @@ public class NormalizationLibraryService {
         return value;
     }
 
+    /**
+     * 校验并规范化关键词匹配类型。
+     *
+     * @param matchType 原始匹配类型
+     * @return 小写 include 或 exclude
+     */
     private String normalizeMatchType(String matchType) {
         String value = requiredText(matchType, "matchType 不能为空").toLowerCase(Locale.ROOT);
         if (!MATCH_TYPE_INCLUDE.equals(value) && !MATCH_TYPE_EXCLUDE.equals(value)) {
@@ -394,6 +465,13 @@ public class NormalizationLibraryService {
         return value;
     }
 
+    /**
+     * 校验并规范化标准单位和单位族。
+     *
+     * @param standardUnit   外部传入标准单位
+     * @param unitFamilyText 外部传入单位族文本
+     * @return 可入库的单位配置
+     */
     private UnitSpec normalizeUnitSpec(String standardUnit, String unitFamilyText) {
         String unit = requiredText(standardUnit, "standardUnit 不能为空");
         UnitFamily unitFamily = parseUnitFamily(unitFamilyText);
@@ -401,6 +479,12 @@ public class NormalizationLibraryService {
         return new UnitSpec(canonicalUnit, unitFamily.name().toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * 将外部单位族文本解析为领域枚举。
+     *
+     * @param unitFamilyText 外部传入单位族文本
+     * @return 已校验的单位族枚举
+     */
     private UnitFamily parseUnitFamily(String unitFamilyText) {
         String value = requiredText(unitFamilyText, "unitFamily 不能为空").toUpperCase(Locale.ROOT);
         try {
@@ -414,6 +498,13 @@ public class NormalizationLibraryService {
         }
     }
 
+    /**
+     * 按单位族规范化标准单位大小写并校验兼容性。
+     *
+     * @param standardUnit 外部传入标准单位
+     * @param unitFamily   已解析单位族
+     * @return 可入库的标准单位
+     */
     private String canonicalStandardUnit(String standardUnit, UnitFamily unitFamily) {
         return switch (unitFamily) {
             case WEIGHT -> {
@@ -446,10 +537,23 @@ public class NormalizationLibraryService {
         };
     }
 
+    /**
+     * 构造标准单位与单位族不兼容的业务异常。
+     *
+     * @param standardUnit 外部传入标准单位
+     * @param unitFamily   已解析单位族
+     * @return 参数不兼容异常
+     */
     private IllegalArgumentException incompatibleUnit(String standardUnit, UnitFamily unitFamily) {
         return new IllegalArgumentException("standardUnit 与 unitFamily 不兼容：" + standardUnit + " / " + unitFamily);
     }
 
+    /**
+     * 校验、去空白并去重关键词列表。
+     *
+     * @param keywords 原始关键词列表，允许为空
+     * @return 已去重的关键词列表；空输入返回空列表
+     */
     private List<String> normalizeKeywords(List<String> keywords) {
         if (keywords == null || keywords.isEmpty()) {
             return List.of();
@@ -461,6 +565,28 @@ public class NormalizationLibraryService {
         return new ArrayList<>(uniqueKeywords);
     }
 
+    /**
+     * 创建规则时将 normalizedName 自动补充为 include keyword。
+     *
+     * @param keywords       已归一化 include keyword 列表
+     * @param normalizedName 归一化商品名称
+     * @return 包含 normalizedName 的 include keyword 列表
+     */
+    private List<String> appendNormalizedNameKeyword(List<String> keywords, String normalizedName) {
+        if (keywords.contains(normalizedName)) {
+            return keywords;
+        }
+        List<String> appendedKeywords = new ArrayList<>(keywords);
+        appendedKeywords.add(normalizedName);
+        return appendedKeywords;
+    }
+
+    /**
+     * 校验同一规则内 include 和 exclude 关键词列表不能冲突。
+     *
+     * @param keywords        include 关键词列表
+     * @param excludeKeywords exclude 关键词列表
+     */
     private void validateKeywordListsNotConflict(List<String> keywords, List<String> excludeKeywords) {
         for (String keyword : keywords) {
             if (excludeKeywords.contains(keyword)) {
@@ -469,12 +595,26 @@ public class NormalizationLibraryService {
         }
     }
 
+    /**
+     * 校验新增关键词不会与同规则下另一匹配类型的启用关键词冲突。
+     *
+     * @param ruleId    规则主键
+     * @param keyword   待新增关键词
+     * @param matchType 待新增关键词类型
+     */
     private void validateKeywordConflict(long ruleId, String keyword, String matchType) {
         if (normalizationRuleRepository.existsEnabledKeywordWithOtherMatchType(ruleId, keyword, matchType)) {
             throw new IllegalArgumentException("同一规则下 keyword 不能同时作为 include 和 exclude：" + keyword);
         }
     }
 
+    /**
+     * 读取必填文本参数并去除首尾空白。
+     *
+     * @param value   原始文本
+     * @param message 参数缺失时的异常消息
+     * @return 去除首尾空白后的文本
+     */
     private String requiredText(String value, String message) {
         if (value == null || value.trim().isBlank()) {
             throw new IllegalArgumentException(message);
@@ -482,6 +622,12 @@ public class NormalizationLibraryService {
         return value.trim();
     }
 
+    /**
+     * 读取可选文本参数并去除首尾空白。
+     *
+     * @param value 原始文本，允许为空
+     * @return 非空文本的 trim 结果；空值返回空字符串
+     */
     private String optionalText(String value) {
         return value == null ? "" : value.trim();
     }

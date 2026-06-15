@@ -138,6 +138,59 @@ class NormalizationLibraryServiceTest {
     }
 
     @Test
+    void createRuleShouldAppendNormalizedNameWhenIncludeKeywordsOmitIt() {
+        service.createRule(new CreateNormalizationRuleCommand(
+                "auto_keyword_rule",
+                "body wash",
+                "personal care",
+                "L",
+                "volume",
+                80,
+                List.of("shower gel"),
+                List.of("travel bottle")
+        ));
+
+        NormalizationLibraryItem item = libraryItem("auto_keyword_rule");
+        assertThat(item.keywords()).containsExactly("shower gel", "body wash");
+        assertThat(providerRule("auto_keyword_rule").includeKeywords()).containsExactly("shower gel", "body wash");
+    }
+
+    @Test
+    void createRuleShouldNotDuplicateNormalizedNameWhenIncludeKeywordsContainIt() {
+        service.createRule(new CreateNormalizationRuleCommand(
+                "dedupe_keyword_rule",
+                "body wash",
+                "personal care",
+                "L",
+                "volume",
+                80,
+                List.of("body wash", "body wash"),
+                List.of()
+        ));
+
+        NormalizationLibraryItem item = libraryItem("dedupe_keyword_rule");
+        assertThat(item.keywords().stream().filter("body wash"::equals).count()).isEqualTo(1);
+        assertThat(providerRule("dedupe_keyword_rule").includeKeywords()).containsExactly("body wash");
+    }
+
+    @Test
+    void createRuleShouldRejectNormalizedNameInExcludeKeywords() {
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "exclude_normalized_name_rule",
+                "body wash",
+                "personal care",
+                "L",
+                "volume",
+                80,
+                List.of("shower gel"),
+                List.of("body wash")
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("include")
+                .hasMessageContaining("exclude");
+    }
+
+    @Test
     void shouldUpdateRuleBaseFieldsWithoutReplacingKeywords() {
         service.updateRule(new UpdateNormalizationRuleCommand(
                 "cat_litter",

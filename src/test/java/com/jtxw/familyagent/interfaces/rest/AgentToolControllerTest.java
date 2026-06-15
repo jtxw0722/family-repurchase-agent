@@ -209,6 +209,29 @@ class AgentToolControllerTest {
     }
 
     @Test
+    void createNormalizationRuleShouldReturnBadRequestWhenNormalizedNameIsExcluded() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenThrow(new IllegalArgumentException("normalizedName cannot be both include and exclude"));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "create_rule",
+                                  "ruleCode": "body_wash",
+                                  "normalizedName": "body wash",
+                                  "category": "personal care",
+                                  "standardUnit": "L",
+                                  "unitFamily": "volume",
+                                  "keywords": ["shower gel"],
+                                  "excludeKeywords": ["body wash"]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("normalizedName cannot be both include and exclude"));
+    }
+
+    @Test
     void updateNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
         when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
                 .thenReturn(NormalizationLibraryOperationResult.success(
@@ -334,8 +357,8 @@ class AgentToolControllerTest {
                 .thenReturn(new NormalizationApplyRuleToRecordsResult(
                         "apply_rule_to_records",
                         true,
-                        "contact_lenses",
-                        "美瞳",
+                        "cat_wet_food",
+                        "cat wet food",
                         true,
                         1,
                         1,
@@ -346,26 +369,26 @@ class AgentToolControllerTest {
                         List.of("dryRun=true，仅返回预览，不写入 purchase_records"),
                         List.of(new NormalizationApplyRuleToRecordsItem(
                                 22L,
-                                "美瞳日抛 10片",
-                                "自然棕",
+                                "cat wet food 600g",
+                                "600g",
                                 "applicable",
                                 new NormalizationApplyRuleRecordSnapshot(
-                                        "美瞳日抛 10片",
+                                        "cat wet food 600g",
                                         BigDecimal.ONE,
                                         "件",
-                                        BigDecimal.valueOf(33.79D),
+                                        BigDecimal.valueOf(31.28D),
                                         "exclude",
                                         "legacy_fallback"
                                 ),
                                 new NormalizationApplyRuleRecordSnapshot(
-                                        "美瞳",
-                                        BigDecimal.TEN,
-                                        "片",
-                                        BigDecimal.valueOf(3.379D),
+                                        "cat wet food",
+                                        BigDecimal.valueOf(600D),
+                                        "g",
+                                        BigDecimal.valueOf(0.052133333333D),
                                         "include",
-                                        "contact_lenses"
+                                        "cat_wet_food"
                                 ),
-                                List.of()
+                                List.of("数量来源：sku", "规格解析：600g => 600g")
                         ))
                 ));
 
@@ -374,7 +397,7 @@ class AgentToolControllerTest {
                         .content("""
                                 {
                                   "action": "apply_rule_to_records",
-                                  "ruleCode": "contact_lenses",
+                                  "ruleCode": "cat_wet_food",
                                   "onlyLegacyFallback": true,
                                   "onlyExcluded": true,
                                   "dryRun": true,
@@ -383,17 +406,21 @@ class AgentToolControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.action").value("apply_rule_to_records"))
-                .andExpect(jsonPath("$.ruleCode").value("contact_lenses"))
+                .andExpect(jsonPath("$.ruleCode").value("cat_wet_food"))
                 .andExpect(jsonPath("$.dryRun").value(true))
                 .andExpect(jsonPath("$.items[0].status").value("applicable"))
-                .andExpect(jsonPath("$.items[0].after.normalizedName").value("美瞳"));
+                .andExpect(jsonPath("$.items[0].after.normalizedName").value("cat wet food"))
+                .andExpect(jsonPath("$.items[0].after.quantity").value(600))
+                .andExpect(jsonPath("$.items[0].after.unit").value("g"))
+                .andExpect(jsonPath("$.items[0].after.unitPrice").value(0.052133333333D))
+                .andExpect(jsonPath("$.items[0].warnings[0]").value("数量来源：sku"));
 
         ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
                 ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
         verify(normalizationLibraryService).operate(captor.capture());
         NormalizationLibraryOperationCommand command = captor.getValue();
         assertThat(command.action()).isEqualTo("apply_rule_to_records");
-        assertThat(command.ruleCode()).isEqualTo("contact_lenses");
+        assertThat(command.ruleCode()).isEqualTo("cat_wet_food");
         assertThat(command.batchId()).isNull();
         assertThat(command.owner()).isNull();
         assertThat(command.onlyLegacyFallback()).isTrue();

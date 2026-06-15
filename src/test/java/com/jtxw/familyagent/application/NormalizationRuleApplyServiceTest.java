@@ -1,6 +1,7 @@
 package com.jtxw.familyagent.application;
 
 import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
+import com.jtxw.familyagent.domain.model.NormalizationApplyRuleToRecordsItem;
 import com.jtxw.familyagent.domain.model.NormalizationApplyRuleToRecordsResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
@@ -238,7 +239,7 @@ class NormalizationRuleApplyServiceTest {
         assertThat(result.applicableCount()).isEqualTo(1);
         assertThat(result.items().get(0).after().quantity()).isEqualByComparingTo("6.0");
         assertThat(result.items().get(0).after().unit()).isEqualTo("片");
-        assertThat(result.items().get(0).after().unitPrice()).isEqualByComparingTo("5.631666666666667");
+        assertThat(result.items().get(0).after().unitPrice()).isEqualByComparingTo("5.631666666667");
         assertThat(result.items().get(0).warnings()).contains("数量来源：sku");
     }
 
@@ -252,7 +253,7 @@ class NormalizationRuleApplyServiceTest {
 
         assertThat(result.applicableCount()).isEqualTo(1);
         assertThat(result.items().get(0).after().quantity()).isEqualByComparingTo("10.0");
-        assertThat(result.items().get(0).warnings()).contains("数量来源：productName");
+        assertThat(result.items().get(0).warnings()).contains("数量来源：product_name");
     }
 
     @Test
@@ -279,6 +280,333 @@ class NormalizationRuleApplyServiceTest {
         assertThat(result.reviewRequiredCount()).isEqualTo(1);
         assertThat(result.items().get(0).status()).isEqualTo("review_required");
         assertThat(purchaseRecordRepository.findById(recordId).orElseThrow().decision()).isEqualTo("exclude");
+    }
+
+    @Test
+    void shouldParseTargetCountByPackageMultiplier() {
+        createContactLensRule();
+        long recordId = saveCandidate("美瞳组合装", "2盒*10片/盒",
+                "exclude", "legacy_fallback", 33.79D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(command(true, null, null, null));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("applicable");
+        assertThat(item.after().quantity()).isEqualByComparingTo("20");
+        assertThat(item.after().unit()).isEqualTo("片");
+        assertThat(item.warnings()).contains("数量来源：sku");
+    }
+
+    @Test
+    void shouldNotConvertOtherCountUnitToTargetCountUnit() {
+        createContactLensRule();
+        long recordId = saveCandidate("美瞳组合装", "10条装",
+                "exclude", "legacy_fallback", 33.79D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(command(true, null, null, null));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("review_required");
+        assertThat(item.after()).isNull();
+        assertThat(item.warnings())
+                .anyMatch(warning -> warning.contains("未找到明确 片 数量")
+                        || warning.contains("标准数量未确认"));
+    }
+
+    @Test
+    void shouldNotTreatPackageCountAsTargetCountUnit() {
+        createContactLensRule();
+        long recordId = saveCandidate("美瞳组合装", "2盒",
+                "exclude", "legacy_fallback", 33.79D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(command(true, null, null, null));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("review_required");
+        assertThat(item.after()).isNull();
+    }
+
+    @Test
+    void shouldFallbackOriginalCountOnlyWhenUnitEqualsTargetUnit() {
+        createContactLensRule();
+        long targetUnitRecordId = saveCandidateWithQuantity("美瞳默认规格", "默认规格",
+                "exclude", "legacy_fallback", 33.79D, 10D, "片");
+        long otherCountUnitRecordId = saveCandidateWithQuantity("美瞳默认规格", "默认规格",
+                "exclude", "legacy_fallback", 33.79D, 10D, "条");
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(command(true, null, null, null));
+
+        assertThat(itemByRecordId(result, targetUnitRecordId).status()).isEqualTo("applicable");
+        assertThat(itemByRecordId(result, targetUnitRecordId).after().quantity()).isEqualByComparingTo("10");
+        assertThat(itemByRecordId(result, targetUnitRecordId).after().unit()).isEqualTo("片");
+        assertThat(itemByRecordId(result, otherCountUnitRecordId).status()).isEqualTo("review_required");
+        assertThat(itemByRecordId(result, otherCountUnitRecordId).after()).isNull();
+        assertThat(itemByRecordId(result, otherCountUnitRecordId).warnings())
+                .anyMatch(warning -> warning.contains("原始记录单位不是目标计数单位"));
+    }
+
+    @Test
+    void shouldParseDrawCountOnlyByTargetUnit() {
+        createTissueRule();
+        long validRecordId = saveCandidate("纸巾", "3包*100抽/包",
+                "exclude", "legacy_fallback", 29.9D);
+        long invalidRecordId = saveCandidate("纸巾", "3包",
+                "exclude", "legacy_fallback", 29.9D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("tissue_draw_count_test", true,
+                null, null, 100));
+
+        assertThat(itemByRecordId(result, validRecordId).status()).isEqualTo("applicable");
+        assertThat(itemByRecordId(result, validRecordId).after().quantity()).isEqualByComparingTo("300");
+        assertThat(itemByRecordId(result, validRecordId).after().unit()).isEqualTo("抽");
+        assertThat(itemByRecordId(result, invalidRecordId).status()).isEqualTo("review_required");
+        assertThat(itemByRecordId(result, invalidRecordId).after()).isNull();
+    }
+
+    @Test
+    void shouldParseWeightTotalFromSkuForGramRule() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("Pjoy彼悦猫汤包鲜鸡汤猫咭幼猫成猫补水猫零食猫条猫汤60g*10袋",
+                "浓汤补水 鲜炖鸡汤;600g【尝鲜装10包】", "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(result.applicableCount()).isEqualTo(1);
+        assertThat(item.status()).isEqualTo("applicable");
+        assertThat(item.after().quantity()).isEqualByComparingTo("600");
+        assertThat(item.after().unit()).isEqualTo("g");
+        assertThat(item.after().unitPrice()).isEqualByComparingTo("0.05");
+        assertThat(item.warnings()).contains("数量来源：sku");
+    }
+
+    @Test
+    void shouldUseProductNameWeightWhenSkuHasNoReliableSpec() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤60g*10袋", "混合口味", "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.after().quantity()).isEqualByComparingTo("600");
+        assertThat(item.after().unit()).isEqualTo("g");
+        assertThat(item.warnings()).contains("数量来源：product_name");
+    }
+
+    @Test
+    void shouldBlockProductNameFallbackWhenSkuPackageCountConflicts() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤麦富迪猫罐头70g*10包", "混合口味;3包[试吃装]",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("review_required");
+        assertThat(item.after()).isNull();
+        assertThat(item.warnings()).anyMatch(warning -> warning.contains("SKU 包装数量与商品标题规格数量不一致"));
+    }
+
+    @Test
+    void shouldUseProductNameFallbackWhenSkuHasNoPackageCount() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤猫罐头70g*10包", "混合口味", "exclude", "legacy_fallback", 35D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("applicable");
+        assertThat(item.after().quantity()).isEqualByComparingTo("700");
+        assertThat(item.after().unit()).isEqualTo("g");
+        assertThat(item.warnings()).contains("数量来源：product_name");
+    }
+
+    @Test
+    void shouldUseProductNameFallbackWhenSkuPackageCountMatches() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤猫罐头70g*10包", "混合口味;10包[试吃装]",
+                "exclude", "legacy_fallback", 35D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("applicable");
+        assertThat(item.after().quantity()).isEqualByComparingTo("700");
+        assertThat(item.after().unit()).isEqualTo("g");
+    }
+
+    @Test
+    void shouldParsePackageWeightAndConvertKgToGramFromSku() {
+        createWeightRule("cat_wet_food", "g");
+        long packageRecordId = saveCandidate("猫汤补水", "混合口味;6包【--80g/包】",
+                "exclude", "legacy_fallback", 48D);
+        long parenthesizedRecordId = saveCandidate("猫汤补水", "混合口味;10包)60g/包",
+                "exclude", "legacy_fallback", 60D);
+        long kilogramRecordId = saveCandidate("猫汤补水", "0.6kg",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+
+        assertThat(itemByRecordId(result, packageRecordId).after().quantity()).isEqualByComparingTo("480");
+        assertThat(itemByRecordId(result, packageRecordId).after().unit()).isEqualTo("g");
+        assertThat(itemByRecordId(result, packageRecordId).warnings())
+                .contains("规格解析：6包 * 80g/包 => 480g");
+        assertThat(itemByRecordId(result, parenthesizedRecordId).after().quantity()).isEqualByComparingTo("600");
+        assertThat(itemByRecordId(result, parenthesizedRecordId).warnings())
+                .contains("规格解析：10包 * 60g/包 => 600g");
+        assertThat(itemByRecordId(result, kilogramRecordId).after().quantity()).isEqualByComparingTo("600");
+        assertThat(itemByRecordId(result, kilogramRecordId).after().unit()).isEqualTo("g");
+    }
+
+    @Test
+    void shouldTreatConsistentSkuSpecificationsAsApplicable() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤主食餐包", "全价主食餐包50g*3包;150g",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.status()).isEqualTo("applicable");
+        assertThat(item.after().quantity()).isEqualByComparingTo("150");
+        assertThat(item.after().quantity().toPlainString()).isEqualTo("150");
+        assertThat(item.after().unit()).isEqualTo("g");
+        assertThat(item.warnings()).contains("数量来源：sku", "规格解析：50g * 3包 => 150g");
+    }
+
+    @Test
+    void shouldConvertGramSkuToKilogramRuleUnit() {
+        createWeightRule("cat_wet_food_kg", "kg");
+        long recordId = saveCandidate("猫汤补水", "600g", "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food_kg", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.after().quantity()).isEqualByComparingTo("0.6");
+        assertThat(item.after().unit()).isEqualTo("kg");
+        assertThat(item.after().unitPrice()).isEqualByComparingTo("50");
+    }
+
+    @Test
+    void shouldParseVolumeSkuToStandardLiter() {
+        createVolumeRule();
+        long recordId = saveCandidate("沐浴露补充装", "500ml*2瓶", "exclude", "legacy_fallback", 39.9D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("body_wash", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.after().quantity()).isEqualByComparingTo("1");
+        assertThat(item.after().unit()).isEqualTo("L");
+        assertThat(item.warnings()).contains("数量来源：sku");
+    }
+
+    @Test
+    void shouldKeepReviewRequiredForPackageOnlyAndLooseWeightSpec() {
+        createWeightRule("cat_wet_food", "g");
+        long packageOnlyRecordId = saveCandidate("猫汤补水", "12罐【1盒】",
+                "exclude", "legacy_fallback", 30D);
+        long looseSpecRecordId = saveCandidate("猫汤补水", "混合口味*18包 25g",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+
+        assertThat(itemByRecordId(result, packageOnlyRecordId).status()).isEqualTo("review_required");
+        assertThat(itemByRecordId(result, packageOnlyRecordId).after()).isNull();
+        assertThat(itemByRecordId(result, packageOnlyRecordId).warnings())
+                .anyMatch(warning -> warning.contains("缺少每份"));
+        assertThat(itemByRecordId(result, looseSpecRecordId).status()).isEqualTo("review_required");
+        assertThat(itemByRecordId(result, looseSpecRecordId).after()).isNull();
+
+        List<String> packageOnlyWarnings = itemByRecordId(result, packageOnlyRecordId).warnings();
+        assertThat(packageOnlyWarnings).doesNotHaveDuplicates();
+        assertThat(packageOnlyWarnings).contains("标准数量未确认，无法重算 unit_price");
+        assertThat(packageOnlyWarnings).doesNotContain("无法重算有效 unit_price");
+
+        List<String> looseSpecWarnings = itemByRecordId(result, looseSpecRecordId).warnings();
+        assertThat(looseSpecWarnings).doesNotHaveDuplicates();
+        assertThat(looseSpecWarnings).contains("标准数量未确认，无法重算 unit_price");
+        assertThat(looseSpecWarnings).doesNotContain("无法重算有效 unit_price");
+    }
+
+    @Test
+    void shouldRequireReviewWhenSkuContainsConflictingWeightSpecs() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤补水", "600g[80g*6包]",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+
+        assertThat(itemByRecordId(result, recordId).status()).isEqualTo("review_required");
+        assertThat(itemByRecordId(result, recordId).warnings())
+                .anyMatch(warning -> warning.contains("多个冲突规格"));
+    }
+
+    @Test
+    void shouldPreferSkuWeightOverProductNameWeight() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤60g*10袋", "尝鲜装300g",
+                "exclude", "legacy_fallback", 30D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.after().quantity()).isEqualByComparingTo("300");
+        assertThat(item.warnings()).contains("数量来源：sku");
+    }
+
+    @Test
+    void shouldConvertOriginalRecordUnitWhenTextHasNoSpec() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidateWithQuantity("猫汤默认规格", "默认规格", "exclude", "legacy_fallback",
+                30D, 0.6D, "kg");
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", true,
+                null, null, 100));
+        var item = itemByRecordId(result, recordId);
+
+        assertThat(item.after().quantity()).isEqualByComparingTo("600");
+        assertThat(item.after().unit()).isEqualTo("g");
+        assertThat(item.warnings()).contains("数量来源：original_record");
+    }
+
+    @Test
+    void shouldApplyParsedWeightRuleWhenDryRunIsFalseAndKeepOriginalFields() {
+        createWeightRule("cat_wet_food", "g");
+        long recordId = saveCandidate("猫汤补水", "600g", "exclude", "legacy_fallback", 30D);
+        PurchaseRecord before = purchaseRecordRepository.findById(recordId).orElseThrow();
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRule("cat_wet_food", false,
+                null, null, 100));
+
+        assertThat(result.updatedCount()).isEqualTo(1);
+        PurchaseRecord after = purchaseRecordRepository.findById(recordId).orElseThrow();
+        assertThat(after.normalizedName()).isEqualTo("猫湿粮");
+        assertThat(after.quantity()).isEqualTo(600D);
+        assertThat(after.unit()).isEqualTo("g");
+        assertThat(after.unitPrice()).isEqualTo(0.05D);
+        assertThat(after.decision()).isEqualTo("include");
+        assertThat(after.normalizationRule()).isEqualTo("cat_wet_food");
+        assertThat(after.productName()).isEqualTo(before.productName());
+        assertThat(after.sku()).isEqualTo(before.sku());
+        assertThat(after.platform()).isEqualTo(before.platform());
+        assertThat(after.owner()).isEqualTo(before.owner());
+        assertThat(after.orderTime()).isEqualTo(before.orderTime());
+        assertThat(after.sourceText()).isEqualTo(before.sourceText());
+        assertThat(after.sourceFile()).isEqualTo(before.sourceFile());
+        assertThat(after.shopName()).isEqualTo(before.shopName());
+        assertThat(after.note()).isEqualTo(before.note());
     }
 
     @Test
@@ -455,9 +783,28 @@ class NormalizationRuleApplyServiceTest {
                                                                   Boolean onlyLegacyFallback,
                                                                   Boolean onlyExcluded,
                                                                   Integer limit) {
+        return commandForRuleWithScope("contact_lenses", batchId, owner, dryRun, onlyLegacyFallback, onlyExcluded,
+                limit);
+    }
+
+    private NormalizationLibraryOperationCommand commandForRule(String ruleCode,
+                                                                Boolean dryRun,
+                                                                Boolean onlyLegacyFallback,
+                                                                Boolean onlyExcluded,
+                                                                Integer limit) {
+        return commandForRuleWithScope(ruleCode, 9001L, null, dryRun, onlyLegacyFallback, onlyExcluded, limit);
+    }
+
+    private NormalizationLibraryOperationCommand commandForRuleWithScope(String ruleCode,
+                                                                         Long batchId,
+                                                                         String owner,
+                                                                         Boolean dryRun,
+                                                                         Boolean onlyLegacyFallback,
+                                                                         Boolean onlyExcluded,
+                                                                         Integer limit) {
         return new NormalizationLibraryOperationCommand(
                 "apply_rule_to_records",
-                "contact_lenses",
+                ruleCode,
                 null,
                 null,
                 null,
@@ -484,6 +831,27 @@ class NormalizationRuleApplyServiceTest {
         return ruleId;
     }
 
+    private long createTissueRule() {
+        long ruleId = normalizationRuleRepository.createRule(
+                "tissue_draw_count_test", "纸巾计数测试", "家庭清洁", "抽", "draw_count", 120, "test");
+        normalizationRuleRepository.insertKeyword(ruleId, "纸巾", "include", 100, "test");
+        return ruleId;
+    }
+
+    private long createWeightRule(String ruleCode, String standardUnit) {
+        long ruleId = normalizationRuleRepository.createRule(
+                ruleCode, "猫湿粮", "宠物食品", standardUnit, "weight", 120, "test");
+        normalizationRuleRepository.insertKeyword(ruleId, "猫汤", "include", 100, "test");
+        return ruleId;
+    }
+
+    private long createVolumeRule() {
+        long ruleId = normalizationRuleRepository.createRule(
+                "body_wash", "沐浴露", "个护清洁", "L", "volume", 120, "test");
+        normalizationRuleRepository.insertKeyword(ruleId, "沐浴露", "include", 100, "test");
+        return ruleId;
+    }
+
     private long saveCandidate(String productName,
                                String sku,
                                String decision,
@@ -504,6 +872,17 @@ class NormalizationRuleApplyServiceTest {
                 duplicate, dedupeStatus);
     }
 
+    private long saveCandidateWithQuantity(String productName,
+                                           String sku,
+                                           String decision,
+                                           String normalizationRule,
+                                           Double totalAmount,
+                                           Double quantity,
+                                           String unit) {
+        return saveCandidate(9001L, "jtxw", productName, sku, decision, normalizationRule, totalAmount,
+                false, "unique", quantity, unit);
+    }
+
     private long saveCandidate(Long batchId,
                                String owner,
                                String productName,
@@ -513,6 +892,21 @@ class NormalizationRuleApplyServiceTest {
                                Double totalAmount,
                                boolean duplicate,
                                String dedupeStatus) {
+        return saveCandidate(batchId, owner, productName, sku, decision, normalizationRule, totalAmount,
+                duplicate, dedupeStatus, 1D, "件");
+    }
+
+    private long saveCandidate(Long batchId,
+                               String owner,
+                               String productName,
+                               String sku,
+                               String decision,
+                               String normalizationRule,
+                               Double totalAmount,
+                               boolean duplicate,
+                               String dedupeStatus,
+                               Double quantity,
+                               String unit) {
         return purchaseRecordRepository.save(new PurchaseRecord(
                 null,
                 batchId,
@@ -524,8 +918,8 @@ class NormalizationRuleApplyServiceTest {
                 sku,
                 "个护美妆",
                 "隐形眼镜",
-                1D,
-                "件",
+                quantity,
+                unit,
                 totalAmount,
                 totalAmount,
                 totalAmount,
@@ -543,5 +937,13 @@ class NormalizationRuleApplyServiceTest {
                 normalizationRule,
                 null
         ));
+    }
+
+    private NormalizationApplyRuleToRecordsItem itemByRecordId(NormalizationApplyRuleToRecordsResult result,
+                                                               long recordId) {
+        return result.items().stream()
+                .filter(item -> item.recordId() == recordId)
+                .findFirst()
+                .orElseThrow();
     }
 }
