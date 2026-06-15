@@ -1,6 +1,6 @@
 package com.jtxw.familyagent.application;
 
-import com.jtxw.familyagent.domain.model.PriceBaselineResult;
+import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.ImportResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
@@ -63,7 +63,8 @@ class ImportSpecIntegrationTest {
         assertThat(record.unit()).isEqualTo("kg");
         assertThat(record.unitPrice()).isCloseTo(2.9825D, offset(0.00001D));
 
-        PriceDecisionResult result = fixture.priceService.comparePrice("名创优品猫砂", 119.3D, 40D, "kg");
+        PriceDecisionResult result = fixture.priceService.comparePrice(
+                new ComparePriceQuery("名创优品猫砂", 119.3D, 40D, "kg"));
 
         assertThat(result.baseline().sampleSize()).isGreaterThan(0);
         assertThat(result.evidence().excludedReasons())
@@ -269,10 +270,13 @@ class ImportSpecIntegrationTest {
                 .extracting(PurchaseRecord::unit)
                 .containsOnly("抽");
 
-        PriceBaselineResult result = fixture.priceService.getPriceBaseline("纸巾", null);
+        PriceDecisionResult result = fixture.priceService.comparePrice(new ComparePriceQuery("纸巾", null, null, null));
 
         assertThat(result.productName()).isEqualTo("纸巾");
         assertThat(result.normalizedName()).isEqualTo("纸巾");
+        assertThat(result.mode()).isEqualTo("baseline_only");
+        assertThat(result.current()).isNull();
+        assertThat(result.getDecision()).isNull();
         assertThat(result.baseline().unit()).isEqualTo("抽");
         assertThat(result.baseline().sampleSize()).isEqualTo(2);
         assertThat(result.baseline().historicalMin()).isNotNull();
@@ -378,11 +382,14 @@ class ImportSpecIntegrationTest {
         assertThat(reviewItems.get(0).normalizedName()).isEqualTo("洗衣凝珠");
         assertThat(reviewItems.get(0).reasonCode()).isEqualTo("QUANTITY_UNIT_PARSE_REVIEW");
 
-        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice("凝珠", 18.0D, 18D, "颗"));
-        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice("洗衣珠", 18.0D, 18D, "颗"));
+        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice(
+                new ComparePriceQuery("凝珠", 18.0D, 18D, "颗")));
+        assertCompareHitsLaundryBeadsHistory(fixture.priceService.comparePrice(
+                new ComparePriceQuery("洗衣珠", 18.0D, 18D, "颗")));
 
-        PriceBaselineResult baseline = fixture.priceService.getPriceBaseline("洗衣凝珠", "颗");
+        PriceDecisionResult baseline = fixture.priceService.comparePrice(new ComparePriceQuery("洗衣凝珠", null, null, null));
         assertThat(baseline.normalizedName()).isEqualTo("洗衣凝珠");
+        assertThat(baseline.mode()).isEqualTo("baseline_only");
         assertThat(baseline.baseline().sampleSize()).isEqualTo(2);
         assertThat(baseline.evidence().sourceRecords())
                 .extracting(PriceDecisionResult.SourceRecord::productName)

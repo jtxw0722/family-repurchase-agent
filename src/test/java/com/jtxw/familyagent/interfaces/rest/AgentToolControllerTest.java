@@ -5,7 +5,6 @@ import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.application.query.ComparePriceQuery;
-import com.jtxw.familyagent.application.query.GetPriceBaselineQuery;
 import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.domain.model.*;
 import org.junit.jupiter.api.Test;
@@ -404,7 +403,7 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void comparePriceShouldReturnEvidenceStructure() throws Exception {
+    void comparePriceShouldReturnCompareModeEvidenceStructure() throws Exception {
         when(priceAnalysisApplicationService.comparePrice(any(ComparePriceQuery.class)))
                 .thenReturn(priceDecisionResult());
 
@@ -417,8 +416,9 @@ class AgentToolControllerTest {
                                   "quantity": 40,
                                   "unit": "kg"
                                 }
-                                """))
+                """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("compare"))
                 .andExpect(jsonPath("$.current.unitPrice").value(2.9825))
                 .andExpect(jsonPath("$.baseline.sampleSize").value(23))
                 .andExpect(jsonPath("$.baseline.unit").value("kg"))
@@ -453,11 +453,11 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void getPriceBaselineShouldReturnBaselineEvidenceAndWarnings() throws Exception {
-        when(priceAnalysisApplicationService.getPriceBaseline(any(GetPriceBaselineQuery.class)))
-                .thenReturn(priceBaselineResult());
+    void comparePriceShouldReturnBaselineOnlyResult() throws Exception {
+        when(priceAnalysisApplicationService.comparePrice(any(ComparePriceQuery.class)))
+                .thenReturn(priceBaselineOnlyResult());
 
-        mockMvc.perform(post("/api/tools/get-price-baseline")
+        mockMvc.perform(post("/api/tools/compare-price")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             {
@@ -465,8 +465,11 @@ class AgentToolControllerTest {
                             }
                             """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("baseline_only"))
                 .andExpect(jsonPath("$.productName").value("纸巾"))
                 .andExpect(jsonPath("$.normalizedName").value("纸巾"))
+                .andExpect(jsonPath("$.current").doesNotExist())
+                .andExpect(jsonPath("$.decision").doesNotExist())
                 .andExpect(jsonPath("$.baseline.sampleSize").value(2))
                 .andExpect(jsonPath("$.baseline.unit").value("抽"))
                 .andExpect(jsonPath("$.baseline.historicalMin").value(0.0125))
@@ -475,6 +478,84 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.evidence.source").value("local_purchase_history"))
                 .andExpect(jsonPath("$.evidence.sourceRecords[0].role").value("historical_min"))
                 .andExpect(jsonPath("$.warnings").isArray());
+    }
+
+    @Test
+    void comparePriceShouldRejectPartialPriceArguments() throws Exception {
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "price": 39.9
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("price、quantity、unit 必须同时提供，或同时省略。"));
+
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "price": 39.9,
+                              "quantity": 3120
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("price、quantity、unit 必须同时提供，或同时省略。"));
+
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "quantity": 3120,
+                              "unit": "抽"
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("price、quantity、unit 必须同时提供，或同时省略。"));
+    }
+
+    @Test
+    void comparePriceShouldRejectInvalidPriceSample() throws Exception {
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "price": 0,
+                              "quantity": 3120,
+                              "unit": "抽"
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "price": 39.9,
+                              "quantity": 0,
+                              "unit": "抽"
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/tools/compare-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "productName": "纸巾",
+                              "price": 39.9,
+                              "quantity": 3120,
+                              "unit": " "
+                            }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unit 不能为空"));
     }
 
     @Test
@@ -738,15 +819,18 @@ class AgentToolControllerTest {
                 .andExpect(jsonPath("$.error").value("不支持的商品归一化复核动作：learn"));
     }
 
-    private PriceBaselineResult priceBaselineResult() {
-        return new PriceBaselineResult(
+    private PriceDecisionResult priceBaselineOnlyResult() {
+        return new PriceDecisionResult(
+                PriceDecisionResult.MODE_BASELINE_ONLY,
                 "纸巾",
                 "纸巾",
+                null,
                 new PriceDecisionResult.Baseline(2, "抽", 0.0125, 0.01375, 0.01375,
                         new PriceDecisionResult.DateRange("2026-04-01", "2026-05-01")),
+                null,
                 new PriceDecisionResult.Evidence("local_purchase_history", List.of(
                         new PriceDecisionResult.SourceRecord(201L, "historical_min", "2026-04-01",
-                                "维达超韧抽纸 3层130抽×24包", 39.0, 3120.0, "抽",
+                                "维达超韧抽纸 3层130抽*4包", 39.0, 3120.0, "抽",
                                 0.0125, "抽", 3120.0, "抽")
                 ), 0, List.of(), List.of()),
                 List.of()
@@ -801,3 +885,4 @@ class AgentToolControllerTest {
         );
     }
 }
+

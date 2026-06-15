@@ -5,6 +5,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $repoRoot = (Get-Location).Path
+} else {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+
 $mcpJarPath = Join-Path $repoRoot "adapters\mcp\family-repurchase-mcp-java-server\target\family-repurchase-mcp-java-server.jar"
 
 if (-not (Test-Path $mcpJarPath)) {
@@ -13,11 +19,6 @@ if (-not (Test-Path $mcpJarPath)) {
 }
 
 $mcpJar = Get-Item $mcpJarPath
-
-if ($null -eq $mcpJar) {
-    Write-Error "MCP jar not found. Run: mvn -pl adapters/mcp/family-repurchase-mcp-java-server -am package"
-    exit 1
-}
 
 $resolvedImportDirs = $ImportAllowedDirs | ForEach-Object {
     if ([System.IO.Path]::IsPathRooted($_)) {
@@ -31,6 +32,7 @@ $env:FAMILY_AGENT_API_BASE_URL = $ApiBaseUrl
 $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS = $resolvedImportDirs -join [System.IO.Path]::PathSeparator
 
 Write-Host "Starting MCP Inspector for Family Repurchase Agent."
+Write-Host "Repo root: $repoRoot"
 Write-Host "Backend URL: $env:FAMILY_AGENT_API_BASE_URL"
 Write-Host "Allowed import dirs: $env:FAMILY_AGENT_IMPORT_ALLOWED_DIRS"
 Write-Host "MCP jar: $($mcpJar.FullName)"

@@ -84,7 +84,6 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/import-file`
 - `/api/tools/record-purchase`
 - `/api/tools/compare-price`
-- `/api/tools/get-price-baseline`
 - `/api/tools/generate-report`
 - `/api/tools/review-items`
 - `/api/tools/review-items/{id}/apply`
@@ -98,7 +97,6 @@ MCP tools：
 - `import_file`
 - `record_purchase`
 - `compare_price`
-- `get_price_baseline`
 - `generate_report`
 
 ---
@@ -207,9 +205,9 @@ curl -X POST "http://localhost:8080/api/tools/compare-price" `
 ### 查询历史价格基准线
 
 ```powershell
-curl -X POST "http://localhost:8080/api/tools/get-price-baseline" `
+curl -X POST "http://localhost:8080/api/tools/compare-price" `
   -H "Content-Type: application/json" `
-  -d "{\"productName\":\"纸巾\",\"unit\":\"抽\"}"
+  -d "{\"productName\":\"纸巾\"}"
 ```
 
 ### 搜索原始购买记录
@@ -251,8 +249,7 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude
 |---|---|---|
 | `import_file` | 导入本地 CSV / Excel 订单文件 | “导入 examples/sample_orders.csv” |
 | `record_purchase` | 录入手动购买记录或自然语言抽取后的结构化购买记录 | “记录一下，我在京东买了猫砂2.5kg*8，花了178.65元” |
-| `compare_price` | 基于当前价格和历史样本判断是否值得买 | “猫砂 10.3 元 5kg 值得买吗？” |
-| `get_price_baseline` | 查询某个复购品的历史价格基准线 | “查一下猫砂历史最低价 / 平均价” |
+| `compare_price` | 不传 price / quantity / unit 时查询历史价格基准线；同时传入三者时返回价格比较结果 | “猫砂历史最低价是多少？” / “猫砂 10.3 元 5kg 值得买吗？” |
 | `generate_report` | 生成指定月份的本地 Markdown 价格报告 | “生成 2026-05 的复购品报告” |
 
 工具选择建议：
@@ -262,7 +259,7 @@ Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude
 | 导入订单文件 | `import_file` |
 | 记录一笔购买记录 / 从自然语言补充历史样本 | `record_purchase` |
 | 判断当前价格是否值得买 | `compare_price` |
-| 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `get_price_baseline` |
+| 查询历史最低价 / 中位价 / 平均价 / 价格基准线 | `compare_price`（只传 productName） |
 | 生成月度报告 | `generate_report` |
 
 调用链路：
@@ -362,3 +359,4 @@ This project is licensed under the Apache License 2.0.
 This repository is intended for learning, portfolio demonstration, and technical discussion.
 Demo data is synthetic or anonymized. Do not commit real personal consumption records,
 real order exports, credentials, tokens, SSH keys, or production configuration files.
+

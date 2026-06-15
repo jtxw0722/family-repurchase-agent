@@ -8,11 +8,11 @@ import jakarta.validation.constraints.Positive;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/08/14:43
- * @Description: 当前价格比较请求参数，属于 interfaces.rest.request 层，对应 /compare-price 接口。
+ * @Date: 2026/06/15 09:30:00
+ * @Description: 价格分析请求参数，属于 interfaces.rest.request 层，对应 /compare-price 接口，支持历史基准线查询和当前价格比较。
  */
 
-@Schema(description = "当前价格比较请求")
+@Schema(description = "价格分析请求；只传 productName 时查询历史价格基准线，同时传 price、quantity、unit 时进行价格比较")
 public class ComparePriceRequest {
     /**
      * 原始商品名称
@@ -21,22 +21,21 @@ public class ComparePriceRequest {
     @NotBlank
     private String productName;
     /**
-     * 当前总价
+     * 当前总价，单位为元；baseline-only 模式允许为空，compare 模式必须与 quantity、unit 同时提供且大于 0
      */
-    @Schema(description = "当前购买总价", example = "89", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "当前购买总价；为空时仅查询历史价格基准线", example = "89", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     @Positive
-    private double price;
+    private Double price;
     /**
-     * 当前商品数量
+     * 当前商品数量；baseline-only 模式允许为空，compare 模式必须与 price、unit 同时提供且大于 0
      */
-    @Schema(description = "当前购买数量", example = "12", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "当前购买数量；为空时仅查询历史价格基准线", example = "12", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     @Positive
-    private double quantity;
+    private Double quantity;
     /**
-     * 数量单位
+     * 数量单位；baseline-only 模式允许为空，compare 模式必须与 price、quantity 同时提供且不能为空
      */
-    @Schema(description = "数量单位，用于计算单位价格", example = "kg", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank
+    @Schema(description = "数量单位；为空时仅查询历史价格基准线", example = "kg", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private String unit;
 
     public ComparePriceRequest() {
@@ -46,11 +45,11 @@ public class ComparePriceRequest {
         return productName;
     }
 
-    public double price() {
+    public Double price() {
         return price;
     }
 
-    public double quantity() {
+    public Double quantity() {
         return quantity;
     }
 
@@ -66,19 +65,19 @@ public class ComparePriceRequest {
         this.productName = productName;
     }
 
-    public double getPrice() {
+    public Double getPrice() {
         return price;
     }
 
-    public void setPrice(double price) {
+    public void setPrice(Double price) {
         this.price = price;
     }
 
-    public double getQuantity() {
+    public Double getQuantity() {
         return quantity;
     }
 
-    public void setQuantity(double quantity) {
+    public void setQuantity(Double quantity) {
         this.quantity = quantity;
     }
 

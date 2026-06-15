@@ -1,4 +1,4 @@
-param(
+﻿param(
     [int]$TimeoutMs = 30000,
     [string]$McpJarPath = "",
     [string]$JavaExe = "java"
@@ -222,7 +222,7 @@ try {
     $tools = @($toolsResponse.result.tools)
     $toolNames = @($tools | ForEach-Object { $_.name })
 
-    foreach ($expectedTool in @("import_file", "record_purchase", "compare_price", "get_price_baseline", "search_purchase_records", "generate_report")) {
+    foreach ($expectedTool in @("import_file", "record_purchase", "compare_price", "search_purchase_records", "generate_report")) {
         if ($toolNames -notcontains $expectedTool) {
             throw "tools/list missing tool: $expectedTool"
         }

@@ -1,6 +1,5 @@
 package com.jtxw.familyagent.domain.policy;
 
-import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.springframework.stereotype.Component;
@@ -9,8 +8,8 @@ import java.util.*;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/11:07
- * @Description: 价格决策规则，根据历史单价样本判断当前价格水平。
+ * @Date: 2026/06/15 09:30:00
+ * @Description: 价格决策规则，根据历史单价样本构造价格基准线，并在 compare 模式下判断当前价格水平。
  */
 @Component
 public class PriceDecisionPolicy {
@@ -21,7 +20,7 @@ public class PriceDecisionPolicy {
         this.thresholds = thresholds;
     }
 
-    public PriceBaselineResult baseline(String productName,
+    public PriceDecisionResult baseline(String productName,
                                         String normalizedName,
                                         String unit,
                                         List<PurchaseRecord> history) {
@@ -49,10 +48,13 @@ public class PriceDecisionPolicy {
                     excludedReasons,
                     List.of()
             );
-            return new PriceBaselineResult(
+            return new PriceDecisionResult(
+                    PriceDecisionResult.MODE_BASELINE_ONLY,
                     productName,
                     normalizedName,
+                    null,
                     baseline,
+                    null,
                     evidence,
                     List.of("历史记录不足，无法形成可靠价格基准线。")
             );
@@ -91,7 +93,8 @@ public class PriceDecisionPolicy {
                 outlierRecords(records, median, average, baselineUnit)
         );
 
-        return new PriceBaselineResult(productName, normalizedName, baseline, evidence, warnings);
+        return new PriceDecisionResult(PriceDecisionResult.MODE_BASELINE_ONLY, productName, normalizedName,
+                null, baseline, null, evidence, warnings);
     }
 
     /**
@@ -161,7 +164,8 @@ public class PriceDecisionPolicy {
                 excludedReasons,
                 outlierRecords(records, median, average, baselineUnit)
         );
-        return new PriceDecisionResult(productName, normalizedName, current, baseline, decision, evidence, warnings);
+        return new PriceDecisionResult(PriceDecisionResult.MODE_COMPARE, productName, normalizedName,
+                current, baseline, decision, evidence, warnings);
     }
 
     private PriceDecisionResult noHistoryResult(String productName,
@@ -180,8 +184,8 @@ public class PriceDecisionPolicy {
         PriceDecisionResult.Evidence evidence = new PriceDecisionResult.Evidence(
                 "local_purchase_history", List.of(), excludedRecordCount, excludedReasons, List.of()
         );
-        return new PriceDecisionResult(productName, normalizedName, current, baseline, decision, evidence,
-                List.of("历史记录不足，无法形成可靠价格判断。"));
+        return new PriceDecisionResult(PriceDecisionResult.MODE_COMPARE, productName, normalizedName,
+                current, baseline, decision, evidence, List.of("历史记录不足，无法形成可靠价格判断。"));
     }
 
     private PriceDecisionResult.Decision buildDecision(double currentUnitPrice,

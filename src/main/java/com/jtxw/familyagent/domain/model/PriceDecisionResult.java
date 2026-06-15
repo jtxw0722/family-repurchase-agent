@@ -6,11 +6,24 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/11/00:36
- * @Description: 价格判断结果对象，承载当前价格、历史统计、决策说明和证据链。
+ * @Date: 2026/06/15 09:30:00
+ * @Description: 价格分析结果对象，统一承载历史基准线查询和当前价格比较两种响应结构。
  */
 @Schema(description = "价格判断结果")
 public class PriceDecisionResult {
+    /**
+     * 响应模式：仅查询历史价格基准线，不包含当前价格样本和价格决策。
+     */
+    public static final String MODE_BASELINE_ONLY = "baseline_only";
+    /**
+     * 响应模式：根据当前价格样本与历史价格基准线进行比较。
+     */
+    public static final String MODE_COMPARE = "compare";
+    /**
+     * 价格分析响应模式，baseline_only 表示仅返回历史基准线，compare 表示包含当前价格判断。
+     */
+    @Schema(description = "价格分析响应模式，baseline_only 表示仅查询历史基准线，compare 表示价格比较", example = "compare")
+    private final String mode;
     /**
      * 原始商品名称
      */
@@ -54,6 +67,18 @@ public class PriceDecisionResult {
                                Decision decision,
                                Evidence evidence,
                                List<String> warnings) {
+        this(MODE_COMPARE, productName, normalizedName, current, baseline, decision, evidence, warnings);
+    }
+
+    public PriceDecisionResult(String mode,
+                               String productName,
+                               String normalizedName,
+                               Current current,
+                               Baseline baseline,
+                               Decision decision,
+                               Evidence evidence,
+                               List<String> warnings) {
+        this.mode = mode == null || mode.isBlank() ? MODE_COMPARE : mode;
         this.productName = productName;
         this.normalizedName = normalizedName;
         this.current = current;
@@ -61,6 +86,10 @@ public class PriceDecisionResult {
         this.decision = decision;
         this.evidence = evidence;
         this.warnings = warnings == null ? List.of() : List.copyOf(warnings);
+    }
+
+    public String mode() {
+        return mode;
     }
 
     public String productName() {
@@ -112,15 +141,19 @@ public class PriceDecisionResult {
     }
 
     public String decision() {
-        return decision.code();
+        return decision == null ? null : decision.code();
     }
 
     public String decisionText() {
-        return decision.text();
+        return decision == null ? null : decision.text();
     }
 
     public String reason() {
-        return decision.reason();
+        return decision == null ? null : decision.reason();
+    }
+
+    public String getMode() {
+        return mode;
     }
 
     public String getProductName() {

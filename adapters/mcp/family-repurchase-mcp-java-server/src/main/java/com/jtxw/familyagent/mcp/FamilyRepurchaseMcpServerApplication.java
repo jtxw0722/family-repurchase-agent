@@ -21,8 +21,8 @@ import java.util.concurrent.CountDownLatch;
 
 /**
  * @Author: jtxw
- * @Date: 2026/05/28/00:28
- * @Description: Family Repurchase Agent Java MCP stdio Server 启动入口
+ * @Date: 2026/06/15 09:30:00
+ * @Description: Family Repurchase Agent Java MCP stdio Server 启动入口，负责暴露统一价格分析和订单工具能力。
  */
 public class FamilyRepurchaseMcpServerApplication {
     private static final String SERVER_NAME = "family-repurchase-agent";
@@ -82,7 +82,6 @@ public class FamilyRepurchaseMcpServerApplication {
                         application.importFileTool(),
                         application.recordPurchaseTool(),
                         application.comparePriceTool(),
-                        application.getPriceBaselineTool(),
                         application.searchPurchaseRecordsTool(),
                         application.generateReportTool()
                 )
@@ -92,11 +91,25 @@ public class FamilyRepurchaseMcpServerApplication {
         server.closeGracefully();
     }
 
+    /**
+     * 定义本地订单文件导入 MCP tool。
+     *
+     * <p>该工具只接收已配置安全目录下的 CSV 或 Excel 文件路径，并将导入请求转发给 Spring Boot 后端。
+     * 后端负责表头识别、金额分摊、商品归一化、规格解析、去重和待复核项生成。</p>
+     *
+     * <p>该工具不访问电商网站、浏览器 Cookie 或外部账号。</p>
+     *
+     * @return import_file tool specification
+     */
     McpServerFeatures.SyncToolSpecification importFileTool() {
         return new McpServerFeatures.SyncToolSpecification(
                 McpSchema.Tool.builder("import_file")
                         .title("Import Order File")
-                        .description("导入本地 CSV 或 Excel 订单文件，并生成购买记录和待复核记录。")
+                        .description("""
+                                导入本地订单文件，适合处理淘宝 / 京东 / 拼多多等平台导出的 CSV 或 Excel 历史订单。
+                                工具只接受已配置安全目录下的文件路径；后端会完成表头识别、金额分摊、商品归一化、规格解析、去重和待复核项生成。
+                                适用于批量沉淀历史样本，不适用于实时访问电商账号或读取浏览器数据。
+                                """)
                         .annotations(toolAnnotations("Import Order File", false, false, false))
                         .inputSchema(objectSchema(
                                 properties(
@@ -117,14 +130,25 @@ public class FamilyRepurchaseMcpServerApplication {
         );
     }
 
+    /**
+     * 定义结构化购买记录录入 MCP tool。
+     *
+     * <p>该工具用于接收已经由用户、LLM 或截图解析流程整理好的购买样本，
+     * 并转发给 Spring Boot 后端完成业务校验、商品归一化、重复检测、入库和复核项生成。</p>
+     *
+     * <p>调用方只负责提供商品名、价格、数量、单位等结构化字段；是否纳入价格基准、是否需要人工复核由后端确定性规则判断。</p>
+     *
+     * @return record_purchase tool specification
+     */
     McpServerFeatures.SyncToolSpecification recordPurchaseTool() {
         String title = "Record Purchase";
         return new McpServerFeatures.SyncToolSpecification(
                 McpSchema.Tool.builder("record_purchase")
                         .title(title)
                         .description("""
-                                录入手动或自然语言抽取后的结构化购买记录。
-                                Claude 负责把自然语言整理为字段；业务校验、归一化、去重、入库和复核均由 Spring Boot 后端完成。
+                                录入已经结构化的购买样本，适合把用户手动确认的购买记录、截图解析结果或自然语言整理结果写入样本库。
+                                调用方只负责提供商品名、价格、数量、单位等字段；是否纳入价格基准、是否需要复核、是否疑似重复，均由后端规则判断。
+                                dryRun=true 时仅预览校验和归一化结果，dryRun=false 时才写入 purchase_records。
                                 """)
                         .annotations(toolAnnotations(title, false, false, false))
                         .inputSchema(objectSchema(
@@ -158,10 +182,10 @@ public class FamilyRepurchaseMcpServerApplication {
                 McpSchema.Tool.builder("search_purchase_records")
                         .title(title)
                         .description("""
-                                Search raw historical purchase records by keyword when compare_price or get_price_baseline has no reliable baseline.
-                                This tool returns raw order samples only and does not produce a normalized price baseline.
-                                If owner is omitted, empty, or null, it searches all family records.
-                                LLM answers based on this tool must state that there is no reliable normalized price baseline and that the analysis is only based on raw historical order samples.
+                                按关键词检索原始历史购买记录，用于排查 compare_price 无可靠基线、商品归一化遗漏、历史样本来源或订单明细。
+                                该工具返回的是原始订单样本，不会生成标准价格基线，也不能直接替代 compare_price 的价格判断。
+                                owner 只是订单归属和溯源过滤条件；不传、空字符串或 null 时检索全家庭样本。
+                                使用本工具回答时，应明确说明结果来自原始记录检索，可靠性低于已归一化的价格基线。
                                 """)
                         .annotations(toolAnnotations(title, true, false, true))
                         .inputSchema(objectSchema(
@@ -188,58 +212,26 @@ public class FamilyRepurchaseMcpServerApplication {
         );
     }
 
-    McpServerFeatures.SyncToolSpecification getPriceBaselineTool() {
-        String title = "Get Price Baseline";
-        return new McpServerFeatures.SyncToolSpecification(
-                McpSchema.Tool.builder("get_price_baseline")
-                        .title(title)
-                        .description("""
-                            查询某个复购品的本地历史价格基准线，包括历史最低价、中位价、平均价、样本数量和 evidence。
-                            适用于用户询问“历史最低价”“最低多少钱”“历史中位价”“价格基准线”等场景。
-                            该工具不需要当前价格；如果未提供 unit，会由后端根据商品归一化规则推断标准单位。
-                            """)
-                        .annotations(toolAnnotations(title, true, false, true))
-                        .inputSchema(objectSchema(
-                                properties(
-                                        property("productName", stringSchema("商品名称，例如 纸巾、猫砂、洗衣液")),
-                                        property("unit", stringSchema("可选。统计单位，例如 kg、抽、L；为空时由商品规则推断标准单位。"))
-                                ),
-                                List.of("productName")
-                        ))
-                        .outputSchema(objectSchema(properties(
-                                property("productName", stringSchema("原始商品名称")),
-                                property("normalizedName", stringSchema("标准化商品名称")),
-                                property("baseline", objectSchema(properties(
-                                        property("sampleSize", numberSchema("历史样本数量")),
-                                        property("unit", stringSchema("历史统计统一单位")),
-                                        property("historicalMin", nullableNumberSchema("历史最低单位价格")),
-                                        property("historicalMedian", nullableNumberSchema("历史中位数单位价格")),
-                                        property("historicalAverage", nullableNumberSchema("历史平均单位价格")),
-                                        property("dateRange", nullableObjectSchema(properties(
-                                                property("from", stringSchema("历史样本最早购买日期")),
-                                                property("to", stringSchema("历史样本最晚购买日期"))
-                                        )))
-                                ))),
-                                property("evidence", objectSchema(properties(
-                                        property("source", stringSchema("证据来源")),
-                                        property("sourceRecords", arraySchema(sourceRecordOutputSchema())),
-                                        property("excludedRecordCount", numberSchema("被排除记录数量")),
-                                        property("excludedReasons", arraySchema(stringSchema("排除原因"))),
-                                        property("outliers", arraySchema(sourceRecordOutputSchema()))
-                                ))),
-                                property("warnings", arraySchema(stringSchema("风险提示")))
-                        )))
-                        .build(),
-                this::handleGetPriceBaseline
-        );
-    }
-
-
+    /**
+     * 定义家庭复购品价格分析 MCP tool。
+     *
+     * <p>该工具是价格分析主入口，统一承载历史价格基线查询和当前价格比较两种模式。
+     * 只传 productName 时返回 baseline_only 结果；同时传入 price、quantity、unit 时返回 compare 结果。</p>
+     * <p>价格基线和判断结论均由 Spring Boot 后端基于本地历史样本和确定性规则生成；
+     * MCP Server 只负责参数校验、请求转发和结构化结果返回。</p>
+     *
+     * @return compare_price tool specification
+     */
     McpServerFeatures.SyncToolSpecification comparePriceTool() {
         return new McpServerFeatures.SyncToolSpecification(
                 McpSchema.Tool.builder("compare_price")
                         .title("Compare Product Price")
-                        .description("比较当前商品单位价格与本地历史价格，返回价格判断结果。")
+                        .description("""
+                                家庭复购品价格分析主工具。
+                                只传 productName 时，返回该商品的历史价格基线，包括样本数、历史最低价、中位数、均价和代表性历史记录。
+                                同时传入 price、quantity、unit 时，会先计算当前单位价格，再与家庭历史价格基线比较，输出好价、正常价格、偏贵或数据不足等判断。
+                                price、quantity、unit 必须同时提供或同时省略；默认使用全家庭历史样本，不按 owner 划分个人价格体系。
+                                """)
                         .annotations(toolAnnotations("Compare Product Price", true, false, true))
                         .inputSchema(objectSchema(
                                 properties(
@@ -248,12 +240,13 @@ public class FamilyRepurchaseMcpServerApplication {
                                         property("quantity", numberSchema("当前数量")),
                                         property("unit", stringSchema("计量单位"))
                                 ),
-                                List.of("productName", "price", "quantity", "unit")
+                                List.of("productName")
                         ))
                         .outputSchema(objectSchema(properties(
+                                property("mode", stringSchema("响应模式：baseline_only 或 compare")),
                                 property("productName", stringSchema("原始商品名称")),
                                 property("normalizedName", stringSchema("标准化商品名称")),
-                                property("current", objectSchema(properties(
+                                property("current", nullableObjectSchema(properties(
                                         property("price", numberSchema("当前总价")),
                                         property("quantity", numberSchema("当前数量")),
                                         property("unit", stringSchema("计量单位")),
@@ -271,7 +264,7 @@ public class FamilyRepurchaseMcpServerApplication {
                                                 property("to", stringSchema("历史样本最晚购买日期"))
                                         )))
                                 ))),
-                                property("decision", objectSchema(properties(
+                                property("decision", nullableObjectSchema(properties(
                                         property("code", stringSchema("价格判断编码")),
                                         property("text", stringSchema("价格判断展示文本")),
                                         property("reason", stringSchema("判断原因")),
@@ -302,7 +295,10 @@ public class FamilyRepurchaseMcpServerApplication {
         return new McpServerFeatures.SyncToolSpecification(
                 McpSchema.Tool.builder("generate_report")
                         .title("Generate Repurchase Price Report")
-                        .description("根据指定月份生成 Markdown 价格报告。")
+                        .description("""
+                                生成指定月份的家庭复购品价格报告，汇总本地样本库中已纳入统计的购买记录、金额、待复核数量和价格分析结果。
+                                适合做阶段性复盘和留档，不用于实时比价；实时购买决策应优先使用 compare_price。
+                                """)
                         .annotations(toolAnnotations("Generate Repurchase Price Report", false, false, true))
                         .inputSchema(objectSchema(
                                 properties(property("month", stringSchema("报告月份，格式为 yyyy-MM"))),
@@ -344,9 +340,17 @@ public class FamilyRepurchaseMcpServerApplication {
             Map<String, Object> args = arguments(request);
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("productName", requireString(args, "productName"));
-            body.put("price", requirePositiveNumber(args, "price"));
-            body.put("quantity", requirePositiveNumber(args, "quantity"));
-            body.put("unit", requireString(args, "unit"));
+            boolean hasPrice = args.containsKey("price");
+            boolean hasQuantity = args.containsKey("quantity");
+            boolean hasUnit = args.containsKey("unit");
+            if (!(hasPrice == hasQuantity && hasPrice == hasUnit)) {
+                throw new ToolExecutionException("price、quantity、unit 必须同时提供，或同时省略。");
+            }
+            if (hasPrice) {
+                body.put("price", requirePositiveNumber(args, "price"));
+                body.put("quantity", requirePositiveNumber(args, "quantity"));
+                body.put("unit", requireString(args, "unit"));
+            }
             return toolSuccess(restClient.postJson("/api/tools/compare-price", body));
         } catch (Exception e) {
             return toolError(e);
@@ -360,25 +364,6 @@ public class FamilyRepurchaseMcpServerApplication {
             body.put("dryRun", requireBoolean(args, "dryRun"));
             body.put("records", requireRecordList(args, "records"));
             return toolSuccess(restClient.postJson("/api/tools/record-purchase", body));
-        } catch (Exception e) {
-            return toolError(e);
-        }
-    }
-
-    private McpSchema.CallToolResult handleGetPriceBaseline(McpSyncServerExchange exchange,
-                                                            McpSchema.CallToolRequest request) {
-        try {
-            Map<String, Object> args = arguments(request);
-            Map<String, Object> body = new LinkedHashMap<>();
-
-            body.put("productName", requireString(args, "productName"));
-
-            String unit = optionalString(args, "unit");
-            if (unit != null) {
-                body.put("unit", unit);
-            }
-
-            return toolSuccess(restClient.postJson("/api/tools/get-price-baseline", body));
         } catch (Exception e) {
             return toolError(e);
         }
@@ -782,3 +767,4 @@ public class FamilyRepurchaseMcpServerApplication {
         }
     }
 }
+

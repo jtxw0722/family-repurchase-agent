@@ -4,6 +4,7 @@ import com.jtxw.familyagent.application.ImportApplicationService;
 import com.jtxw.familyagent.application.PriceAnalysisApplicationService;
 import com.jtxw.familyagent.application.ReportApplicationService;
 import com.jtxw.familyagent.application.ReviewApplicationService;
+import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.domain.model.*;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import org.springframework.boot.ApplicationArguments;
@@ -94,7 +95,8 @@ public class FamilyAgentCommandLineRunner implements ApplicationRunner {
         double price = getDouble(args, "price");
         double quantity = getDouble(args, "quantity");
         String unit = getString(args, "unit", "件");
-        PriceDecisionResult result = priceAnalysisApplicationService.comparePrice(productName, price, quantity, unit);
+        PriceDecisionResult result = priceAnalysisApplicationService.comparePrice(
+                new ComparePriceQuery(productName, price, quantity, unit));
         System.out.println("商品：" + result.productName());
         System.out.println("标准化名称：" + result.normalizedName());
         System.out.printf("当前单价：%.4f 元/%s%n", result.currentUnitPrice(), result.unit());

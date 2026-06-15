@@ -15,10 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class FamilyRepurchaseMcpServerApplicationTest {
     @Test
-    void comparePriceShouldReturnToolErrorWhenRequiredArgumentIsMissing() {
+    void comparePriceShouldForwardProductNameOnlyToBaselineOnlyMode() {
+        CaptureRestClient restClient = new CaptureRestClient();
         FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
                 new ObjectMapper(),
-                new FakeRestClient(),
+                restClient,
                 new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
         );
 
@@ -29,8 +30,30 @@ class FamilyRepurchaseMcpServerApplicationTest {
                         .build()
         );
 
+        assertThat(result.isError()).isFalse();
+        assertThat(restClient.path).isEqualTo("/api/tools/compare-price");
+        assertThat(restClient.body).containsEntry("productName", "猫砂");
+        assertThat(restClient.body).doesNotContainKeys("price", "quantity", "unit");
+    }
+
+    @Test
+    void comparePriceShouldReturnToolErrorWhenPriceArgumentsArePartial() {
+        FamilyRepurchaseMcpServerApplication application = new FamilyRepurchaseMcpServerApplication(
+                new ObjectMapper(),
+                new FakeRestClient(),
+                new ImportFilePathValidator(java.util.List.of(Path.of("examples").toAbsolutePath().normalize()))
+        );
+
+        McpSchema.CallToolResult result = application.comparePriceTool().callHandler().apply(null,
+                McpSchema.CallToolRequest.builder()
+                        .name("compare_price")
+                        .arguments(Map.of("productName", "猫砂", "price", 10.3))
+                        .build()
+        );
+
         assertThat(result.isError()).isTrue();
-        assertThat(result.content().get(0)).extracting("text").isEqualTo("price 必须是正数");
+        assertThat(result.content().get(0)).extracting("text")
+                .isEqualTo("price、quantity、unit 必须同时提供，或同时省略。");
     }
 
     @Test
@@ -47,6 +70,7 @@ class FamilyRepurchaseMcpServerApplicationTest {
 
         assertThat(outputSchema).containsEntry("additionalProperties", false);
         assertThat(properties.keySet()).containsAll(Set.of(
+                "mode",
                 "productName",
                 "normalizedName",
                 "current",
@@ -69,6 +93,19 @@ class FamilyRepurchaseMcpServerApplicationTest {
                 "historicalMaxUnitPrice",
                 "reviewRequired"
         );
+        Map<String, Object> inputSchema = application.comparePriceTool().tool().inputSchema();
+        assertThat(inputSchema.get("required")).isEqualTo(List.of("productName"));
+
+        Map<String, Object> current = (Map<String, Object>) properties.get("current");
+        assertThat(current).containsEntry("type", List.of("object", "null"));
+        Map<String, Object> currentProperties = (Map<String, Object>) current.get("properties");
+        assertThat(currentProperties.keySet()).containsAll(Set.of("price", "quantity", "unit", "unitPrice", "formula"));
+
+        Map<String, Object> decision = (Map<String, Object>) properties.get("decision");
+        assertThat(decision).containsEntry("type", List.of("object", "null"));
+        Map<String, Object> decisionProperties = (Map<String, Object>) decision.get("properties");
+        assertThat(decisionProperties.keySet()).containsAll(Set.of("code", "text", "reason", "confidence"));
+
         Map<String, Object> baseline = (Map<String, Object>) properties.get("baseline");
         Map<String, Object> baselineProperties = (Map<String, Object>) baseline.get("properties");
         assertThat(baselineProperties.keySet()).containsAll(Set.of(
@@ -80,14 +117,6 @@ class FamilyRepurchaseMcpServerApplicationTest {
                 .containsEntry("type", java.util.List.of("number", "null"));
         assertThat((Map<String, Object>) baselineProperties.get("historicalAverage"))
                 .containsEntry("type", java.util.List.of("number", "null"));
-
-        Map<String, Object> current = (Map<String, Object>) properties.get("current");
-        Map<String, Object> currentProperties = (Map<String, Object>) current.get("properties");
-        assertThat(currentProperties.keySet()).containsAll(Set.of("price", "quantity", "unit", "unitPrice", "formula"));
-
-        Map<String, Object> decision = (Map<String, Object>) properties.get("decision");
-        Map<String, Object> decisionProperties = (Map<String, Object>) decision.get("properties");
-        assertThat(decisionProperties.keySet()).containsAll(Set.of("code", "text", "reason", "confidence"));
 
         Map<String, Object> evidence = (Map<String, Object>) properties.get("evidence");
         Map<String, Object> evidenceProperties = (Map<String, Object>) evidence.get("properties");
@@ -417,3 +446,4 @@ class FamilyRepurchaseMcpServerApplicationTest {
         assertThat(structuredContent).containsEntry("message", "ok");
     }
 }
+

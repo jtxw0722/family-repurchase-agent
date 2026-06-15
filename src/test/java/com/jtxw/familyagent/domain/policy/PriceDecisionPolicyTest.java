@@ -1,6 +1,5 @@
 package com.jtxw.familyagent.domain.policy;
 
-import com.jtxw.familyagent.domain.model.PriceBaselineResult;
 import com.jtxw.familyagent.domain.model.PriceDecisionResult;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import org.junit.jupiter.api.Test;
@@ -98,7 +97,7 @@ class PriceDecisionPolicyTest {
     void shouldReturnPriceBaselineWithEvidence() {
         PriceDecisionPolicy policy = newPolicy();
 
-        PriceBaselineResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
+        PriceDecisionResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
                 record(1L, "2026-02-10", "猫砂 10kg", 68, 10, 6.8),
                 record(2L, "2026-03-12", "混合猫砂 5kg", 40.75, 5, 8.15),
                 record(3L, "2026-05-12", "猫砂 8kg", 64, 8, 8.0)
@@ -106,6 +105,9 @@ class PriceDecisionPolicyTest {
 
         assertThat(result.productName()).isEqualTo("猫砂");
         assertThat(result.normalizedName()).isEqualTo("猫砂");
+        assertThat(result.mode()).isEqualTo("baseline_only");
+        assertThat(result.current()).isNull();
+        assertThat(result.getDecision()).isNull();
 
         assertThat(result.baseline().sampleSize()).isEqualTo(3);
         assertThat(result.baseline().unit()).isEqualTo("kg");
@@ -127,7 +129,7 @@ class PriceDecisionPolicyTest {
     void shouldExcludeDifferentUnitsWhenBuildingPriceBaseline() {
         PriceDecisionPolicy policy = newPolicy();
 
-        PriceBaselineResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
+        PriceDecisionResult result = policy.baseline("猫砂", "猫砂", "kg", List.of(
                 record(1L, "2026-02-10", "猫砂 10kg", 68, 10, 6.8, "kg"),
                 record(2L, "2026-03-12", "混合猫砂 5kg", 79.5, 5, 15.9, "kg"),
                 record(3L, "2026-04-10", "猫砂 500g", 20, 500, 0.04, "g")
