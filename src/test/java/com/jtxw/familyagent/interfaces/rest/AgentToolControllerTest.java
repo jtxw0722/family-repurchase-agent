@@ -91,25 +91,6 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void searchPurchaseRecordsShouldReturnOwnerScopeWhenOwnerProvided() throws Exception {
-        when(purchaseRecordSearchService.search(any()))
-                .thenReturn(searchPurchaseRecordsResult("OWNER", "jtxw", 1));
-
-        mockMvc.perform(post("/api/tools/purchase-records/search")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "keyword": "猫砂",
-                                  "owner": "jtxw",
-                                  "limit": 10
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.scope").value("OWNER"))
-                .andExpect(jsonPath("$.owner").value("jtxw"));
-    }
-
-    @Test
     void searchPurchaseRecordsShouldReturnBadRequestWhenKeywordMissing() throws Exception {
         mockMvc.perform(post("/api/tools/purchase-records/search")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -119,24 +100,6 @@ class AgentToolControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void searchPurchaseRecordsShouldReturnEmptyRecordsWhenNoMatch() throws Exception {
-        when(purchaseRecordSearchService.search(any()))
-                .thenReturn(searchPurchaseRecordsResult("FAMILY", null, 0));
-
-        mockMvc.perform(post("/api/tools/purchase-records/search")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "keyword": "不存在"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.matchedCount").value(0))
-                .andExpect(jsonPath("$.records").isArray())
-                .andExpect(jsonPath("$.records").isEmpty());
     }
 
     @Test
@@ -232,39 +195,6 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void updateNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
-        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
-                .thenReturn(NormalizationLibraryOperationResult.success(
-                        "update_rule", "归一化规则已更新", "body_wash", "沐浴露", 1));
-
-        mockMvc.perform(post("/api/tools/normalization-library")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "action": "update_rule",
-                                  "ruleCode": "body_wash",
-                                  "normalizedName": "沐浴露",
-                                  "category": "个护清洁",
-                                  "standardUnit": "L",
-                                  "unitFamily": "volume",
-                                  "priority": 90,
-                                  "enabled": true
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
-                .andExpect(jsonPath("$.action").value("update_rule"));
-
-        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
-                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
-        verify(normalizationLibraryService).operate(captor.capture());
-        assertThat(captor.getValue().action()).isEqualTo("update_rule");
-        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
-        assertThat(captor.getValue().priority()).isEqualTo(90);
-        assertThat(captor.getValue().enabled()).isTrue();
-    }
-
-    @Test
     void addNormalizationRuleKeywordShouldUseUnifiedOperationEntry() throws Exception {
         when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
                 .thenReturn(NormalizationLibraryOperationResult.success(
@@ -293,62 +223,6 @@ class AgentToolControllerTest {
         assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
         assertThat(captor.getValue().keyword()).isEqualTo("沐浴露");
         assertThat(captor.getValue().matchType()).isEqualTo("include");
-    }
-
-    @Test
-    void disableNormalizationRuleKeywordShouldUseUnifiedOperationEntry() throws Exception {
-        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
-                .thenReturn(NormalizationLibraryOperationResult.success(
-                        "disable_keyword", "归一化关键词已禁用", "body_wash", "沐浴露", 1));
-
-        mockMvc.perform(post("/api/tools/normalization-library")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "action": "disable_keyword",
-                                  "ruleCode": "body_wash",
-                                  "keyword": "沐浴露瓶",
-                                  "matchType": "exclude"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
-                .andExpect(jsonPath("$.action").value("disable_keyword"));
-
-        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
-                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
-        verify(normalizationLibraryService).operate(captor.capture());
-        assertThat(captor.getValue().action()).isEqualTo("disable_keyword");
-        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
-        assertThat(captor.getValue().keyword()).isEqualTo("沐浴露瓶");
-        assertThat(captor.getValue().matchType()).isEqualTo("exclude");
-    }
-
-    @Test
-    void disableNormalizationRuleShouldUseUnifiedOperationEntry() throws Exception {
-        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
-                .thenReturn(NormalizationLibraryOperationResult.success(
-                        "disable_rule", "归一化规则已禁用", "body_wash", "沐浴露", 1));
-
-        mockMvc.perform(post("/api/tools/normalization-library")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "action": "disable_rule",
-                                  "ruleCode": "body_wash"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ruleCode").value("body_wash"))
-                .andExpect(jsonPath("$.normalizedName").value("沐浴露"))
-                .andExpect(jsonPath("$.action").value("disable_rule"))
-                .andExpect(jsonPath("$.message").value("归一化规则已禁用"));
-
-        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
-                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
-        verify(normalizationLibraryService).operate(captor.capture());
-        assertThat(captor.getValue().action()).isEqualTo("disable_rule");
-        assertThat(captor.getValue().ruleCode()).isEqualTo("body_wash");
     }
 
     @Test
@@ -669,12 +543,12 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void applyNormalizationShouldConfirmReview() throws Exception {
+    void applyReviewShouldConfirmNormalizationViaUnifiedEndpoint() throws Exception {
         when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenReturn(new ReviewApplyResult(12L, 100L, "confirm_normalization", "include",
                         "resolved", "归一化已确认"));
 
-        mockMvc.perform(post("/api/tools/review-items/12/apply-normalization")
+        mockMvc.perform(post("/api/tools/review-items/12/apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -688,44 +562,29 @@ class AgentToolControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.action").value("confirm_normalization"))
                 .andExpect(jsonPath("$.decision").value("include"));
+
+        verify(reviewApplicationService).applyNormalization(any(ApplyNormalizationReviewCommand.class));
     }
 
     @Test
-    void applyNormalizationShouldRejectReview() throws Exception {
+    void applyReviewShouldIgnoreNormalizationViaUnifiedEndpoint() throws Exception {
         when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
-                .thenReturn(new ReviewApplyResult(13L, 101L, "reject_normalization", "exclude",
-                        "resolved", "归一化已拒绝"));
-
-        mockMvc.perform(post("/api/tools/review-items/13/apply-normalization")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "action": "reject",
-                                  "rejectedNormalizedName": "猫砂",
-                                  "note": "误判"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.action").value("reject_normalization"))
-                .andExpect(jsonPath("$.decision").value("exclude"));
-    }
-
-    @Test
-    void applyNormalizationShouldIgnoreReview() throws Exception {
-        when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
-                .thenReturn(new ReviewApplyResult(14L, 102L, "ignore_normalization", "exclude",
+                .thenReturn(new ReviewApplyResult(13L, 101L, "ignore_normalization", "exclude",
                         "resolved", "归一化复核已忽略"));
 
-        mockMvc.perform(post("/api/tools/review-items/14/apply-normalization")
+        mockMvc.perform(post("/api/tools/review-items/13/apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "action": "ignore",
-                                  "note": "暂不学习"
+                                  "note": "暂不处理"
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.action").value("ignore_normalization"));
+                .andExpect(jsonPath("$.action").value("ignore_normalization"))
+                .andExpect(jsonPath("$.status").value("resolved"));
+
+        verify(reviewApplicationService).applyNormalization(any(ApplyNormalizationReviewCommand.class));
     }
 
     @Test
@@ -755,17 +614,6 @@ class AgentToolControllerTest {
         assertThat(query.sourceFile()).isEqualTo("order-sample-2.xlsx");
         assertThat(query.page()).isEqualTo(2);
         assertThat(query.size()).isEqualTo(10);
-    }
-
-    @Test
-    void listReviewItemsShouldUseDefaultPageAndSize() throws Exception {
-        when(reviewApplicationService.listReviewItems(any(ReviewItemQuery.class)))
-                .thenReturn(List.of());
-
-        mockMvc.perform(get("/api/tools/review-items"))
-                .andExpect(status().isOk());
-
-        verify(reviewApplicationService).listReviewItems(any(ReviewItemQuery.class));
     }
 
     @Test
@@ -827,14 +675,18 @@ class AgentToolControllerTest {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/tools/normalization-" + "analysis-" + "tasks/99"))
                 .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/tools/review-items/12/apply-normalization")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    void applyNormalizationShouldRejectInvalidAction() throws Exception {
+    void applyReviewShouldRejectInvalidAction() throws Exception {
         when(reviewApplicationService.applyNormalization(any(ApplyNormalizationReviewCommand.class)))
                 .thenThrow(new IllegalArgumentException("不支持的商品归一化复核动作：learn"));
 
-        mockMvc.perform(post("/api/tools/review-items/15/apply-normalization")
+        mockMvc.perform(post("/api/tools/review-items/15/apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

@@ -2,8 +2,8 @@ package com.jtxw.familyagent.application.command;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/08 15:58:00
- * @Description: 商品归一化复核应用命令，用于承载 apply-normalization 用例的输入参数。
+ * @Date: 2026/06/16 08:22:00
+ * @Description: 商品归一化复核应用命令，用于承载 review-items/{id}/apply 统一入口中的归一化复核参数。
  *
  * @param reviewId               复核项 ID，对应 review_items.id
  * @param action                 归一化复核动作，支持 confirm/reject/ignore

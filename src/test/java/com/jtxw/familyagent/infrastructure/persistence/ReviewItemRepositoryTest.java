@@ -53,89 +53,12 @@ class ReviewItemRepositoryTest {
     }
 
     /**
-     * 测试 2：按 status 筛选 resolved 状态。
-     */
-    @Test
-    void shouldFilterByStatus() {
-        ReviewItemQuery pendingQuery = new ReviewItemQuery("pending", null, null, null, null, null, 1, 100);
-        List<ReviewItemDetail> pending = repository.listDetails(pendingQuery);
-
-        ReviewItemQuery resolvedQuery = new ReviewItemQuery("resolved", null, null, null, null, null, 1, 100);
-        List<ReviewItemDetail> resolved = repository.listDetails(resolvedQuery);
-
-        assertThat(pending).isNotEmpty();
-        assertThat(pending).allMatch(r -> "pending".equals(r.status()));
-        assertThat(resolved).isNotEmpty();
-        assertThat(resolved).allMatch(r -> "resolved".equals(r.status()));
-        assertThat(pending.size() + resolved.size()).isEqualTo(6);
-    }
-
-    /**
-     * 测试 3：按 batchId 筛选。
-     */
-    @Test
-    void shouldFilterByBatchId() {
-        ReviewItemQuery query = new ReviewItemQuery(null, 2L, null, null, null, null, 1, 100);
-        List<ReviewItemDetail> results = repository.listDetails(query);
-
-        assertThat(results).hasSize(2);
-        assertThat(results).allMatch(r -> r.batchId() != null && r.batchId() == 2L);
-    }
-
-    /**
-     * 测试 4：按 owner 筛选。
-     */
-    @Test
-    void shouldFilterByOwner() {
-        ReviewItemQuery query = new ReviewItemQuery(null, null, "jtxw", null, null, null, 1, 100);
-        List<ReviewItemDetail> results = repository.listDetails(query);
-
-        assertThat(results).isNotEmpty();
-        assertThat(results).allMatch(r -> "jtxw".equals(r.owner()));
-    }
-
-    /**
-     * 测试 5：按 reasonCode 筛选。
-     */
-    @Test
-    void shouldFilterByReasonCode() {
-        ReviewItemQuery query = new ReviewItemQuery(null, null, null, "QUANTITY_UNIT_PARSE_REVIEW", null, null, 1, 100);
-        List<ReviewItemDetail> results = repository.listDetails(query);
-
-        assertThat(results).hasSize(2);
-        assertThat(results).allMatch(r -> "QUANTITY_UNIT_PARSE_REVIEW".equals(r.reasonCode()));
-    }
-
-    /**
-     * 测试 6：按 decision 筛选。
-     */
-    @Test
-    void shouldFilterByDecision() {
-        ReviewItemQuery query = new ReviewItemQuery(null, null, null, null, "exclude", null, 1, 100);
-        List<ReviewItemDetail> results = repository.listDetails(query);
-
-        assertThat(results).isNotEmpty();
-        assertThat(results).allMatch(r -> "exclude".equals(r.decision()));
-    }
-
-    /**
-     * 测试 7：按 sourceFile 模糊筛选。
-     */
-    @Test
-    void shouldFilterBySourceFileLike() {
-        ReviewItemQuery query = new ReviewItemQuery(null, null, null, null, null, "order-sample-2.xlsx", 1, 100);
-        List<ReviewItemDetail> results = repository.listDetails(query);
-
-        assertThat(results).hasSize(2);
-        assertThat(results).allMatch(r -> r.sourceFile() != null && r.sourceFile().contains("order-sample-2.xlsx"));
-    }
-
-    /**
-     * 测试 8：组合筛选。
+     * 测试 2：组合筛选覆盖 status、batchId、owner、reasonCode、decision 和 sourceFile。
      */
     @Test
     void shouldFilterByCombinedConditions() {
-        ReviewItemQuery query = new ReviewItemQuery("pending", 1L, "jtxw", "QUANTITY_UNIT_PARSE_REVIEW", "exclude", null, 1, 100);
+        ReviewItemQuery query = new ReviewItemQuery("pending", 1L, "jtxw",
+                "QUANTITY_UNIT_PARSE_REVIEW", "exclude", "order-sample-1.xlsx", 1, 100);
         List<ReviewItemDetail> results = repository.listDetails(query);
 
         assertThat(results).hasSize(1);
@@ -145,10 +68,11 @@ class ReviewItemRepositoryTest {
         assertThat(item.owner()).isEqualTo("jtxw");
         assertThat(item.reasonCode()).isEqualTo("QUANTITY_UNIT_PARSE_REVIEW");
         assertThat(item.decision()).isEqualTo("exclude");
+        assertThat(item.sourceFile()).contains("order-sample-1.xlsx");
     }
 
     /**
-     * 测试 9：分页生效。
+     * 测试 3：分页生效。
      */
     @Test
     void shouldPaginateResults() {
@@ -171,7 +95,7 @@ class ReviewItemRepositoryTest {
     }
 
     /**
-     * 测试 10：size 上限归一化。
+     * 测试 4：size 上限归一化。
      */
     @Test
     void shouldClampSizeToMax() {

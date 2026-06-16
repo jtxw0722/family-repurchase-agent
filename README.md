@@ -30,7 +30,7 @@
 * 重复记录检测与手动录入防御
 * 购买记录溯源：`shopName`、`note`、`sourceText`
 * Markdown 复购品价格报告
-* REST Tool API / CLI / Java MCP stdio Server
+* REST Tool API / Java MCP stdio Server
 * Claude Code / Codex / OpenClaw 的 MCP 接入说明
 
 ---
@@ -235,18 +235,6 @@ curl -X POST "http://localhost:8080/api/tools/generate-report" `
 
 ---
 
-## CLI 示例
-
-```bash
-java -jar target/family-repurchase-agent.jar import examples/sample_orders.csv --owner=jtxw
-
-java -jar target/family-repurchase-agent.jar price "猫砂" --price=89 --quantity=12 --unit=kg
-
-java -jar target/family-repurchase-agent.jar report --month=2026-05
-```
-
----
-
 ## MCP / Agent 集成
 
 Family Repurchase Agent 通过 Java MCP stdio Server 暴露工具能力。Claude Code、Codex、OpenClaw 等 Agent Host 应通过 MCP 连接本项目，而不是直接访问数据库或绕过后端业务规则。
@@ -295,7 +283,7 @@ src/main/java/com/jtxw/familyagent/
 ├── application/        # 应用服务
 ├── domain/             # 领域模型与规则
 ├── infrastructure/     # SQLite、导入器、报告输出
-└── interfaces/         # REST API 和 CLI
+└── interfaces/         # REST API
 
 adapters/
 ├── mcp/                # Java MCP stdio Server

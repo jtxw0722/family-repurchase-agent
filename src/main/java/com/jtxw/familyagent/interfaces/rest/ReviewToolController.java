@@ -4,7 +4,6 @@ import com.jtxw.familyagent.application.ReviewApplicationService;
 import com.jtxw.familyagent.application.query.ReviewItemQuery;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
-import com.jtxw.familyagent.interfaces.rest.request.ApplyNormalizationReviewRequest;
 import com.jtxw.familyagent.interfaces.rest.request.ReviewApplyRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,7 +20,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/08 17:45:00
+ * @Date: 2026/06/16 08:22:00
  * @Description: 人工复核工具 Controller，暴露待复核记录查询和复核结果应用接口。
  */
 @Tag(name = "Agent Tool API", description = "家庭复购品价格决策工具接口")
@@ -76,33 +75,19 @@ public class ReviewToolController {
     /**
      * 应用人工复核结果。
      *
-     * <p>该接口会更新复核项状态，并同步更新关联购买记录的统计决策。</p>
+     * <p>该统一入口同时承载普通 include/exclude 统计复核和商品归一化 confirm/reject/ignore 复核。
+     * Controller 只负责按 action 分发，具体业务规则继续由 ReviewApplicationService 处理。</p>
      *
      * @param id      复核项 ID
      * @param request 复核动作请求
      * @return 复核应用结果
      */
-    @Operation(summary = "应用复核结果", description = "将人工复核结果应用到待复核记录，并同步更新关联购买记录的统计决策。")
+    @Operation(summary = "应用复核结果", description = "统一应用普通统计复核和商品归一化复核，并同步更新复核项状态。")
     @PostMapping("/review-items/{id}/apply")
     public ReviewApplyResult applyReview(@PathVariable long id, @Valid @RequestBody ReviewApplyRequest request) {
-        return reviewApplicationService.apply(request.toCommand(id));
-    }
-
-    /**
-     * 应用商品归一化复核动作。
-     *
-     * <p>该接口只处理 PRODUCT_NAME_NORMALIZATION_REVIEW 的确认、拒绝和忽略动作，
-     * 普通 include/exclude 统计决策复核仍由 /review-items/{id}/apply 处理。</p>
-     *
-     * @param id      复核项 ID
-     * @param request 归一化复核请求
-     * @return 复核应用结果
-     */
-    @Operation(summary = "应用商品归一化复核", description = "统一处理商品归一化确认、拒绝或忽略动作，并沉淀正向/负向别名。")
-    @PostMapping("/review-items/{id}/apply-normalization")
-    public ReviewApplyResult applyNormalizationReview(@PathVariable long id,
-                                                      @RequestBody(required = false) ApplyNormalizationReviewRequest request) {
-        ApplyNormalizationReviewRequest body = request == null ? new ApplyNormalizationReviewRequest() : request;
-        return reviewApplicationService.applyNormalization(body.toCommand(id));
+        if (request.isStatisticalDecisionAction()) {
+            return reviewApplicationService.apply(request.toCommand(id));
+        }
+        return reviewApplicationService.applyNormalization(request.toNormalizationCommand(id));
     }
 }
