@@ -552,7 +552,7 @@ class AgentToolControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "action": "confirm",
+                                  "action": "confirm_normalization",
                                   "normalizedName": "沐浴露",
                                   "targetUnit": "L",
                                   "includeInBaseline": true,
@@ -576,7 +576,7 @@ class AgentToolControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "action": "ignore",
+                                  "action": "ignore_normalization",
                                   "note": "暂不处理"
                                 }
                                 """))
@@ -674,10 +674,6 @@ class AgentToolControllerTest {
                         .content("{}"))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/tools/normalization-" + "analysis-" + "tasks/99"))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/tools/review-items/12/apply-normalization")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
                 .andExpect(status().isNotFound());
     }
 

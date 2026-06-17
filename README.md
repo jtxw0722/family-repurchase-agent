@@ -87,7 +87,6 @@ REST Tool API 仍作为后端内部工具入口保留：
 - `/api/tools/generate-report`
 - `/api/tools/review-items`
 - `/api/tools/review-items/{id}/apply`
-- `/api/tools/review-items/{id}/apply-normalization`
 - `/api/tools/normalization-library`
 - `/api/tools/normalization-rule-suggestions`
 - `/api/tools/normalization-llm-tasks/{taskId}`
@@ -157,9 +156,9 @@ curl -X POST "http://localhost:8080/api/tools/import-file" `
 ### 归一化复核
 
 ```powershell
-curl -X POST "http://localhost:8080/api/tools/review-items/12/apply-normalization" `
+curl -X POST "http://localhost:8080/api/tools/review-items/12/apply" `
   -H "Content-Type: application/json" `
-  -d "{\"action\":\"confirm\",\"normalizedName\":\"沐浴露\",\"targetUnit\":\"L\",\"includeInBaseline\":true,\"note\":\"确认该商品归一化为沐浴露\"}"
+  -d "{\"action\":\"confirm_normalization\",\"normalizedName\":\"沐浴露\",\"targetUnit\":\"L\",\"includeInBaseline\":true,\"note\":\"确认该商品归一化为沐浴露\"}"
 ```
 
 ### 查询归一化规则库
@@ -357,4 +356,3 @@ This project is licensed under the Apache License 2.0.
 This repository is intended for learning, portfolio demonstration, and technical discussion.
 Demo data is synthetic or anonymized. Do not commit real personal consumption records,
 real order exports, credentials, tokens, SSH keys, or production configuration files.
-

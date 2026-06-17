@@ -75,7 +75,8 @@ public class ReviewToolController {
     /**
      * 应用人工复核结果。
      *
-     * <p>该统一入口同时承载普通 include/exclude 统计复核和商品归一化 confirm/reject/ignore 复核。
+     * <p>该统一入口同时承载普通 include/exclude 统计复核和商品归一化
+     * confirm_normalization/reject_normalization/ignore_normalization 复核。
      * Controller 只负责按 action 分发，具体业务规则继续由 ReviewApplicationService 处理。</p>
      *
      * @param id      复核项 ID

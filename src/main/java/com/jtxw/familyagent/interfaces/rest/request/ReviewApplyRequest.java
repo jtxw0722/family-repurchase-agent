@@ -15,32 +15,33 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(description = "人工复核应用请求")
 public class ReviewApplyRequest {
     /**
-     * 复核动作，普通统计复核支持 include 或 exclude，商品归一化复核支持 confirm、reject 或 ignore。
+     * 复核动作，普通统计复核支持 include 或 exclude，商品归一化复核支持 confirm_normalization、reject_normalization 或 ignore_normalization。
      */
-    @Schema(description = "复核动作，include/exclude 用于普通统计复核，confirm/reject/ignore 用于商品归一化复核",
-            example = "include", allowableValues = {"include", "exclude", "confirm", "reject", "ignore"},
+    @Schema(description = "复核动作，include/exclude 用于普通统计复核，confirm_normalization/reject_normalization/ignore_normalization 用于商品归一化复核",
+            example = "include", allowableValues = {"include", "exclude", "confirm_normalization",
+            "reject_normalization", "ignore_normalization"},
             requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank
     private String action;
     /**
-     * confirm 时人工确认的归一化商品名称，普通统计复核和 ignore 动作允许为空。
+     * confirm_normalization 时人工确认的归一化商品名称，普通统计复核和 ignore_normalization 动作允许为空。
      */
-    @Schema(description = "confirm 时人工确认的归一化商品名称", example = "沐浴露")
+    @Schema(description = "confirm_normalization 时人工确认的归一化商品名称", example = "沐浴露")
     private String normalizedName;
     /**
-     * confirm 时人工确认的标准单位，允许为空；为空时应用层使用购买记录当前单位。
+     * confirm_normalization 时人工确认的标准单位，普通统计复核和 ignore_normalization 动作允许为空。
      */
-    @Schema(description = "confirm 时人工确认的标准单位；为空时使用购买记录当前单位", example = "L")
+    @Schema(description = "confirm_normalization 时人工确认的标准单位", example = "L")
     private String targetUnit;
     /**
-     * confirm 时是否同步纳入价格基准，默认 false。
+     * confirm_normalization 时是否同步纳入价格基准，默认 false。
      */
-    @Schema(description = "confirm 时是否同步将购买记录纳入价格基准", example = "true")
+    @Schema(description = "confirm_normalization 时是否同步将购买记录纳入价格基准", example = "true")
     private boolean includeInBaseline;
     /**
-     * reject 时被拒绝的归一化商品名称，允许为空；为空时应用层使用购买记录当前归一化名称。
+     * reject_normalization 时被拒绝的归一化商品名称，允许为空；为空时应用层使用购买记录当前归一化名称。
      */
-    @Schema(description = "reject 时被拒绝的归一化商品名称；为空时使用购买记录当前归一化名称", example = "猫砂")
+    @Schema(description = "reject_normalization 时被拒绝的归一化商品名称；为空时使用购买记录当前归一化名称", example = "猫砂")
     private String rejectedNormalizedName;
     /**
      * 复核备注，允许为空。
@@ -129,7 +130,11 @@ public class ReviewApplyRequest {
      * @return action 为 include 或 exclude 时返回 true
      */
     public boolean isStatisticalDecisionAction() {
-        return "include".equalsIgnoreCase(action) || "exclude".equalsIgnoreCase(action);
+        if (action == null) {
+            return false;
+        }
+        String normalizedAction = action.trim();
+        return "include".equalsIgnoreCase(normalizedAction) || "exclude".equalsIgnoreCase(normalizedAction);
     }
 
     /**

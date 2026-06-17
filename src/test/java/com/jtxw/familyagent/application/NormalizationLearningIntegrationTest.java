@@ -45,6 +45,51 @@ class NormalizationLearningIntegrationTest {
     }
 
     @Test
+    void applyNormalizationShouldAcceptUnifiedConfirmAction() throws Exception {
+        Fixture fixture = fixture("apply-confirm-normalization-action.sqlite");
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
+        ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
+
+        ReviewApplyResult result = fixture.reviewService().applyNormalization(
+                review.id(), "confirm_normalization", "沐浴露", "L", true,
+                null, "通过统一 action 确认");
+
+        assertThat(result.action()).isEqualTo("confirm_normalization");
+        assertThat(result.decision()).isEqualTo("include");
+    }
+
+    @Test
+    void normalizationReviewShouldRejectStatisticalAction() throws Exception {
+        Fixture fixture = fixture("normalization-review-rejects-statistical-action.sqlite");
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
+        ReviewItemDetail review = fixture.reviewItemRepository().listPendingDetails().get(0);
+
+        assertThatThrownBy(() -> fixture.reviewService().apply(review.id(), "include", "误用普通复核动作"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PRODUCT_NAME_NORMALIZATION_REVIEW")
+                .hasMessageContaining("confirm_normalization");
+    }
+
+    @Test
+    void regularReviewShouldRejectNormalizationAction() throws Exception {
+        Fixture fixture = fixture("regular-review-rejects-normalization-action.sqlite");
+        fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));
+        ReviewItemDetail normalizationReview = fixture.reviewItemRepository().listPendingDetails().get(0);
+        fixture.reviewItemRepository().create(normalizationReview.recordId(), "ZERO_PAYMENT", "测试用普通复核项");
+        ReviewItemDetail regularReview = fixture.reviewItemRepository().listPendingDetails().stream()
+                .filter(item -> "ZERO_PAYMENT".equals(item.reasonCode()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThatThrownBy(() -> fixture.reviewService().applyNormalization(
+                regularReview.id(), "confirm_normalization", "沐浴露", "L", true,
+                null, "误用归一化复核动作"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PRODUCT_NAME_NORMALIZATION_REVIEW")
+                .hasMessageContaining("ZERO_PAYMENT");
+    }
+
+    @Test
     void rejectNormalizationShouldUpdateDecisionWithoutRulePersistence() throws Exception {
         Fixture fixture = fixture("reject-normalization.sqlite");
         fixture.recordService().record(command(false, bodyWashRecord("2026-05-01")));

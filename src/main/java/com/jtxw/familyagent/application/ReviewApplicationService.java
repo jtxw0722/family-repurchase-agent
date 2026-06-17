@@ -7,7 +7,9 @@ import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.domain.model.ReviewApplyResult;
 import com.jtxw.familyagent.domain.model.ReviewItem;
 import com.jtxw.familyagent.domain.model.ReviewItemDetail;
-import com.jtxw.familyagent.infrastructure.persistence.*;
+import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
+import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
+import com.jtxw.familyagent.infrastructure.persistence.ReviewItemRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -36,18 +38,6 @@ public class ReviewApplicationService {
      * 复核项状态：已处理。
      */
     private static final String REVIEW_STATUS_RESOLVED = "resolved";
-    /**
-     * 商品归一化复核动作：确认归一化结果。
-     */
-    private static final String NORMALIZATION_ACTION_CONFIRM = "confirm";
-    /**
-     * 商品归一化复核动作：拒绝归一化结果。
-     */
-    private static final String NORMALIZATION_ACTION_REJECT = "reject";
-    /**
-     * 商品归一化复核动作：忽略归一化结果。
-     */
-    private static final String NORMALIZATION_ACTION_IGNORE = "ignore";
     /**
      * 归一化复核结果动作：已确认归一化。
      */
@@ -84,9 +74,9 @@ public class ReviewApplicationService {
     /**
      * 创建复核应用服务。
      *
-     * @param databaseInitializer            数据库初始化组件
-     * @param purchaseRecordRepository       购买记录仓储
-     * @param reviewItemRepository           复核项仓储
+     * @param databaseInitializer      数据库初始化组件
+     * @param purchaseRecordRepository 购买记录仓储
+     * @param reviewItemRepository     复核项仓储
      */
     public ReviewApplicationService(DatabaseInitializer databaseInitializer,
                                     PurchaseRecordRepository purchaseRecordRepository,
@@ -165,6 +155,11 @@ public class ReviewApplicationService {
         String normalizedAction = normalizeAction(command.action());
         ReviewItem reviewItem = reviewItemRepository.findById(command.reviewId())
                 .orElseThrow(() -> new IllegalArgumentException("复核记录不存在：" + command.reviewId()));
+        if (REVIEW_REASON_PRODUCT_NAME_NORMALIZATION.equals(reviewItem.reasonCode())) {
+            throw new IllegalArgumentException("PRODUCT_NAME_NORMALIZATION_REVIEW 只允许使用 "
+                    + RESULT_ACTION_CONFIRM_NORMALIZATION + " / " + RESULT_ACTION_REJECT_NORMALIZATION
+                    + " / " + RESULT_ACTION_IGNORE_NORMALIZATION + " 动作处理。");
+        }
         if (!REVIEW_STATUS_PENDING.equals(reviewItem.status())) {
             throw new IllegalStateException("复核记录不是 pending 状态，不能重复处理：" + command.reviewId());
         }
@@ -199,7 +194,7 @@ public class ReviewApplicationService {
      *
      * @param reviewId          复核项 ID
      * @param normalizedName    人工确认的标准品类
-     * @param targetUnit        标准单位；为空时使用购买记录现有单位
+     * @param targetUnit        标准单位，不允许为空
      * @param includeInBaseline 是否同步纳入价格基准
      * @param note              复核备注
      * @return 复核应用结果
@@ -212,7 +207,7 @@ public class ReviewApplicationService {
         databaseInitializer.initialize();
         ReviewContext context = loadNormalizationReviewContext(reviewId);
         String finalNormalizedName = requireText(normalizedName, "normalizedName 不能为空");
-        String finalTargetUnit = targetUnit == null || targetUnit.isBlank() ? context.record().unit() : targetUnit.trim();
+        String finalTargetUnit = requireText(targetUnit, "targetUnit 不能为空");
         if (includeInBaseline) {
             validateCanIncludeAfterNormalization(reviewId, context.record(), finalTargetUnit);
         }
@@ -231,9 +226,9 @@ public class ReviewApplicationService {
      * 统一应用商品归一化复核动作。
      *
      * @param reviewId               复核项 ID
-     * @param action                 归一化复核动作，支持 confirm/reject/ignore
-     * @param normalizedName         confirm 时人工确认的标准品类
-     * @param targetUnit             confirm 时标准单位；为空时使用购买记录现有单位
+     * @param action                 归一化复核动作，支持 confirm_normalization/reject_normalization/ignore_normalization
+     * @param normalizedName         confirm_normalization 时人工确认的标准品类
+     * @param targetUnit             confirm_normalization 时标准单位，不允许为空
      * @param includeInBaseline      confirm 时是否同步纳入价格基准
      * @param rejectedNormalizedName reject 时被拒绝的标准品类
      * @param note                   复核备注
@@ -253,7 +248,7 @@ public class ReviewApplicationService {
     /**
      * 统一应用商品归一化复核动作。
      *
-     * <p>该方法只处理 PRODUCT_NAME_NORMALIZATION_REVIEW 的确认、拒绝和忽略动作，
+     * <p>该方法只处理 PRODUCT_NAME_NORMALIZATION_REVIEW 的归一化确认、拒绝和忽略动作，
      * 普通 include/exclude 统计决策复核仍由 apply(ApplyReviewCommand) 处理。</p>
      *
      * @param command 商品归一化复核应用命令
@@ -263,11 +258,12 @@ public class ReviewApplicationService {
         String normalizedAction = requireText(command.action(), "action 不能为空").toLowerCase(Locale.ROOT);
         // 统一入口只负责动作分发，核心确认/拒绝/忽略逻辑继续复用原有方法。
         return switch (normalizedAction) {
-            case NORMALIZATION_ACTION_CONFIRM -> confirmNormalization(command.reviewId(), command.normalizedName(),
-                    command.targetUnit(), command.includeInBaseline(), command.note());
-            case NORMALIZATION_ACTION_REJECT ->
+            case RESULT_ACTION_CONFIRM_NORMALIZATION ->
+                    confirmNormalization(command.reviewId(), command.normalizedName(),
+                            command.targetUnit(), command.includeInBaseline(), command.note());
+            case RESULT_ACTION_REJECT_NORMALIZATION ->
                     rejectNormalization(command.reviewId(), command.rejectedNormalizedName(), command.note());
-            case NORMALIZATION_ACTION_IGNORE -> ignoreNormalization(command.reviewId(), command.note());
+            case RESULT_ACTION_IGNORE_NORMALIZATION -> ignoreNormalization(command.reviewId(), command.note());
             default -> throw new IllegalArgumentException("不支持的商品归一化复核动作：" + command.action());
         };
     }
@@ -346,7 +342,10 @@ public class ReviewApplicationService {
             throw new IllegalStateException("复核记录不是 pending 状态，不能重复处理：" + reviewId);
         }
         if (!REVIEW_REASON_PRODUCT_NAME_NORMALIZATION.equals(reviewItem.reasonCode())) {
-            throw new IllegalStateException("仅商品归一化复核项支持归一化学习：" + reviewItem.reasonCode());
+            throw new IllegalArgumentException("只有 PRODUCT_NAME_NORMALIZATION_REVIEW 允许使用 "
+                    + RESULT_ACTION_CONFIRM_NORMALIZATION + " / " + RESULT_ACTION_REJECT_NORMALIZATION
+                    + " / " + RESULT_ACTION_IGNORE_NORMALIZATION + " 动作处理，当前 reasonCode："
+                    + reviewItem.reasonCode());
         }
         if (reviewItem.recordId() == null) {
             throw new IllegalStateException("复核记录没有关联订单记录：" + reviewId);
