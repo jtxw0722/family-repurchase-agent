@@ -39,7 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         ReportToolController.class,
         ReviewToolController.class,
         NormalizationToolController.class,
-        PurchaseRecordSearchController.class
+        PurchaseRecordSearchController.class,
+        ParseOrderImageToolController.class
 })
 class AgentToolControllerTest {
     @Autowired
@@ -63,6 +64,42 @@ class AgentToolControllerTest {
     private NormalizationLibraryService normalizationLibraryService;
     @MockitoBean
     private PurchaseRecordSearchService purchaseRecordSearchService;
+    @MockitoBean
+    private ParseOrderImageApplicationService parseOrderImageApplicationService;
+
+    @Test
+    void parseOrderImageShouldReturnCandidates() throws Exception {
+        ParsedPurchaseCandidate candidate = new ParsedPurchaseCandidate(
+                "合成测试纸巾", "100抽", 12.5D, 100D, "抽", "pdd", "jtxw",
+                "2026-06-18", "合成测试旗舰店", "OCR 识别候选，需用户确认后再入库",
+                "合成 OCR 文本", 0.9D, List.of());
+        when(parseOrderImageApplicationService.parse(any()))
+                .thenReturn(new ParseOrderImageResult(true, "data/inbox/order.png", "order_screenshot",
+                        1, List.of(candidate), List.of("只返回候选样本"), "合成 OCR 文本"));
+
+        mockMvc.perform(post("/api/tools/parse-order-image")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "imagePath": "data/inbox/order.png",
+                                  "owner": "jtxw",
+                                  "platform": "pdd",
+                                  "dryRun": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.candidateCount").value(1))
+                .andExpect(jsonPath("$.candidates[0].productName").value("合成测试纸巾"))
+                .andExpect(jsonPath("$.rawText").value("合成 OCR 文本"));
+    }
+
+    @Test
+    void parseOrderImageShouldRejectMissingImagePath() throws Exception {
+        mockMvc.perform(post("/api/tools/parse-order-image")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"owner\":\"jtxw\"}"))
+                .andExpect(status().isBadRequest());
+    }
 
     @Test
     void searchPurchaseRecordsShouldReturnRecordsWithFamilyScope() throws Exception {

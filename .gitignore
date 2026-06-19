@@ -42,6 +42,12 @@ node_modules/
 coverage/
 .npm-cache/
 
+# Optional local Python OCR artifacts
+.venv/
+venv/
+__pycache__/
+*.pyc
+
 # Temp
 *.tmp
 *.temp

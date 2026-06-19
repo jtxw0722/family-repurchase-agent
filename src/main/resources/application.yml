@@ -12,6 +12,12 @@ server:
 
 family-agent:
   reports-dir: ./reports
+  # 请求未提供 owner 时使用的订单归属人
+  default-owner: jtxw
+  parse-order-image:
+    local-ocr:
+      # 默认关闭本地 OCR；仅在用户明确配置本机命令后启用
+      enabled: true
   normalization:
     llm:
       # 是否启用 LLM 规则维护建议
