@@ -18,16 +18,20 @@ model: inherit
 
 可用 MCP tools：
 
-* `import_file`
-* `compare_price`
-* `generate_report`
+* `import_file`：导入本地 CSV / Excel 订单文件。
+* `record_purchase`：录入手动购买记录或自然语言抽取后的结构化购买记录。
+* `compare_price`：查询历史价格基准线，或比较当前价格是否值得购买。
+* `search_purchase_records`：按关键词检索原始购买记录，用于排查历史样本来源和归一化遗漏。
+* `generate_report`：生成指定月份的本地 Markdown 价格报告。
 
 不要直接根据模型常识判断价格是否划算。价格结论应基于 MCP tool 返回的单位价格、历史基准线、样本数量、evidence 和 warnings。
 
 典型使用方式：
 
-* 用户询问“猫砂 119.3 元 40kg 值不值得买”时，应调用 `compare_price`
+* 用户询问”猫砂 119.3 元 40kg 值不值得买”时，应调用 `compare_price`
 * 用户要求导入本地订单文件时，应调用 `import_file`
+* 用户要求记录一笔购买记录时，应调用 `record_purchase`
+* 用户要求查询历史购买记录时，应调用 `search_purchase_records`
 * 用户要求生成某个月的复购品价格报告时，应调用 `generate_report`
 
 如果用户明确要求修改项目代码，再按项目维护规则执行：
