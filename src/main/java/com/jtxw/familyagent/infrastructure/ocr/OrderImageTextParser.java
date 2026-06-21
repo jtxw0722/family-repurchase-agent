@@ -75,6 +75,20 @@ public class OrderImageTextParser {
             "^(?:已购规格|商品规格|已选规格|购买规格|规格|颜色分类|套餐|型号|SKU)\\s*[：:;；]?\\s*$",
             Pattern.CASE_INSENSITIVE);
     /**
+     * SKU 候选行尾误带的人民币价格，兼容负号位于币种符号前后。
+     */
+    private static final Pattern TRAILING_SKU_PRICE_PATTERN = Pattern.compile(
+            "\\s*-?\\s*[￥¥]\\s*-?\\s*\\d+(?:\\.\\d{1,2})?\\s*$");
+    /**
+     * SKU 候选行尾的单件数量按钮。
+     */
+    private static final Pattern TRAILING_SKU_QUANTITY_PATTERN = Pattern.compile(
+            "\\s*[xX×]\\s*1\\s*$");
+    /**
+     * SKU 候选行尾的页面跳转符号。
+     */
+    private static final Pattern TRAILING_SKU_UI_PATTERN = Pattern.compile("\\s*[>〉]\\s*$");
+    /**
      * 订单日期或时间。
      */
     private static final Pattern DATE_PATTERN = Pattern.compile(
@@ -224,6 +238,12 @@ public class OrderImageTextParser {
         return List.copyOf(candidates);
     }
 
+    /**
+     * 从 OCR 文本行中提取带有"商品名称"标签的显式商品名。
+     *
+     * @param lines OCR 原文按行拆分的文本列表
+     * @return 清洗后的显式商品名称列表
+     */
     private List<String> extractExplicitProductNames(List<String> lines) {
         List<String> names = new ArrayList<>();
         for (String line : lines) {
@@ -386,12 +406,19 @@ public class OrderImageTextParser {
         return score;
     }
 
+    /**
+     * 按标签优先、商品区块兜底的顺序从 OCR 文本行中提取规格信息。
+     *
+     * @param lines       OCR 原文按行拆分的文本列表
+     * @param productName 已识别的商品名称，用于兜底扫描范围限定
+     * @return 规格文本，未找到时返回空
+     */
     private String findSku(List<String> lines, String productName) {
         for (int index = 0; index < lines.size(); index++) {
             String line = lines.get(index);
             Matcher matcher = SKU_PATTERN.matcher(line);
             if (matcher.matches()) {
-                return matcher.group(1).trim();
+                return cleanSkuCandidate(matcher.group(1));
             }
             if (SKU_LABEL_PATTERN.matcher(line).matches()) {
                 String nextValue = findNextValidSkuValue(lines, index + 1);
@@ -429,7 +456,7 @@ public class OrderImageTextParser {
                     && !NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()
                     && !isShopLine(line)
                     && DIRECT_QUANTITY_PATTERN.matcher(line).find()) {
-                return line;
+                return cleanSkuCandidate(line);
             }
         }
         return null;
@@ -444,11 +471,30 @@ public class OrderImageTextParser {
             if (SYSTEM_LINE_PATTERN.matcher(line).find() || NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()) {
                 return null;
             }
-            if (isValidSkuValue(line)) {
-                return line;
+            String cleanedLine = cleanSkuCandidate(line);
+            if (isValidSkuValue(cleanedLine)) {
+                return cleanedLine;
             }
         }
         return null;
+    }
+
+    /**
+     * 清理 SKU 候选行尾的价格、单件数量和页面跳转符号，保留中间的容量及包装规格数字。
+     *
+     * @param value OCR 识别得到的 SKU 候选文本，允许为空
+     * @return 清理后的 SKU 文本；输入为空时原样返回
+     */
+    private String cleanSkuCandidate(String value) {
+        if (!hasText(value)) {
+            return value;
+        }
+        String cleanedValue = TRAILING_SKU_UI_PATTERN.matcher(value.trim()).replaceFirst("");
+        cleanedValue = TRAILING_SKU_QUANTITY_PATTERN.matcher(cleanedValue).replaceFirst("");
+        cleanedValue = TRAILING_SKU_UI_PATTERN.matcher(cleanedValue).replaceFirst("");
+        cleanedValue = TRAILING_SKU_PRICE_PATTERN.matcher(cleanedValue).replaceFirst("");
+        cleanedValue = TRAILING_SKU_UI_PATTERN.matcher(cleanedValue).replaceFirst("");
+        return cleanedValue.replaceAll("\\s+", " ").trim();
     }
 
     /**
@@ -460,6 +506,12 @@ public class OrderImageTextParser {
                 || line.matches(".*(?:口味|味|颜色|色|型号|款|码|容量|拿铁|摩卡).*?");
     }
 
+    /**
+     * 从 OCR 原文中提取实付金额，优先匹配带标签的价格，兜底匹配独立金额。
+     *
+     * @param rawText OCR 识别的完整原始文本
+     * @return 实付金额，未找到时返回空
+     */
     private Double findPrice(String rawText) {
         Matcher labeledMatcher = LABELED_PRICE_PATTERN.matcher(rawText);
         if (labeledMatcher.find()) {
@@ -562,6 +614,12 @@ public class OrderImageTextParser {
         return false;
     }
 
+    /**
+     * 收集"单份规格在前、包装乘数在后"的数量候选，例如 2.5kg*8。
+     *
+     * @param text       待匹配的文本段
+     * @param candidates 候选列表，匹配成功时追加
+     */
     private void collectUnitBeforeMultiplierCandidates(String text, List<QuantityCandidate> candidates) {
         Matcher matcher = UNIT_BEFORE_MULTIPLIER_PATTERN.matcher(text);
         while (matcher.find()) {
@@ -572,6 +630,12 @@ public class OrderImageTextParser {
         }
     }
 
+    /**
+     * 收集"包装数在前、单份规格在后"的数量候选，例如 3包*100抽/包。
+     *
+     * @param text       待匹配的文本段
+     * @param candidates 候选列表，匹配成功时追加
+     */
     private void collectPackageBeforeUnitCandidates(String text, List<QuantityCandidate> candidates) {
         Matcher matcher = PACKAGE_BEFORE_UNIT_PATTERN.matcher(text);
         while (matcher.find()) {
@@ -582,6 +646,12 @@ public class OrderImageTextParser {
         }
     }
 
+    /**
+     * 收集同单位加法数量候选，例如 1kg+500g 转换为同单位后求和。
+     *
+     * @param text       待匹配的文本段
+     * @param candidates 候选列表，匹配成功时追加
+     */
     private void collectAdditionCandidates(String text, List<QuantityCandidate> candidates) {
         Matcher matcher = ADDITION_QUANTITY_PATTERN.matcher(text);
         while (matcher.find()) {
@@ -595,6 +665,12 @@ public class OrderImageTextParser {
         }
     }
 
+    /**
+     * 收集直接规格数量候选，例如 5kg、300ml、100抽。
+     *
+     * @param text       待匹配的文本段
+     * @param candidates 候选列表，匹配成功时追加
+     */
     private void collectDirectCandidates(String text, List<QuantityCandidate> candidates) {
         Matcher matcher = DIRECT_QUANTITY_PATTERN.matcher(text);
         while (matcher.find()) {
@@ -603,6 +679,12 @@ public class OrderImageTextParser {
         }
     }
 
+    /**
+     * 从文本中提取仅有包装数但无明确单份规格的数量，例如"3包""2盒"。
+     *
+     * @param text 待匹配的文本段
+     * @return 包装数，未找到或已有更精确数量候选时返回空
+     */
     private Integer findPackageCountOnly(String text) {
         if (!hasText(text) || findBestQuantityCandidate(text) != null) {
             return null;
@@ -611,10 +693,22 @@ public class OrderImageTextParser {
         return matcher.find() ? Integer.valueOf(matcher.group(1)) : null;
     }
 
+    /**
+     * 将包装数字符串解析为整数，格式非法时由调用方处理异常。
+     *
+     * @param value 包装数字符串
+     * @return 整数包装数
+     */
     private int integerPackageCount(String value) {
         return Integer.parseInt(value);
     }
 
+    /**
+     * 将 OCR 识别的单位文本归一化为标准统计单位，统一大小写和等价写法。
+     *
+     * @param unit OCR 识别的原始单位文本
+     * @return 归一化后的标准单位，无法识别时返回原始值
+     */
     private String normalizeUnit(String unit) {
         String lowerCaseUnit = unit.toLowerCase(Locale.ROOT);
         return switch (lowerCaseUnit) {
@@ -626,11 +720,23 @@ public class OrderImageTextParser {
         };
     }
 
+    /**
+     * 从 OCR 原文中提取下单日期，支持斜杠和横杠分隔格式。
+     *
+     * @param rawText OCR 识别的完整原始文本
+     * @return 标准化后的日期字符串，未找到时返回空
+     */
     private String findDate(String rawText) {
         Matcher matcher = DATE_PATTERN.matcher(rawText);
         return matcher.find() ? matcher.group(1).replace('/', '-') : null;
     }
 
+    /**
+     * 从 OCR 文本行中识别店铺名称，跳过优惠和金额汇总等噪声字段。
+     *
+     * @param lines OCR 原文按行拆分的文本列表
+     * @return 店铺名称，未找到时返回空
+     */
     private String findShopName(List<String> lines) {
         for (String line : lines) {
             if (isShopLine(line)) {
@@ -641,6 +747,12 @@ public class OrderImageTextParser {
         return null;
     }
 
+    /**
+     * 判断文本行是否为店铺名称行，要求冒号后的名称匹配店铺名称特征且不是噪声字段。
+     *
+     * @param line OCR 文本行
+     * @return 是店铺名称行时返回 true
+     */
     private boolean isShopLine(String line) {
         if (isShopNoiseLine(line)) {
             return false;
@@ -657,6 +769,12 @@ public class OrderImageTextParser {
         return SHOP_NOISE_LINE_PATTERN.matcher(line).find();
     }
 
+    /**
+     * 根据 OCR 原文中的平台关键词识别购买平台，无法识别时返回空。
+     *
+     * @param rawText OCR 识别的完整原始文本
+     * @return 平台标识，例如 pdd、taobao、jd；无法识别时返回空
+     */
     private String detectPlatform(String rawText) {
         if (rawText.contains("拼多多")) {
             return "pdd";
@@ -705,6 +823,16 @@ public class OrderImageTextParser {
         return warnings;
     }
 
+    /**
+     * 根据关键字段完整度计算候选样本置信度，取值范围 0.1 到 0.95。
+     *
+     * @param productName  商品名称，允许为空
+     * @param price        实付金额，允许为空
+     * @param quantity     解析后的数量对象
+     * @param purchaseDate 下单日期，允许为空
+     * @param shopName     店铺名称，允许为空
+     * @return 置信度评分
+     */
     private double calculateConfidence(String productName,
                                        Double price,
                                        Quantity quantity,
@@ -719,10 +847,22 @@ public class OrderImageTextParser {
         return Math.max(0.1D, Math.min(0.95D, confidence));
     }
 
+    /**
+     * 判断文本是否包含 CJK 统一汉字字符。
+     *
+     * @param text 待判断文本
+     * @return 包含中文字符时返回 true
+     */
     private boolean containsChinese(String text) {
         return text.codePoints().anyMatch(codePoint -> codePoint >= 0x4E00 && codePoint <= 0x9FFF);
     }
 
+    /**
+     * 判断文本是否包含非空白字符。
+     *
+     * @param text 待判断文本，允许为空
+     * @return 文本非空且包含非空白字符时返回 true
+     */
     private boolean hasText(String text) {
         return text != null && !text.isBlank();
     }

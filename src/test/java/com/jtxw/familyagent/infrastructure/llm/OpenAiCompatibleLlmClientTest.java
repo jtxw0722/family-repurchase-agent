@@ -1,14 +1,13 @@
 package com.jtxw.familyagent.infrastructure.llm;
 
-import com.jtxw.familyagent.application.LlmClientException;
-import com.jtxw.familyagent.application.LlmClientRequest;
-import com.jtxw.familyagent.application.LlmClientResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,142 +15,174 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/10 18:47:43
- * @Description: OpenAI-compatible LLM HTTP 客户端测试，验证原始响应、异常信息、请求头和超时行为。
+ * @Date: 2026/06/20 12:39:31
+ * @Description: OpenAI-compatible 通用供应商适配器测试，验证文本图片请求、响应元数据和安全异常
  */
 class OpenAiCompatibleLlmClientTest {
     /**
-     * 测试用 LLM HTTP 客户端实例。
+     * 测试用 JSON 解析器。
      */
-    private final OpenAiCompatibleLlmClient client = new OpenAiCompatibleLlmClient();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void shouldReturnRawResponseWhenStatusIs2xx() throws Exception {
-        byte[] responseBody = "{\"choices\":[{\"message\":{\"content\":\"[]\"}}]}".getBytes(StandardCharsets.UTF_8);
-        HttpServer server = server(responseBody, "application/json", 200);
+    void shouldBuildImageRequestAndParseContentUsageAndModel() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        String response = "{\"model\":\"actual-model\",\"choices\":[{\"message\":{\"content\":\"synthetic content\"}}],"
+                + "\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":7}}";
+        HttpServer server = server(response, 200, requestBody);
         server.start();
         try {
-            LlmClientResponse response = client.chatCompletion(request(server, "test-key", "{}"));
+            LlmResponse result = client(server, "safe-key", 2).chat(imageRequest());
 
-            assertThat(response.httpStatus()).isEqualTo(200);
-            assertThat(response.contentType()).contains("application/json");
-            assertThat(response.responseBytes()).isEqualTo(responseBody.length);
-            assertThat(response.body()).isEqualTo(new String(responseBody, StandardCharsets.UTF_8));
+            assertThat(result.content()).isEqualTo("synthetic content");
+            assertThat(result.provider()).isEqualTo("openai-compatible");
+            assertThat(result.model()).isEqualTo("actual-model");
+            assertThat(result.promptTokens()).isEqualTo(12);
+            assertThat(result.completionTokens()).isEqualTo(7);
+            assertThat(result.durationMillis()).isNotNegative();
+            assertThat(requestBody.get()).contains("request-model").contains("data:image/jpeg;base64,AQID");
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void shouldThrowLlmClientExceptionWhenStatusIsNot2xx() throws Exception {
-        byte[] responseBody = "{\"error\":\"quota exceeded\"}".getBytes(StandardCharsets.UTF_8);
-        HttpServer server = server(responseBody, "application/octet-stream", 429);
+    void shouldUseTextContentWhenImagesEmpty() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = server("{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}",
+                200, requestBody);
         server.start();
         try {
-            assertThatThrownBy(() -> client.chatCompletion(request(server, "test-key", "{}")))
-                    .isInstanceOfSatisfying(LlmClientException.class, exception -> {
-                        assertThat(exception.httpStatus()).isEqualTo(429);
-                        assertThat(exception.contentType()).contains("application/octet-stream");
-                        assertThat(exception.responseBytes()).isEqualTo(responseBody.length);
-                        assertThat(exception.responseBody()).isEqualTo(new String(responseBody, StandardCharsets.UTF_8));
-                        assertThat(exception.getMessage())
-                                .contains("LLM HTTP 响应异常：429")
-                                .contains("quota exceeded")
-                                .doesNotContain("test-key");
-                    });
+            LlmRequest request = new LlmRequest("scene", "v1", "system", "plain user text",
+                    "request-model", null, null, null);
+
+            client(server, "safe-key", 2).chat(request);
+
+            assertThat(requestBody.get()).contains("\"content\":\"plain user text\"")
+                    .doesNotContain("image_url");
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void shouldThrowClearExceptionWhenResponseBodyIsEmpty() throws Exception {
-        HttpServer server = server(new byte[0], "application/json", 200);
+    void shouldFallbackToRequestModelWhenResponseModelMissingAndUsageMissing() throws Exception {
+        HttpServer server = server("{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}",
+                200, new AtomicReference<>());
         server.start();
         try {
-            assertThatThrownBy(() -> client.chatCompletion(request(server, "test-key", "{}")))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("LLM 返回空响应");
+            LlmResponse result = client(server, "safe-key", 2).chat(imageRequest());
+
+            assertThat(result.model()).isEqualTo("request-model");
+            assertThat(result.promptTokens()).isNull();
+            assertThat(result.completionTokens()).isNull();
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void shouldSendAuthorizationHeaderWithoutLeakingApiKeyInAssertionMessage() throws Exception {
-        AtomicReference<String> authorizationHeader = new AtomicReference<>("");
-        AtomicReference<String> contentTypeHeader = new AtomicReference<>("");
-        AtomicReference<String> acceptHeader = new AtomicReference<>("");
-        byte[] responseBody = "{\"choices\":[{\"message\":{\"content\":\"[]\"}}]}".getBytes(StandardCharsets.UTF_8);
+    void shouldRejectNon2xxWithoutLeakingApiKey() throws Exception {
+        HttpServer server = server("{\"error\":\"denied\"}", 429, new AtomicReference<>());
+        server.start();
+        try {
+            assertThatThrownBy(() -> client(server, "secret-provider-key", 2).chat(imageRequest()))
+                    .isInstanceOf(LlmException.class)
+                    .hasMessage("LLM HTTP 响应异常：429")
+                    .hasMessageNotContaining("secret-provider-key");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldRejectEmptyChoices() throws Exception {
+        assertResponseFailure("{\"choices\":[]}", "LLM 响应 choices 为空");
+    }
+
+    @Test
+    void shouldRejectEmptyContent() throws Exception {
+        assertResponseFailure("{\"choices\":[{\"message\":{\"content\":\" \"}}]}",
+                "LLM 响应 content 为空");
+    }
+
+    @Test
+    void shouldRejectInvalidJsonResponse() throws Exception {
+        assertResponseFailure("not-json", "LLM HTTP 响应不是有效 JSON");
+    }
+
+    @Test
+    void shouldReturnSafeErrorWhenRequestTimesOut() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat/completions", exchange -> {
-            authorizationHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
-            contentTypeHeader.set(exchange.getRequestHeaders().getFirst("Content-Type"));
-            acceptHeader.set(exchange.getRequestHeaders().getFirst("Accept"));
             exchange.getRequestBody().readAllBytes();
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, responseBody.length);
-            try (exchange; var response = exchange.getResponseBody()) {
-                response.write(responseBody);
-            }
-        });
-        server.start();
-        try {
-            client.chatCompletion(request(server, "secret-token", "{}"));
-
-            assertThat(authorizationHeader.get()).startsWith("Bearer ");
-            assertThat(authorizationHeader.get()).endsWith("secret-token");
-            assertThat(contentTypeHeader.get()).contains("application/json");
-            assertThat(acceptHeader.get()).contains("application/json");
-        } finally {
-            server.stop(0);
-        }
-    }
-
-    @Test
-    void shouldRespectReadTimeout() throws Exception {
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/chat/completions", exchange -> {
-            try (exchange) {
-                exchange.getRequestBody().readAllBytes();
+            try {
                 Thread.sleep(1500L);
-                byte[] responseBody = "{\"choices\":[{\"message\":{\"content\":\"[]\"}}]}"
-                        .getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, responseBody.length);
-                exchange.getResponseBody().write(responseBody);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
             }
         });
         server.start();
         try {
-            assertThatThrownBy(() -> client.chatCompletion(request(server, "test-key", "{}")))
-                    .hasRootCauseInstanceOf(SocketTimeoutException.class);
+            assertThatThrownBy(() -> client(server, "secret-timeout-key", 1).chat(imageRequest()))
+                    .isInstanceOf(LlmException.class)
+                    .hasMessageContaining("LLM 请求失败")
+                    .hasMessageNotContaining("secret-timeout-key")
+                    .hasMessageNotContaining("AQID");
         } finally {
             server.stop(0);
         }
     }
 
-    private HttpServer server(byte[] responseBody, String contentType, int statusCode) throws Exception {
+    /**
+     * 断言指定 HTTP 响应内容会导致 LLM 调用抛出包含预期信息的异常。
+     */
+    private void assertResponseFailure(String response, String message) throws Exception {
+        HttpServer server = server(response, 200, new AtomicReference<>());
+        server.start();
+        try {
+            assertThatThrownBy(() -> client(server, "safe-key", 2).chat(imageRequest()))
+                    .isInstanceOf(LlmException.class)
+                    .hasMessage(message);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 构造包含合成图片输入的通用 LLM 请求。
+     */
+    private LlmRequest imageRequest() {
+        return new LlmRequest("synthetic-scene", "v1", "system", "user", "request-model",
+                0D, 1000, List.of(new LlmImageInput("synthetic.jpg", "image/jpeg", new byte[]{1, 2, 3})));
+    }
+
+    /**
+     * 使用指定 HTTP 服务器地址、API Key 和超时创建被测客户端。
+     */
+    private OpenAiCompatibleLlmClient client(HttpServer server, String apiKey, int timeoutSeconds) {
+        OpenAiCompatibleLlmClientSettings settings = new OpenAiCompatibleLlmClientSettings(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/", apiKey, timeoutSeconds);
+        return new OpenAiCompatibleLlmClient(settings, objectMapper);
+    }
+
+    /**
+     * 创建本地 HTTP 服务器，返回指定响应内容和状态码，并捕获请求体。
+     */
+    private HttpServer server(String responseBody, int statusCode, AtomicReference<String> requestBody)
+            throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat/completions", exchange -> {
-            exchange.getRequestBody().readAllBytes();
-            exchange.getResponseHeaders().set("Content-Type", contentType);
-            exchange.sendResponseHeaders(statusCode, responseBody.length);
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] responseBytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(statusCode, responseBytes.length);
             try (exchange; var response = exchange.getResponseBody()) {
-                response.write(responseBody);
+                response.write(responseBytes);
             }
         });
         return server;
-    }
-
-    private LlmClientRequest request(HttpServer server, String apiKey, String requestBody) {
-        return new LlmClientRequest(
-                "http://127.0.0.1:" + server.getAddress().getPort(),
-                apiKey,
-                1,
-                requestBody
-        );
     }
 }

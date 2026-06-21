@@ -304,6 +304,44 @@ class OrderImageTextParserTest {
         assertThat(candidate.unit()).isEqualTo("L");
     }
 
+    @Test
+    void shouldCleanTrailingPriceFromTmallSkuCandidate() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                天猫超市                直播中 >
+                EverClean铂钻猫砂原装进口膨润土矿砂除臭低尘净味速凝                ¥45.82
+                【新品升级】金标微香10L-减少...                ¥198
+                商品总价 共1件                ¥198
+                店铺优惠                -¥86
+                实付款                ¥45.82
+                订单信息 2026-06-15
+                """, "jtxw", null, null).get(0);
+
+        assertThat(candidate.sku()).isEqualTo("【新品升级】金标微香10L-减少...");
+        assertThat(candidate.sku()).doesNotContain("¥198");
+        assertThat(candidate.quantity()).isEqualTo(10D);
+        assertThat(candidate.unit()).isEqualTo("L");
+        assertThat(candidate.price()).isEqualTo(45.82D);
+    }
+
+    @ParameterizedTest
+    @MethodSource("trailingSkuPriceCases")
+    void shouldCleanTrailingCurrencyVariantsFromSku(String specification, String expectedSku) {
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "已购规格：" + specification + "\n实付款：￥45.82", "jtxw", null, null).get(0);
+
+        assertThat(candidate.sku()).isEqualTo(expectedSku);
+    }
+
+    @Test
+    void shouldKeepValidSpecificationNumbersWhenSkuHasNoTrailingPrice() {
+        String specification = "丝滑拿铁268ML*7瓶+1瓶摩卡";
+
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "已购规格：" + specification + "\n实付款：￥26.14", "jtxw", null, null).get(0);
+
+        assertThat(candidate.sku()).isEqualTo(specification);
+    }
+
     @ParameterizedTest
     @MethodSource("nextLineSkuCases")
     void shouldParseSkuFromNextLineAfterLabel(String label, String specification) {
@@ -468,6 +506,9 @@ class OrderImageTextParserTest {
         });
     }
 
+    /**
+     * 使用合成拼多多订单文本解析首个候选样本，验证平台和日期透传。
+     */
     private ParsedPurchaseCandidate parsePddCandidate(String platform, String purchaseDate) {
         String rawText = """
                 拼多多
@@ -480,11 +521,17 @@ class OrderImageTextParserTest {
         return parser.parse(rawText, "jtxw", platform, purchaseDate).get(0);
     }
 
+    /**
+     * 使用指定商品名称和规格文本构造合成 OCR 原文并解析首个候选样本。
+     */
     private ParsedPurchaseCandidate parseSpecification(String productName, String specification) {
         String rawText = "商品名称：" + productName + "\n规格：" + specification + "\n实付：39.90元";
         return parser.parse(rawText, "jtxw", null, null).get(0);
     }
 
+    /**
+     * 提供"单份规格在前、包装乘数在后"的数量解析测试用例。
+     */
     private static Stream<Arguments> unitBeforeMultiplierCases() {
         return Stream.of(
                 Arguments.of("2.5kg*8", 20D, "kg"),
@@ -495,6 +542,9 @@ class OrderImageTextParserTest {
         );
     }
 
+    /**
+     * 提供规格标签在下一行的跨行 SKU 解析测试用例。
+     */
     private static Stream<Arguments> nextLineSkuCases() {
         return Stream.of(
                 Arguments.of("已购规格", "丝滑拿铁268ML*7瓶+1瓶摩卡"),
@@ -502,6 +552,20 @@ class OrderImageTextParserTest {
         );
     }
 
+    /**
+     * 提供规格文本尾部附着价格符号的清理测试用例。
+     */
+    private static Stream<Arguments> trailingSkuPriceCases() {
+        return Stream.of(
+                Arguments.of("【新品升级】金标微香10L-减少... ￥198.00", "【新品升级】金标微香10L-减少..."),
+                Arguments.of("【新品升级】金标微香10L-减少... ¥198", "【新品升级】金标微香10L-减少..."),
+                Arguments.of("【新品升级】金标微香10L-减少... -¥66.18", "【新品升级】金标微香10L-减少...")
+        );
+    }
+
+    /**
+     * 提供"基础包装数加赠送包装数"组合装数量解析测试用例。
+     */
     private static Stream<Arguments> bonusPackageCases() {
         return Stream.of(
                 Arguments.of("268ML*7瓶+1瓶摩卡", 2144D, "ml"),
@@ -512,6 +576,9 @@ class OrderImageTextParserTest {
         );
     }
 
+    /**
+     * 提供"包装数在前、单份规格在后"的数量解析测试用例。
+     */
     private static Stream<Arguments> packageBeforeUnitCases() {
         return Stream.of(
                 Arguments.of("3包*100抽/包", 300D, "抽"),
@@ -520,6 +587,9 @@ class OrderImageTextParserTest {
         );
     }
 
+    /**
+     * 提供仅有包装数但无明确单份规格的测试用例。
+     */
     private static Stream<Arguments> packageOnlyCases() {
         return Stream.of(
                 Arguments.of("3包"),

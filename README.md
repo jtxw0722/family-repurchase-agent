@@ -169,6 +169,28 @@ curl -X POST "http://localhost:8080/api/tools/parse-order-image" `
 
 `parse_order_image` 默认不会启用真实 OCR。未配置 OCR 时，接口会返回“OCR 未启用”的错误，避免误上传或误处理真实订单图片。
 
+### 视觉模型识别配置（可选）
+
+`parse_order_image` 默认不调用外部模型。需要使用视觉模型识别订单截图时，可以显式开启：
+
+```yaml
+family-agent:
+  parse-order-image:
+    model:
+      enabled: true
+      provider: openai-compatible
+      base-url: ${FAMILY_AGENT_PARSE_ORDER_IMAGE_MODEL_BASE_URL:}
+      api-key: ${FAMILY_AGENT_PARSE_ORDER_IMAGE_MODEL_API_KEY:}
+      model-name: ${FAMILY_AGENT_PARSE_ORDER_IMAGE_MODEL_NAME:}
+      timeout-seconds: 60
+      fallback-to-local-ocr: true
+      max-image-bytes: 10485760
+```
+
+开启后，系统会先调用视觉模型提取图片文字；如果模型识别失败且 `fallback-to-local-ocr=true`，则回退到本地 OCR。视觉模型会接收订单截图图片，请确认截图中的收货地址、手机号、订单号、支付信息等隐私数据已脱敏，或你接受将图片发送给所配置模型服务的风险。
+
+视觉模型只负责提取 `rawText`，后续候选样本解析、归一化预览和人工确认仍由后端规则完成。`parse_order_image` 仍只返回候选样本，不写入 `purchase_records`。本地 OCR 兜底只有在本地 OCR 已配置可用时才能成功。
+
 项目提供 `scripts/local-ocr.py` 命令行脚本，基于 RapidOCR 在本机识别图片。需要识别真实图片时，先手动安装可选依赖：
 
 ```powershell

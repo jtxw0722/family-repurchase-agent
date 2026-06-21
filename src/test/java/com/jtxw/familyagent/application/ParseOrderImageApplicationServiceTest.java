@@ -9,7 +9,10 @@ import com.jtxw.familyagent.domain.policy.UnitFamily;
 import com.jtxw.familyagent.infrastructure.ocr.DisabledOcrClient;
 import com.jtxw.familyagent.infrastructure.ocr.OcrClient;
 import com.jtxw.familyagent.infrastructure.ocr.OcrResult;
+import com.jtxw.familyagent.infrastructure.ocr.OrderImageModelException;
+import com.jtxw.familyagent.infrastructure.ocr.OrderImageRecognitionService;
 import com.jtxw.familyagent.infrastructure.ocr.OrderImageTextParser;
+import com.jtxw.familyagent.infrastructure.ocr.ParseOrderImageModelProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,13 +20,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/19 23:20:00
+ * @Date: 2026/06/20 12:40:44
  * @Description: 订单截图解析应用服务测试，覆盖路径安全、默认禁用 OCR 和只读候选返回边界
  */
 class ParseOrderImageApplicationServiceTest {
@@ -92,7 +96,8 @@ class ParseOrderImageApplicationServiceTest {
         assertThat(result.candidateCount()).isEqualTo(1);
         assertThat(result.candidates().get(0).productName()).isEqualTo("合成测试纸巾");
         assertThat(result.candidates().get(0).normalization()).isNotNull();
-        assertThat(result.warnings()).contains("parse_order_image 仅返回候选样本，不会写入 purchase_records；请确认后调用现有 record_purchase，或后续规划中的 record_sample。");
+        assertThat(result.warnings()).contains(
+                "parse_order_image 仅返回候选样本，不会写入 purchase_records，也不会自动调用 record_purchase；请确认后调用 record_purchase 正式入库。");
     }
 
     @Test
@@ -159,21 +164,78 @@ class ParseOrderImageApplicationServiceTest {
         assertThat(result.success()).isTrue();
     }
 
+    @Test
+    void shouldParseModelRawTextWithoutCallingLocalOcr() throws IOException {
+        Path imageFile = Files.createFile(allowedDirectory.resolve("model-success.jpg"));
+        AtomicBoolean localCalled = new AtomicBoolean();
+        ParseOrderImageModelProperties properties = modelProperties(true);
+        OrderImageRecognitionService recognitionService = new OrderImageRecognitionService(
+                path -> {
+                    localCalled.set(true);
+                    return fakeOcrClient().recognize(path);
+                },
+                path -> new OcrResult("商品名称：模型合成纸巾\n规格：100抽\n实付：9.90元",
+                        null, List.of()),
+                properties);
+        ParseOrderImageApplicationService service = new ParseOrderImageApplicationService(
+                recognitionService, new OrderImageTextParser(), NormalizationPreviewService.withoutRules(),
+                List.of(allowedDirectory), "jtxw");
+
+        ParseOrderImageResult result = service.parse(command(imageFile.toString(), true));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.rawText()).contains("模型合成纸巾");
+        assertThat(result.candidates().get(0).productName()).isEqualTo("模型合成纸巾");
+        assertThat(localCalled).isFalse();
+    }
+
+    @Test
+    void shouldParseLocalRawTextAndReturnWarningAfterModelFallback() throws IOException {
+        Path imageFile = Files.createFile(allowedDirectory.resolve("model-fallback.png"));
+        ParseOrderImageModelProperties properties = modelProperties(true);
+        OrderImageRecognitionService recognitionService = new OrderImageRecognitionService(
+                fakeOcrClient(),
+                path -> { throw new OrderImageModelException("合成连接超时"); },
+                properties);
+        ParseOrderImageApplicationService service = new ParseOrderImageApplicationService(
+                recognitionService, new OrderImageTextParser(), NormalizationPreviewService.withoutRules(),
+                List.of(allowedDirectory), "jtxw");
+
+        ParseOrderImageResult result = service.parse(command(imageFile.toString(), true));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.rawText()).contains("合成测试纸巾");
+        assertThat(result.warnings())
+                .anyMatch(warning -> warning.contains("视觉模型识别失败，已回退本地 OCR"));
+    }
+
+    /**
+     * 使用默认归一化预览和测试安全目录创建被测解析服务。
+     */
     private ParseOrderImageApplicationService createService(OcrClient ocrClient) {
         return new ParseOrderImageApplicationService(ocrClient, new OrderImageTextParser(), List.of(allowedDirectory));
     }
 
+    /**
+     * 使用指定归一化预览服务和测试安全目录创建被测解析服务。
+     */
     private ParseOrderImageApplicationService createService(OcrClient ocrClient,
                                                              NormalizationPreviewService previewService) {
         return new ParseOrderImageApplicationService(ocrClient, new OrderImageTextParser(), previewService,
                 List.of(allowedDirectory), "jtxw");
     }
 
+    /**
+     * 使用指定归一化规则创建归一化预览服务。
+     */
     private NormalizationPreviewService previewService(ProductRule... rules) {
         ProductRuleProvider ruleProvider = () -> List.of(rules);
         return new NormalizationPreviewService(new ProductRuleMatcher(ruleProvider), ruleProvider);
     }
 
+    /**
+     * 通过实际解析流程验证 owner 解析逻辑，返回候选样本中的 owner 值。
+     */
     private String parseOwner(String commandOwner, String defaultOwner) throws IOException {
         Path imageFile = Files.createFile(allowedDirectory.resolve("owner-" + System.nanoTime() + ".jpg"));
         ParseOrderImageApplicationService service = new ParseOrderImageApplicationService(
@@ -184,10 +246,26 @@ class ParseOrderImageApplicationServiceTest {
         return service.parse(command).candidates().get(0).owner();
     }
 
+    /**
+     * 创建返回合成 OCR 文本的 fake 本地 OCR 客户端。
+     */
     private OcrClient fakeOcrClient() {
         return imagePath -> new OcrResult("商品名称：合成测试纸巾\n规格：100抽\n实付：12.50元", 0.9D, List.of());
     }
 
+    /**
+     * 创建启用视觉模型的合成配置，指定是否允许本地 OCR 兜底。
+     */
+    private ParseOrderImageModelProperties modelProperties(boolean fallbackToLocalOcr) {
+        ParseOrderImageModelProperties properties = new ParseOrderImageModelProperties();
+        properties.setEnabled(true);
+        properties.setFallbackToLocalOcr(fallbackToLocalOcr);
+        return properties;
+    }
+
+    /**
+     * 创建指定图片路径和 dryRun 标志的合成解析命令。
+     */
     private ParseOrderImageCommand command(String imagePath, Boolean dryRun) {
         return new ParseOrderImageCommand(imagePath, "jtxw", "pdd", null, null, dryRun);
     }

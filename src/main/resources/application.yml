@@ -15,6 +15,16 @@ family-agent:
   # 请求未提供 owner 时使用的订单归属人
   default-owner: jtxw
   parse-order-image:
+    model:
+      # 默认不向外部视觉模型发送订单截图；仅在用户显式配置后启用
+      enabled: true
+      provider: openai-compatible
+      base-url: https://token-plan-cn.xiaomimimo.com/v1
+      api-key: ${FAMILY_AGENT_PARSE_ORDER_IMAGE_MODEL_API_KEY:}
+      model-name: mimo-v2.5
+      timeout-seconds: 60
+      fallback-to-local-ocr: true
+      max-image-bytes: 10485760
     local-ocr:
       # 默认关闭本地 OCR；仅在用户明确配置本机命令后启用
       enabled: true

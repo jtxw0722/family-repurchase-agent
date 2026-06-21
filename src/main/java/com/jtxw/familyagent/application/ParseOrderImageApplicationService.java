@@ -5,6 +5,7 @@ import com.jtxw.familyagent.domain.model.ParseOrderImageResult;
 import com.jtxw.familyagent.domain.model.ParsedPurchaseCandidate;
 import com.jtxw.familyagent.infrastructure.ocr.OcrClient;
 import com.jtxw.familyagent.infrastructure.ocr.OcrResult;
+import com.jtxw.familyagent.infrastructure.ocr.OrderImageRecognitionService;
 import com.jtxw.familyagent.infrastructure.ocr.OrderImageTextParser;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,8 +30,7 @@ public class ParseOrderImageApplicationService {
     /**
      * 第一阶段不会写入购买记录的固定边界说明。
      */
-    private static final String READ_ONLY_WARNING =
-            "parse_order_image 仅返回候选样本，不会写入 purchase_records；请确认后调用现有 record_purchase，或后续规划中的 record_sample。";
+    private static final String READ_ONLY_WARNING = "parse_order_image 仅返回候选样本，不会写入 purchase_records，也不会自动调用 record_purchase；请确认后调用 record_purchase 正式入库。";
     /**
      * dryRun=false 时的额外提示。
      */
@@ -42,9 +42,9 @@ public class ParseOrderImageApplicationService {
     private static final Set<String> SUPPORTED_IMAGE_SUFFIXES = Set.of("png", "jpg", "jpeg", "webp");
 
     /**
-     * OCR 客户端，默认注入禁用实现。
+     * 订单截图识别编排服务，负责视觉模型优先和本地 OCR 兜底。
      */
-    private final OcrClient ocrClient;
+    private final OrderImageRecognitionService recognitionService;
     /**
      * OCR 原始文本规则解析器。
      */
@@ -65,7 +65,7 @@ public class ParseOrderImageApplicationService {
     /**
      * 创建订单截图解析应用服务。
      *
-     * @param ocrClient                   OCR 客户端，默认使用禁用实现
+     * @param recognitionService          订单截图识别编排服务
      * @param orderImageTextParser        OCR 原始文本规则解析器
      * @param normalizationPreviewService OCR 候选归一化预览服务
      * @param allowedDirectoriesProperty  允许读取的目录，多个目录使用逗号或分号分隔
@@ -73,13 +73,13 @@ public class ParseOrderImageApplicationService {
      */
     @Autowired
     public ParseOrderImageApplicationService(
-            OcrClient ocrClient,
+            OrderImageRecognitionService recognitionService,
             OrderImageTextParser orderImageTextParser,
             NormalizationPreviewService normalizationPreviewService,
             @Value("${family-agent.import.allowed-dirs:${FAMILY_AGENT_IMPORT_ALLOWED_DIRS:./data/inbox}}")
             String allowedDirectoriesProperty,
             @Value("${family-agent.default-owner:jtxw}") String defaultOwner) {
-        this(ocrClient, orderImageTextParser, normalizationPreviewService,
+        this(recognitionService, orderImageTextParser, normalizationPreviewService,
                 parseAllowedDirectories(allowedDirectoriesProperty), defaultOwner);
     }
 
@@ -93,7 +93,8 @@ public class ParseOrderImageApplicationService {
     public ParseOrderImageApplicationService(OcrClient ocrClient,
                                              OrderImageTextParser orderImageTextParser,
                                              List<Path> allowedDirectories) {
-        this(ocrClient, orderImageTextParser, NormalizationPreviewService.withoutRules(),
+        this(OrderImageRecognitionService.localOnly(ocrClient), orderImageTextParser,
+                NormalizationPreviewService.withoutRules(),
                 allowedDirectories, "jtxw");
     }
 
@@ -109,7 +110,8 @@ public class ParseOrderImageApplicationService {
                                              OrderImageTextParser orderImageTextParser,
                                              List<Path> allowedDirectories,
                                              String defaultOwner) {
-        this(ocrClient, orderImageTextParser, NormalizationPreviewService.withoutRules(),
+        this(OrderImageRecognitionService.localOnly(ocrClient), orderImageTextParser,
+                NormalizationPreviewService.withoutRules(),
                 allowedDirectories, defaultOwner);
     }
 
@@ -127,7 +129,25 @@ public class ParseOrderImageApplicationService {
                                              NormalizationPreviewService normalizationPreviewService,
                                              List<Path> allowedDirectories,
                                              String defaultOwner) {
-        this.ocrClient = ocrClient;
+        this(OrderImageRecognitionService.localOnly(ocrClient), orderImageTextParser,
+                normalizationPreviewService, allowedDirectories, defaultOwner);
+    }
+
+    /**
+     * 创建使用指定识别编排、归一化预览和安全目录的解析服务，供 Spring 注入和单元测试使用。
+     *
+     * @param recognitionService          订单截图识别编排服务
+     * @param orderImageTextParser        OCR 文本规则解析器
+     * @param normalizationPreviewService OCR 候选归一化预览服务
+     * @param allowedDirectories          允许读取图片的目录，不允许为空
+     * @param defaultOwner                请求未提供 owner 时使用的默认订单归属人，允许为空
+     */
+    public ParseOrderImageApplicationService(OrderImageRecognitionService recognitionService,
+                                             OrderImageTextParser orderImageTextParser,
+                                             NormalizationPreviewService normalizationPreviewService,
+                                             List<Path> allowedDirectories,
+                                             String defaultOwner) {
+        this.recognitionService = recognitionService;
         this.orderImageTextParser = orderImageTextParser;
         this.normalizationPreviewService = normalizationPreviewService;
         if (allowedDirectories == null || allowedDirectories.isEmpty()) {
@@ -155,7 +175,7 @@ public class ParseOrderImageApplicationService {
             throw new IllegalArgumentException("imagePath 不能为空");
         }
         Path imagePath = validateImagePath(command.imagePath());
-        OcrResult ocrResult = ocrClient.recognize(imagePath);
+        OcrResult ocrResult = recognitionService.recognize(imagePath);
         String rawText = ocrResult == null || ocrResult.rawText() == null ? "" : ocrResult.rawText();
         String effectiveOwner = hasText(command.owner()) ? command.owner().trim() : defaultOwner;
         List<ParsedPurchaseCandidate> parsedCandidates = orderImageTextParser.parse(
@@ -224,6 +244,12 @@ public class ParseOrderImageApplicationService {
         return false;
     }
 
+    /**
+     * 解析路径的真实物理路径，文件不存在时返回原始路径，用于防止符号链接越界。
+     *
+     * @param path 待解析的路径
+     * @return 文件存在时返回真实路径，否则返回原始路径
+     */
     private Path resolveRealPathIfExists(Path path) {
         try {
             return Files.exists(path) ? path.toRealPath() : path;
@@ -232,6 +258,12 @@ public class ParseOrderImageApplicationService {
         }
     }
 
+    /**
+     * 提取文件路径的小写后缀名，不含点号，无后缀时返回空字符串。
+     *
+     * @param imagePath 文件路径
+     * @return 小写后缀名，例如 "png"、"jpg"；无后缀时返回空字符串
+     */
     private String fileSuffix(Path imagePath) {
         String fileName = imagePath.getFileName().toString();
         int separatorIndex = fileName.lastIndexOf('.');
