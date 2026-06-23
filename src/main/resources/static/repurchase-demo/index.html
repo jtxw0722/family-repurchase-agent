@@ -4,33 +4,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>家庭复购品价格分析</title>
+    <link rel="icon" type="image/png" href="/repurchase-demo/favicon.png?v=1">
+    <link rel="shortcut icon" type="image/png" href="/repurchase-demo/favicon.png?v=1">
+    <link rel="apple-touch-icon" href="/repurchase-demo/favicon.png?v=1">
     <style>
         :root {
             color-scheme: light;
-            --page: #eef5fb;
-            --page-warm: #f7f2ec;
-            --card: rgba(255, 255, 255, .68);
+            --page-a: #eef7ff;
+            --page-b: #f7f0ff;
+            --page-c: #f7fbf4;
+            --card: rgba(255, 255, 255, .70);
             --card-strong: rgba(255, 255, 255, .86);
-            --line: rgba(120, 136, 163, .28);
-            --line-strong: rgba(99, 115, 140, .38);
-            --text: #142035;
-            --text-soft: #42516a;
+            --line: rgba(118, 132, 158, .26);
+            --line-strong: rgba(118, 132, 158, .38);
+            --text: #132035;
+            --text-soft: #41516a;
             --muted: #6d7a90;
-            --primary: #5c63f1;
-            --primary-dark: #424bd1;
-            --primary-soft: rgba(92, 99, 241, .12);
-            --green: #0c7d55;
-            --green-soft: rgba(12, 125, 85, .12);
+            --primary: #645cf5;
+            --primary-dark: #4b46d8;
+            --primary-soft: rgba(100, 92, 245, .13);
+            --green: #087a55;
+            --green-soft: rgba(8, 122, 85, .12);
             --amber: #a46011;
             --amber-soft: rgba(164, 96, 17, .13);
             --red: #b42318;
             --red-soft: rgba(180, 35, 24, .12);
-            --shadow: 0 20px 54px rgba(38, 48, 69, .12);
-            --shadow-soft: 0 12px 34px rgba(38, 48, 69, .08);
-            --radius-xl: 28px;
-            --radius-lg: 22px;
-            --radius-md: 16px;
-            --radius-sm: 13px;
+            --shadow: 0 24px 70px rgba(34, 48, 76, .13);
+            --shadow-soft: 0 14px 38px rgba(34, 48, 76, .08);
+            --radius-xl: 30px;
+            --radius-lg: 24px;
+            --radius-md: 18px;
+            --radius-sm: 14px;
         }
 
         * { box-sizing: border-box; }
@@ -38,102 +42,131 @@
         body {
             min-height: 100%;
             margin: 0;
-            overflow-x: hidden;
             color: var(--text);
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
             background:
-                    radial-gradient(circle at 10% 8%, rgba(147, 197, 253, .48), transparent 34%),
-                    radial-gradient(circle at 92% 8%, rgba(196, 181, 253, .42), transparent 32%),
-                    radial-gradient(circle at 12% 88%, rgba(167, 243, 208, .28), transparent 33%),
-                    linear-gradient(135deg, var(--page), var(--page-warm));
+                    radial-gradient(circle at 4% 8%, rgba(121, 190, 255, .38), transparent 34%),
+                    radial-gradient(circle at 94% 0%, rgba(170, 132, 255, .28), transparent 34%),
+                    radial-gradient(circle at 6% 82%, rgba(164, 236, 205, .30), transparent 36%),
+                    linear-gradient(135deg, var(--page-a), var(--page-b) 58%, var(--page-c));
             background-attachment: fixed;
         }
 
         button, input, select, textarea { font: inherit; }
         button { cursor: pointer; }
+        button:disabled { cursor: wait; opacity: .68; }
 
         .app {
-            width: min(1180px, calc(100% - 32px));
+            width: min(100% - 40px, 1240px);
             margin: 0 auto;
-            padding: 22px 0 44px;
+            padding: 22px 0 64px;
+        }
+
+        .glass {
+            border: 1px solid rgba(255, 255, 255, .72);
+            background: var(--card);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
         }
 
         .product-header {
-            border: 1px solid rgba(255, 255, 255, .74);
-            border-radius: 30px;
-            background: rgba(255, 255, 255, .52);
-            box-shadow: var(--shadow-soft);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-            padding: 18px 22px 16px;
-            margin-bottom: 18px;
+            border-radius: var(--radius-xl);
+            padding: 18px 20px 16px;
         }
 
         .brand-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 18px;
+            gap: 18px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--line);
         }
 
         .brand {
             display: flex;
             align-items: center;
-            gap: 11px;
+            gap: 12px;
+            min-width: 220px;
             font-weight: 850;
             letter-spacing: -.02em;
         }
 
         .brand-mark {
-            display: grid;
-            place-items: center;
-            width: 36px;
-            height: 36px;
-            border-radius: 13px;
-            color: #fff;
-            background: linear-gradient(135deg, #536cff, #765ff0);
-            box-shadow: 0 9px 20px rgba(92, 99, 241, .28);
+            width: 38px;
+            height: 38px;
+            border-radius: 15px;
+            overflow: hidden;
+            display: inline-flex;
+            flex: 0 0 auto;
+            box-shadow: 0 10px 26px rgba(100, 92, 245, .22);
+            background: #fff;
         }
+
+        .brand-mark img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .tabs {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tab {
+            border: 0;
+            min-height: 38px;
+            padding: 0 16px;
+            border-radius: 999px;
+            color: var(--text-soft);
+            background: rgba(255, 255, 255, .56);
+            font-weight: 800;
+            box-shadow: 0 8px 20px rgba(34, 48, 76, .04);
+            transition: transform .18s ease, background .18s ease, color .18s ease;
+        }
+
+        .tab:hover { transform: translateY(-1px); }
+        .tab.active { color: #fff; background: linear-gradient(135deg, #6d7cff, var(--primary)); }
 
         .header-grid {
             display: grid;
-            grid-template-columns: 1.1fr .9fr;
-            gap: 22px;
-            align-items: stretch;
+            grid-template-columns: 1.08fr .92fr;
+            gap: 18px;
+            padding-top: 18px;
         }
 
         .header-copy,
         .usage-tips {
-            border: 1px solid rgba(255, 255, 255, .66);
             border-radius: 24px;
-            background: rgba(255, 255, 255, .42);
-        }
-
-        .header-copy {
-            padding: 26px 28px;
+            background: rgba(255, 255, 255, .48);
+            padding: 22px 26px;
         }
 
         .header-copy h1 {
             margin: 0 0 10px;
-            font-size: clamp(30px, 4.6vw, 48px);
-            line-height: 1.12;
-            letter-spacing: -.06em;
+            font-size: clamp(34px, 5vw, 54px);
+            letter-spacing: -.07em;
+            line-height: 1.05;
         }
 
-        .header-copy p {
-            max-width: 640px;
+        .header-copy p,
+        .usage-tips p {
             margin: 0;
             color: var(--text-soft);
-            line-height: 1.78;
-            font-size: 15px;
+            line-height: 1.75;
+            font-size: 14px;
         }
 
         .usage-tips {
             display: grid;
-            align-content: center;
             gap: 12px;
-            padding: 22px 24px;
+            align-content: center;
         }
 
         .tip-line {
@@ -142,173 +175,148 @@
             gap: 10px;
             align-items: start;
             color: var(--text-soft);
-            line-height: 1.68;
+            line-height: 1.6;
             font-size: 14px;
         }
 
         .tip-index {
-            display: grid;
+            display: inline-grid;
             place-items: center;
             width: 22px;
             height: 22px;
-            margin-top: 1px;
             border-radius: 999px;
             color: var(--primary-dark);
             background: var(--primary-soft);
+            font-weight: 900;
             font-size: 12px;
-            font-weight: 850;
         }
 
-        .tabs {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 18px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(120, 136, 163, .20);
-        }
-
-        .tab {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            border: 0;
-            border-radius: 999px;
-            padding: 10px 14px;
-            color: #44516a;
-            background: rgba(255, 255, 255, .36);
-            font-size: 14px;
-            font-weight: 780;
-            transition: transform .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
-        }
-
-        .tab:hover { transform: translateY(-1px); background: rgba(255, 255, 255, .62); }
-
-        .tab.active {
-            color: #fff;
-            background: linear-gradient(135deg, #5973ff, #7a62f2);
-            box-shadow: 0 10px 22px rgba(92, 99, 241, .24);
-        }
-
+        main { margin-top: 18px; }
         .module { display: none; }
-        .module.active { display: block; animation: fadeUp .2s ease-out both; }
-
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        .module.active { display: block; }
 
         .workspace {
             display: grid;
             grid-template-columns: 360px minmax(0, 1fr);
-            gap: 16px;
+            gap: 18px;
             align-items: start;
-            min-width: 0;
-        }
-
-        .module,
-        .panel,
-        .panel-inner,
-        .result-area {
-            min-width: 0;
         }
 
         .panel {
-            border: 1px solid rgba(255, 255, 255, .72);
             border-radius: var(--radius-xl);
+            border: 1px solid rgba(255, 255, 255, .72);
             background: var(--card);
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            min-width: 0;
         }
 
-        .panel-inner { padding: 22px; }
-        .result-area {
-            min-height: 420px;
-            padding: 22px;
-            overflow: hidden;
-        }
+        .panel-inner,
+        .result-area,
+        .library-panel { padding: 22px; }
 
-        .panel-title {
+        .panel-title,
+        .library-head,
+        .result-head {
             display: flex;
-            align-items: flex-start;
             justify-content: space-between;
-            gap: 12px;
+            align-items: flex-start;
+            gap: 14px;
             margin-bottom: 18px;
         }
 
-        .panel-title h2 {
-            margin: 0 0 6px;
-            font-size: 22px;
-            letter-spacing: -.03em;
-        }
+        h2, h3, h4 { margin: 0; }
+        h2 { font-size: 24px; letter-spacing: -.04em; }
+        h3 { font-size: 22px; letter-spacing: -.04em; }
+        h4 { font-size: 15px; }
 
-        .panel-title p {
-            margin: 0;
+        .panel-title p,
+        .library-head p,
+        .result-head p {
+            margin: 6px 0 0;
             color: var(--muted);
+            line-height: 1.6;
             font-size: 13px;
-            line-height: 1.55;
         }
 
-        .tag {
-            flex: 0 0 auto;
+        .tag,
+        .badge {
             display: inline-flex;
             align-items: center;
-            padding: 7px 10px;
+            min-height: 26px;
+            padding: 0 10px;
             border-radius: 999px;
             color: var(--primary-dark);
             background: var(--primary-soft);
             font-size: 12px;
             font-weight: 850;
+            white-space: nowrap;
         }
 
         .form-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 13px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
         }
 
         .field-full { grid-column: 1 / -1; }
 
-        label {
+        label,
+        .field-label {
             display: flex;
             flex-direction: column;
             gap: 7px;
-            color: #26334c;
+            color: var(--text);
             font-size: 13px;
-            font-weight: 750;
+            font-weight: 850;
         }
 
-        input, select, textarea {
+        .field-hint,
+        label small {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.45;
+        }
+
+        input,
+        select,
+        textarea {
             width: 100%;
             min-height: 44px;
-            border: 1px solid rgba(100, 116, 139, .24);
+            border: 1px solid var(--line-strong);
             border-radius: 14px;
-            padding: 10px 12px;
-            background: rgba(255, 255, 255, .78);
+            padding: 10px 13px;
             color: var(--text);
+            background: rgba(255, 255, 255, .70);
             outline: none;
-            transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+            font-weight: 700;
+            transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
         }
 
-        textarea {
-            min-height: 90px;
-            resize: vertical;
-            line-height: 1.55;
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: rgba(100, 92, 245, .74);
+            box-shadow: 0 0 0 5px rgba(100, 92, 245, .12);
+            background: rgba(255, 255, 255, .90);
         }
 
-        input:focus, select:focus, textarea:focus {
-            border-color: rgba(79, 109, 245, .55);
-            box-shadow: 0 0 0 4px rgba(79, 109, 245, .12);
-            background: rgba(255, 255, 255, .95);
+        input[readonly] {
+            color: var(--muted);
+            background: rgba(255, 255, 255, .44);
+            cursor: not-allowed;
         }
+
+        textarea { min-height: 92px; resize: vertical; line-height: 1.6; }
 
         .inline-check {
             flex-direction: row;
             align-items: center;
-            gap: 8px;
-            min-height: 44px;
-            padding-top: 23px;
+            gap: 9px;
+            color: var(--text-soft);
+            font-weight: 800;
         }
 
         .inline-check input { width: auto; min-height: auto; }
@@ -321,382 +329,246 @@
         }
 
         .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            min-height: 44px;
             border: 0;
-            border-radius: 999px;
+            min-height: 44px;
             padding: 0 18px;
-            font-weight: 850;
-            transition: transform .16s ease, box-shadow .16s ease, background .16s ease, opacity .16s ease;
+            border-radius: 999px;
+            font-weight: 900;
+            box-shadow: 0 12px 26px rgba(100, 92, 245, .14);
         }
 
-        .btn:hover { transform: translateY(-1px); }
-        .btn:disabled { cursor: wait; opacity: .68; transform: none; }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #536cff, #745bf0);
-            color: #fff;
-            box-shadow: 0 12px 22px rgba(79, 109, 245, .25);
-        }
-
-        .btn-secondary {
-            color: var(--primary-dark);
-            background: rgba(255, 255, 255, .70);
-            border: 1px solid rgba(79, 109, 245, .20);
-        }
+        .btn-primary { color: #fff; background: linear-gradient(135deg, #7183ff, var(--primary)); }
+        .btn-primary:hover { background: linear-gradient(135deg, #6575f0, var(--primary-dark)); }
+        .btn-secondary { color: var(--primary-dark); background: rgba(255, 255, 255, .70); border: 1px solid rgba(100, 92, 245, .25); }
+        .btn-small { min-height: 36px; padding: 0 14px; font-size: 13px; }
 
         .helper {
             margin-top: 14px;
             color: var(--muted);
+            line-height: 1.6;
             font-size: 12px;
-            line-height: 1.7;
         }
 
-        .empty-state {
-            min-height: 360px;
+        .result-area { min-height: 296px; }
+
+        .empty-state,
+        .library-state {
+            min-height: 248px;
             display: grid;
             place-items: center;
-            border: 1px dashed rgba(100, 116, 139, .25);
-            border-radius: 24px;
-            background: rgba(255, 255, 255, .35);
-            color: var(--muted);
             text-align: center;
-            padding: 28px;
+            color: var(--muted);
+            border: 1px dashed var(--line-strong);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, .30);
+            padding: 24px;
         }
 
-        .empty-state strong {
-            display: block;
-            margin-bottom: 8px;
-            color: #2b3448;
-            font-size: 20px;
-        }
-
+        .empty-state strong,
+        .library-state strong { display: block; color: #69788f; font-size: 24px; letter-spacing: -.04em; }
         .empty-state span,
-        .empty-state p {
-            display: block;
-            margin: 0;
-            color: var(--muted);
-            font-size: 14px;
-            line-height: 1.7;
-        }
+        .library-state span { display: block; margin-top: 8px; font-size: 14px; line-height: 1.65; }
 
-        .error-box {
-            border: 1px solid rgba(180, 35, 24, .20);
-            border-radius: 18px;
-            background: var(--red-soft);
-            color: #8f2f2c;
-            padding: 14px 15px;
-            margin-bottom: 14px;
-            line-height: 1.65;
-            font-size: 14px;
-        }
-
-        .result-head {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 14px;
+        .message {
+            display: none;
             margin-bottom: 16px;
-        }
-
-        .result-head h3 {
-            margin: 0 0 6px;
-            font-size: 24px;
-            letter-spacing: -.04em;
-            word-break: break-word;
-        }
-
-        .result-head p {
-            margin: 0;
-            color: var(--muted);
+            border-radius: 16px;
+            padding: 13px 14px;
+            line-height: 1.6;
             font-size: 13px;
-            line-height: 1.55;
+            font-weight: 700;
         }
 
-        .decision-pill {
-            display: inline-flex;
-            align-items: center;
-            white-space: nowrap;
-            border-radius: 999px;
-            padding: 9px 12px;
-            font-size: 13px;
-            font-weight: 900;
-        }
-
-        .decision-good { color: var(--green); background: var(--green-soft); }
-        .decision-watch { color: var(--amber); background: var(--amber-soft); }
-        .decision-bad { color: var(--red); background: var(--red-soft); }
-        .decision-neutral { color: var(--primary-dark); background: var(--primary-soft); }
+        .message.visible { display: block; }
+        .message.error { color: var(--red); background: var(--red-soft); border: 1px solid rgba(180, 35, 24, .22); }
 
         .metrics {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
-            margin: 14px 0;
+            gap: 12px;
+            margin-bottom: 16px;
         }
 
         .metric {
             min-height: 86px;
-            border: 1px solid rgba(148, 163, 184, .18);
+            border: 1px solid var(--line);
             border-radius: 18px;
-            background: rgba(255, 255, 255, .50);
-            padding: 13px;
+            padding: 14px;
+            background: rgba(255, 255, 255, .46);
         }
 
         .metric span {
             display: block;
-            margin-bottom: 8px;
-            color: var(--muted);
+            margin-bottom: 6px;
+            color: #63748b;
             font-size: 12px;
+            font-weight: 850;
         }
 
         .metric strong {
             display: block;
-            color: #111827;
-            font-size: 18px;
-            line-height: 1.25;
-            word-break: break-word;
+            color: var(--text);
+            font-size: 21px;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
         }
 
         .metric small {
             display: block;
-            margin-top: 5px;
+            margin-top: 6px;
             color: var(--muted);
-            line-height: 1.4;
+            line-height: 1.5;
         }
+
+        .decision-pill,
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 0 14px;
+            border-radius: 999px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .decision-good,
+        .status-enabled { color: var(--green); background: var(--green-soft); }
+        .decision-watch { color: var(--amber); background: var(--amber-soft); }
+        .decision-bad,
+        .status-disabled { color: var(--red); background: var(--red-soft); }
+        .decision-neutral { color: var(--primary-dark); background: var(--primary-soft); }
 
         .reason-card {
-            border: 1px solid rgba(13, 138, 97, .15);
+            border: 1px solid rgba(8, 122, 85, .18);
             border-radius: 20px;
-            background: rgba(255, 255, 255, .54);
-            padding: 16px;
-            margin-top: 12px;
-            color: #26334c;
-            line-height: 1.75;
-            font-size: 14px;
-        }
-
-        .reason-card h4,
-        .section-title {
-            margin: 0 0 10px;
-            color: #172033;
-            font-size: 15px;
-            letter-spacing: -.02em;
-        }
-
-        .table-card {
-            width: 100%;
-            max-width: 100%;
-            min-width: 0;
+            padding: 18px;
+            background: rgba(255, 255, 255, .42);
+            line-height: 1.8;
+            color: var(--text);
             margin-top: 14px;
-            border: 1px solid rgba(148, 163, 184, .22);
-            border-radius: 20px;
-            background: rgba(255, 255, 255, .46);
-            overflow: hidden;
         }
 
-        .table-scroll {
+        .reason-card h4 { margin-bottom: 8px; text-align: center; }
+        .section-title { margin: 20px 0 10px; }
+
+        .table-wrap {
             width: 100%;
             max-width: 100%;
-            min-width: 0;
             overflow-x: auto;
-            overflow-y: hidden;
-            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, .58);
         }
 
         table {
             width: 100%;
-            min-width: 860px;
+            min-width: 820px;
             border-collapse: collapse;
             font-size: 12px;
         }
 
-        th, td {
+        th,
+        td {
             padding: 11px 12px;
-            border-bottom: 1px solid rgba(148, 163, 184, .20);
+            border-bottom: 1px solid rgba(118, 132, 158, .18);
             text-align: left;
             vertical-align: top;
             white-space: nowrap;
         }
 
         th {
-            color: #526076;
-            background: rgba(255, 255, 255, .52);
-            font-weight: 850;
+            color: #4e617b;
+            background: rgba(255, 255, 255, .74);
+            font-weight: 900;
         }
 
+        tbody tr:hover { background: rgba(100, 92, 245, .045); }
         tr:last-child td { border-bottom: 0; }
-        td.wrap {
-            min-width: 180px;
-            max-width: 360px;
-            white-space: normal;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-            line-height: 1.55;
-        }
-        td.compact { max-width: 160px; }
+        td.wrap { min-width: 220px; max-width: 440px; white-space: normal; line-height: 1.55; }
+        td.center { text-align: center; }
 
-        .list {
-            display: grid;
-            gap: 10px;
-            margin-top: 12px;
-        }
-
-        .list-item {
-            border: 1px solid rgba(148, 163, 184, .18);
-            border-radius: 18px;
-            background: rgba(255, 255, 255, .50);
-            padding: 13px;
-        }
-
-        .list-item strong { display: block; margin-bottom: 5px; }
-        .list-item p { margin: 0; color: var(--text-soft); line-height: 1.65; font-size: 13px; }
-
-        .library-panel {
-            min-width: 0;
-            margin-bottom: 16px;
-            overflow: hidden;
-        }
-
-        .library-head {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 14px;
-            padding: 22px 22px 0;
-        }
-
-        .library-head h2 {
-            margin: 0 0 6px;
-            font-size: 22px;
-            letter-spacing: -.03em;
-        }
-
-        .library-head p {
-            margin: 0;
-            color: var(--muted);
-            font-size: 13px;
-            line-height: 1.55;
-        }
-
-        .library-body {
-            min-width: 0;
-            padding: 14px 22px 22px;
-            overflow: hidden;
-        }
-
-        .library-state {
-            border: 1px dashed rgba(100, 116, 139, .25);
-            border-radius: 20px;
-            background: rgba(255, 255, 255, .35);
-            color: var(--muted);
-            padding: 22px;
-            text-align: center;
-            line-height: 1.65;
-        }
-
-        .library-tags {
+        .keyword-tags {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
             min-width: 220px;
-            white-space: normal;
         }
 
         .keyword-tag {
             display: inline-flex;
             align-items: center;
-            max-width: 220px;
+            min-height: 24px;
+            padding: 0 8px;
             border-radius: 999px;
-            padding: 4px 8px;
-            background: rgba(92, 99, 241, .10);
-            color: #3f47c6;
-            font-size: 12px;
-            line-height: 1.35;
+            color: var(--primary-dark);
+            background: var(--primary-soft);
+            font-weight: 800;
         }
 
-        .keyword-tag.exclude {
-            background: rgba(180, 35, 24, .09);
-            color: #9f352e;
-        }
+        .keyword-tag.exclude { color: var(--amber); background: var(--amber-soft); }
 
-        .status-pill {
-            display: inline-flex;
-            align-items: center;
-            border-radius: 999px;
-            padding: 5px 9px;
-            font-size: 12px;
-            font-weight: 850;
-        }
+        .library-panel { margin-bottom: 16px; }
+        .library-body { min-width: 0; }
+        .rule-row { cursor: pointer; }
+        .rule-row.selected { background: rgba(100, 92, 245, .08); }
 
-        .status-enabled {
-            color: var(--green);
-            background: var(--green-soft);
-        }
-
-        .status-disabled {
-            color: var(--muted);
-            background: rgba(100, 116, 139, .12);
-        }
-
-        .btn-small {
-            min-height: 36px;
-            padding: 0 14px;
-            font-size: 13px;
-        }
-
-        .two-actions { display: flex; gap: 10px; }
+        .hidden { display: none !important; }
 
         @media (max-width: 1120px) {
-            .header-grid, .workspace { grid-template-columns: 1fr; }
+            .header-grid,
+            .workspace { grid-template-columns: 1fr; }
             .result-area { min-height: auto; }
-            .empty-state { min-height: 260px; }
+            .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
         @media (max-width: 720px) {
-            .app { width: min(100% - 20px, 1180px); padding-top: 12px; }
-            .product-header { padding: 14px; border-radius: 24px; }
+            .app { width: min(100% - 22px, 1240px); padding-top: 12px; }
+            .product-header,
+            .panel-inner,
+            .result-area,
+            .library-panel { padding: 16px; border-radius: 24px; }
             .brand-row { align-items: flex-start; flex-direction: column; }
-            .header-copy, .usage-tips, .panel-inner, .result-area { padding: 16px; }
-            .header-copy h1 { font-size: 32px; }
-            .form-grid, .metrics { grid-template-columns: 1fr; }
+            .tabs { justify-content: flex-start; }
+            .header-copy,
+            .usage-tips { padding: 16px; }
+            .form-grid,
+            .metrics { grid-template-columns: 1fr; }
             .field-full { grid-column: auto; }
-            .result-head { flex-direction: column; }
+            .result-head,
+            .panel-title,
+            .library-head { flex-direction: column; }
         }
     </style>
 </head>
 <body>
 <div class="app">
-    <header class="product-header">
+    <header class="product-header glass">
         <div class="brand-row">
             <div class="brand">
-                <span class="brand-mark">¥</span>
+                <span class="brand-mark"><img src="/repurchase-demo/favicon.png?v=1" alt="家庭复购品价格分析"></span>
                 <span>家庭复购品价格分析</span>
             </div>
+            <nav class="tabs" aria-label="功能切换">
+                <button class="tab active" data-target="compare" type="button">💰 价格比价</button>
+                <button class="tab" data-target="search" type="button">🔎 购买记录</button>
+                <button class="tab" data-target="record" type="button">📝 记录样本</button>
+                <button class="tab" data-target="normalization" type="button">🧩 规则管理</button>
+                <button class="tab" data-target="import" type="button">📦 订单导入</button>
+            </nav>
         </div>
 
         <div class="header-grid">
             <div class="header-copy">
                 <h1>查一下这次买得贵不贵</h1>
-                <p>输入商品名称、价格、规格数量和单位后，页面会根据历史购买记录给出价格基准线和购买建议。适合猫砂、纸巾、洗衣液、沐浴露等经常复购的家庭用品。</p>
+                <p>输入商品名称、价格、SKU、购买数量和单位后，页面会根据历史购买记录给出价格基准线和购买建议。适合猫砂、纸巾、洗衣液、沐浴露、卫生巾等经常复购的家庭用品。</p>
             </div>
             <div class="usage-tips" aria-label="使用提示">
                 <div class="tip-line"><span class="tip-index">1</span><span>商品名越接近订单里的名称，越容易匹配到合适的历史样本。</span></div>
-                <div class="tip-line"><span class="tip-index">2</span><span>价格、数量和单位一起填写，才能计算当前单价并和历史记录比较。</span></div>
+                <div class="tip-line"><span class="tip-index">2</span><span>价格、SKU、购买数量和单位一起填写，页面会自动算出总量后再和历史记录比较。</span></div>
                 <div class="tip-line"><span class="tip-index">3</span><span>遇到赠品、组合装或规格变化时，建议再看一下购买记录。</span></div>
             </div>
         </div>
-
-        <nav class="tabs" aria-label="功能切换">
-            <button class="tab active" data-target="compare"><span>💰</span>价格比价</button>
-            <button class="tab" data-target="search"><span>🔎</span>购买记录</button>
-            <button class="tab" data-target="record"><span>📝</span>记录样本</button>
-            <button class="tab" data-target="normalization"><span>🧩</span>规则管理</button>
-            <button class="tab" data-target="import"><span>📦</span>订单导入</button>
-        </nav>
     </header>
 
     <main>
@@ -705,39 +577,36 @@
                 <div class="panel">
                     <div class="panel-inner">
                         <div class="panel-title">
-                            <div>
-                                <h2>价格比价</h2>
-                                <p>先填写本次准备购买的信息。</p>
-                            </div>
-                            <span class="tag">常用</span>
+                            <div><h2>价格比价</h2><p>输入当前商品价格和规格数量，查看历史基准线。</p></div>
+                            <span class="tag">买前参考</span>
                         </div>
                         <form id="compare-form" class="form-grid">
+                            <label class="field-full">从规则库选择（可选）
+                                <select id="compare-rule-select">
+                                    <option value="">加载规则库后可选择</option>
+                                </select>
+                                <span class="field-hint">选择后会自动填入商品名称和标准单位；不选择也可以手动输入。</span>
+                            </label>
                             <label class="field-full">商品名称 *
-                                <input name="productName" required value="猫粮" placeholder="例如：舒肤佳红石榴沐浴露">
+                                <input name="productName" id="compare-product-name" required value="猫粮" placeholder="例如：猫砂 / 纸巾 / 沐浴露" autocomplete="off">
+                                <span class="field-hint">可以输入订单里的商品名，也可以使用上方规则库选项带入。</span>
                             </label>
-                            <label>当前总价
-                                <input name="price" type="number" min="0" step="0.01" value="300" placeholder="例如：35.22">
-                            </label>
-                            <label>数量
-                                <input name="quantity" type="number" min="0" step="any" value="8" placeholder="例如：780">
-                            </label>
-                            <label>单位
-                                <input name="unit" value="kg" placeholder="kg / g / ml / 片 / 条">
-                            </label>
-                            <label>归属人
-                                <input name="owner" placeholder="可不填">
+                            <label>当前总价<input name="price" type="number" min="0" step="0.01" value="300"></label>
+                            <label>SKU / 单件规格<input name="skuQuantity" id="compare-sku-quantity" type="number" min="0" step="any" placeholder="例如：550"></label>
+                            <label>购买数量<input name="quantity" id="compare-purchase-quantity" type="number" min="0" step="any" value="8"></label>
+                            <label>总量<input id="compare-total-quantity" type="text" value="8" readonly></label>
+                            <label class="field-full">单位
+                                <input name="unit" id="compare-unit" list="compare-unit-options" value="kg" placeholder="kg / g / ml / 片 / 条" autocomplete="off">
+                                <datalist id="compare-unit-options"></datalist>
+                                <span class="field-hint" id="compare-unit-hint">总量会按“SKU × 购买数量”计算；SKU 为空时，总量等于购买数量。单位可以从候选项选择，也可以手动输入。</span>
                             </label>
                         </form>
-                        <div class="actions">
-                            <button class="btn btn-primary" data-submit="compare">查看价格建议</button>
-                        </div>
-                        <div class="helper">只填写商品名称时，会尽量查看历史基准线；填写价格、数量和单位后，会给出本次购买建议。</div>
+                        <div class="actions"><button class="btn btn-primary" data-submit="compare" type="button">查看价格建议</button></div>
+                        <div class="helper">选择规则库中的商品名称后，会优先使用对应标准单位；SKU 为空时，总量等于购买数量。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="compare-result" class="empty-state">
-                        <div><strong>还没有查询结果</strong><span>填写商品信息后，这里会显示历史价格和购买建议。</span></div>
-                    </div>
+                    <div id="compare-result" class="empty-state"><div><strong>还没有查询结果</strong><span>填写商品信息后，这里会显示历史价格和购买建议。</span></div></div>
                 </div>
             </div>
         </section>
@@ -746,37 +615,20 @@
             <div class="workspace">
                 <div class="panel">
                     <div class="panel-inner">
-                        <div class="panel-title">
-                            <div>
-                                <h2>购买记录</h2>
-                                <p>查找家里之前买过的相关商品。</p>
-                            </div>
-                        </div>
+                        <div class="panel-title"><div><h2>购买记录</h2><p>查找家里之前买过的相关商品。</p></div></div>
                         <form id="search-form" class="form-grid">
-                            <label class="field-full">关键词 *
-                                <input name="keyword" required value="沐浴露" placeholder="例如：猫砂 / 舒肤佳 / 纸巾">
-                            </label>
-                            <label>归属人
-                                <input name="owner" placeholder="可不填">
-                            </label>
-                            <label>最多显示
-                                <input name="limit" type="number" min="1" max="50" value="20">
-                            </label>
-                            <label>开始日期
-                                <input name="fromDate" type="date">
-                            </label>
-                            <label>结束日期
-                                <input name="toDate" type="date">
-                            </label>
+                            <label class="field-full">关键词 *<input name="keyword" required value="沐浴露" placeholder="例如：猫砂 / 舒肤佳 / 纸巾" autocomplete="off"></label>
+                            <label>归属人<input name="owner" placeholder="可不填" autocomplete="off"></label>
+                            <label>最多显示<input name="limit" type="number" min="1" max="50" value="20"></label>
+                            <label>开始日期<input name="fromDate" type="date"></label>
+                            <label>结束日期<input name="toDate" type="date"></label>
                         </form>
-                        <div class="actions"><button class="btn btn-primary" data-submit="search">查找记录</button></div>
+                        <div class="actions"><button class="btn btn-primary" data-submit="search" type="button">查找记录</button></div>
                         <div class="helper">适合确认历史买过什么，或者查看某类商品的价格来源。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="search-result" class="empty-state">
-                        <div><strong>等待检索</strong><span>输入关键词后即可查看历史购买记录。</span></div>
-                    </div>
+                    <div id="search-result" class="empty-state"><div><strong>等待检索</strong><span>输入关键词后即可查看历史购买记录。</span></div></div>
                 </div>
             </div>
         </section>
@@ -785,59 +637,30 @@
             <div class="workspace">
                 <div class="panel">
                     <div class="panel-inner">
-                        <div class="panel-title">
-                            <div>
-                                <h2>记录样本</h2>
-                                <p>把确认过的购买信息加入历史样本。</p>
-                            </div>
-                        </div>
+                        <div class="panel-title"><div><h2>记录样本</h2><p>把确认过的购买信息加入历史样本。</p></div></div>
                         <form id="record-form" class="form-grid">
-                            <label>归属人
-                                <input name="owner" value="jtxw" placeholder="例如：jtxw">
-                            </label>
-                            <label>购买日期
-                                <input name="purchaseDate" type="date">
-                            </label>
-                            <label class="field-full">商品名称 *
-                                <input name="productName" required value="舒肤佳红石榴沐浴露" placeholder="例如：舒肤佳红石榴沐浴露">
-                            </label>
-                            <label>归一化名称
-                                <input name="normalizedName" value="沐浴露" placeholder="例如：沐浴露">
-                            </label>
-                            <label>规格 / SKU
-                                <input name="sku" value="780ml" placeholder="例如：780ml">
-                            </label>
-                            <label>总价 *
-                                <input name="price" required type="number" min="0" step="0.01" value="35.22">
-                            </label>
-                            <label>数量 *
-                                <input name="quantity" required type="number" min="0" step="any" value="780">
-                            </label>
-                            <label>单位 *
-                                <input name="unit" required value="ml">
-                            </label>
-                            <label>平台
-                                <input name="platform" value="MANUAL" placeholder="例如：manual / taobao / jd">
-                            </label>
-                            <label class="field-full">店铺
-                                <input name="shopName" placeholder="可不填">
-                            </label>
-                            <label class="field-full">备注
-                                <textarea name="note" placeholder="可记录满减、券后价、组合装说明等">页面手动录入</textarea>
-                            </label>
+                            <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
+                            <label>购买日期<input name="purchaseDate" type="date"></label>
+                            <label class="field-full">商品名称 *<input name="productName" required value="舒肤佳红石榴沐浴露" autocomplete="off"></label>
+                            <label>归一化名称<input name="normalizedName" value="沐浴露" autocomplete="off"></label>
+                            <label>规格 / SKU<input name="sku" value="780ml" autocomplete="off"></label>
+                            <label>总价 *<input name="price" required type="number" min="0" step="0.01" value="35.22"></label>
+                            <label>数量 *<input name="quantity" required type="number" min="0" step="any" value="780"></label>
+                            <label>单位 *<input name="unit" required value="ml" autocomplete="off"></label>
+                            <label>平台<input name="platform" value="MANUAL" autocomplete="off"></label>
+                            <label class="field-full">店铺<input name="shopName" placeholder="可不填" autocomplete="off"></label>
+                            <label class="field-full">备注<textarea name="note" placeholder="可记录满减、券后价、组合装说明等">页面手动录入</textarea></label>
                             <label class="inline-check field-full"><input name="confirmOutOfRange" type="checkbox">确认接受偏离历史价格区间的样本</label>
                         </form>
-                        <div class="actions two-actions">
-                            <button class="btn btn-secondary" data-submit="record" data-dry-run="true">先试算</button>
-                            <button class="btn btn-primary" data-submit="record" data-dry-run="false">确认录入</button>
+                        <div class="actions">
+                            <button class="btn btn-secondary" data-submit="record" data-dry-run="true" type="button">先试算</button>
+                            <button class="btn btn-primary" data-submit="record" data-dry-run="false" type="button">确认录入</button>
                         </div>
                         <div class="helper">建议先试算，确认无误后再正式写入样本库。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="record-result" class="empty-state">
-                        <div><strong>还没有录入结果</strong><span>点击“先试算”或“确认录入”后查看处理结果。</span></div>
-                    </div>
+                    <div id="record-result" class="empty-state"><div><strong>还没有录入结果</strong><span>点击“先试算”或“确认录入”后查看处理结果。</span></div></div>
                 </div>
             </div>
         </section>
@@ -845,82 +668,64 @@
         <section id="normalization" class="module">
             <div class="panel library-panel">
                 <div class="library-head">
-                    <div>
-                        <h2>当前规则库</h2>
-                        <p>这里展示已经启用或停用的归一化规则、关键词和历史样本数量。</p>
-                    </div>
+                    <div><h2>当前规则库</h2><p>这里展示已经启用或停用的归一化规则、关键词和历史样本数量。点击列表中的规则，可带入到“更新规则”。</p></div>
                     <button id="refresh-normalization-library" class="btn btn-secondary btn-small" type="button">刷新列表</button>
                 </div>
                 <div class="library-body">
-                    <div id="normalization-library-list" class="library-state">打开规则管理后会自动加载规则库。</div>
+                    <div id="normalization-library-list" class="library-state"><div><strong>等待加载</strong><span>打开规则管理后会自动加载规则库。</span></div></div>
                 </div>
             </div>
+
             <div class="workspace">
                 <div class="panel">
                     <div class="panel-inner">
-                        <div class="panel-title">
-                            <div>
-                                <h2>规则管理</h2>
-                                <p>维护商品归一化规则和关键词。</p>
-                            </div>
-                        </div>
+                        <div class="panel-title"><div><h2>规则管理</h2><p>维护商品归一化规则和关键词。</p></div></div>
                         <form id="normalization-form" class="form-grid">
                             <label class="field-full">操作类型
-                                <select name="action">
+                                <select name="action" id="normalization-action">
                                     <option value="create_rule">新增规则</option>
                                     <option value="update_rule">更新规则</option>
-                                    <option value="add_keyword">新增关键词</option>
-                                    <option value="disable_keyword">停用关键词</option>
-                                    <option value="disable_rule">停用规则</option>
                                 </select>
                             </label>
-                            <label>规则编码 *
-                                <input name="ruleCode" value="body_wash" placeholder="例如：body_wash">
+                            <label id="normalization-rule-code-field">规则编码 *
+                                <input name="ruleCode" id="normalization-rule-code" value="body_wash" required autocomplete="off">
+                                <span class="field-hint hidden" id="rule-code-readonly-hint">更新规则时，规则编码来自当前规则库，不允许修改。</span>
                             </label>
-                            <label>归一化名称
-                                <input name="normalizedName" value="沐浴露" placeholder="例如：沐浴露">
+                            <label id="normalized-name-input-field">归一化名称
+                                <input name="normalizedName" id="normalized-name-input" value="沐浴露" autocomplete="off">
                             </label>
-                            <label>品类
-                                <input name="category" value="个护清洁" placeholder="例如：个护清洁">
+                            <label id="normalized-name-select-field" class="hidden">归一化名称
+                                <select name="normalizedName" id="normalization-rule-select" disabled>
+                                    <option value="">请先加载规则库</option>
+                                </select>
+                                <span class="field-hint">选择已有规则后，下面的规则信息会自动带出。</span>
                             </label>
-                            <label>标准单位
-                                <input name="standardUnit" value="L" placeholder="例如：kg / L / 片">
-                            </label>
+                            <label>品类<input name="category" id="normalization-category" value="个护清洁" autocomplete="off"></label>
+                            <label>标准单位<input name="standardUnit" id="normalization-standard-unit" value="L" autocomplete="off"></label>
                             <label>单位族
-                                <select name="unitFamily">
+                                <select name="unitFamily" id="normalization-unit-family">
                                     <option value="volume">体积</option>
                                     <option value="weight">重量</option>
                                     <option value="count">计数</option>
+                                    <option value="mass">重量</option>
                                 </select>
                             </label>
-                            <label>优先级
-                                <input name="priority" type="number" value="80">
-                            </label>
-                            <label>关键词
-                                <input name="keyword" value="沐浴露" placeholder="例如：沐浴露">
-                            </label>
-                            <label>关键词类型
-                                <select name="matchType">
-                                    <option value="include">正向匹配</option>
-                                    <option value="exclude">排除匹配</option>
-                                </select>
-                            </label>
-                            <label class="inline-check"><input name="enabled" type="checkbox" checked>规则启用</label>
+                            <label>优先级<input name="priority" id="normalization-priority" type="number" value="80"></label>
+                            <label class="inline-check"><input name="enabled" id="normalization-enabled" type="checkbox" checked>规则启用</label>
                             <label class="field-full">初始正向关键词
-                                <textarea name="keywords">沐浴露,沐浴乳</textarea>
+                                <textarea name="keywords" id="normalization-keywords">沐浴露,沐浴乳</textarea>
+                                <span class="field-hint">多个关键词请以英文逗号隔开，例如：沐浴露,沐浴乳</span>
                             </label>
                             <label class="field-full">初始排除关键词
-                                <textarea name="excludeKeywords" placeholder="可不填"></textarea>
+                                <textarea name="excludeKeywords" id="normalization-exclude-keywords" placeholder="可不填；多个关键词请以英文逗号隔开"></textarea>
                             </label>
                         </form>
-                        <div class="actions"><button class="btn btn-primary" data-submit="normalization">保存规则</button></div>
+                        <div class="actions"><button class="btn btn-primary" data-submit="normalization" type="button">保存规则</button></div>
                         <div class="helper">规则会影响后续购买记录的归一化和价格基准线统计。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="normalization-result" class="empty-state">
-                        <div><strong>等待操作</strong><span>选择操作类型并保存后查看结果。</span></div>
-                    </div>
+                    <div id="normalization-result" class="empty-state"><div><strong>等待操作</strong><span>选择操作类型并保存后查看结果。</span></div></div>
                 </div>
             </div>
         </section>
@@ -929,28 +734,17 @@
             <div class="workspace">
                 <div class="panel">
                     <div class="panel-inner">
-                        <div class="panel-title">
-                            <div>
-                                <h2>订单导入</h2>
-                                <p>从后端可访问的文件中导入历史订单。</p>
-                            </div>
-                        </div>
+                        <div class="panel-title"><div><h2>订单导入</h2><p>从服务器上的订单文件导入历史购买记录。</p></div></div>
                         <form id="import-form" class="form-grid">
-                            <label class="field-full">文件路径 *
-                                <input name="filePath" required value="data/e2e/sample_orders.csv" placeholder="例如：data/e2e/sample_orders.csv">
-                            </label>
-                            <label class="field-full">归属人
-                                <input name="owner" value="jtxw" placeholder="例如：jtxw">
-                            </label>
+                            <label class="field-full">文件路径 *<input name="filePath" required value="data/e2e/sample_orders.csv" autocomplete="off"><span class="field-hint">这里填写后端服务能读取到的文件路径。</span></label>
+                            <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
                         </form>
-                        <div class="actions"><button class="btn btn-primary" data-submit="import">开始导入</button></div>
-                        <div class="helper">这里填写的是后端服务能访问到的文件路径。</div>
+                        <div class="actions"><button class="btn btn-primary" data-submit="import" type="button">开始导入</button></div>
+                        <div class="helper">导入后可以关注成功数量、重复数量和需要人工确认的数量。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="import-result" class="empty-state">
-                        <div><strong>还没有导入结果</strong><span>点击“开始导入”后查看批次处理情况。</span></div>
-                    </div>
+                    <div id="import-result" class="empty-state"><div><strong>还没有导入结果</strong><span>开始导入后，这里会显示本次批次情况。</span></div></div>
                 </div>
             </div>
         </section>
@@ -970,14 +764,64 @@
             import: '/api/tools/import-file'
         };
 
-        function formValues(formId) {
-            var form = document.getElementById(formId);
-            var values = {};
-            Array.prototype.forEach.call(form.elements, function (field) {
-                if (!field.name) return;
-                values[field.name] = field.type === 'checkbox' ? field.checked : field.value.trim();
+        var normalizationLibraryLoaded = false;
+        var normalizationLibraryItems = [];
+
+        function $(id) { return document.getElementById(id); }
+
+        function isEmptyValue(value) {
+            return value === null || value === undefined || value === '';
+        }
+
+        function toFiniteNumber(value) {
+            var number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        }
+
+        function trimZero(value) {
+            return String(value).replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+        }
+
+        function formatTextNumbers(value) {
+            if (isEmptyValue(value)) return '—';
+            return String(value).replace(/-?\d+\.\d{5,}/g, function (matched) {
+                var number = Number(matched);
+                return Number.isFinite(number) ? number.toFixed(4) : matched;
             });
-            return values;
+        }
+
+        function display(value) {
+            if (isEmptyValue(value)) return '—';
+            if (Array.isArray(value)) return value.length ? value.map(display).join('；') : '—';
+            if (typeof value === 'object') return formatTextNumbers(JSON.stringify(value));
+            return formatTextNumbers(String(value));
+        }
+
+        function htmlEscape(value) {
+            return display(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatDecimal(value, digits) {
+            if (isEmptyValue(value)) return '—';
+            var number = toFiniteNumber(value);
+            if (number === null) return display(value);
+            return number.toFixed(digits);
+        }
+
+        function formatAmount(value) { return formatDecimal(value, 2); }
+        function formatUnitPrice(value) { return formatDecimal(value, 4); }
+
+        function formatQuantity(value) {
+            if (isEmptyValue(value)) return '—';
+            var number = toFiniteNumber(value);
+            if (number === null) return display(value);
+            if (Number.isInteger(number)) return String(number);
+            return trimZero(number.toFixed(3));
         }
 
         function optionalText(value) { return value === '' ? undefined : value; }
@@ -1000,14 +844,44 @@
             return value.split(/[，,\n]/).map(function (item) { return item.trim(); }).filter(Boolean);
         }
 
+        function joinKeywords(list) {
+            return Array.isArray(list) ? list.join(',') : '';
+        }
+
+        function formValues(formId) {
+            var form = $(formId);
+            var values = {};
+            Array.prototype.forEach.call(form.elements, function (field) {
+                if (!field.name || field.disabled) return;
+                values[field.name] = field.type === 'checkbox' ? field.checked : String(field.value || '').trim();
+            });
+            return values;
+        }
+
+        function calculateCompareTotalQuantity(values) {
+            var skuQuantity = optionalNumber(values.skuQuantity);
+            var purchaseQuantity = optionalNumber(values.quantity);
+
+            if (purchaseQuantity === undefined) return undefined;
+            if (skuQuantity === undefined) return purchaseQuantity;
+
+            return skuQuantity * purchaseQuantity;
+        }
+
+        function updateCompareTotalQuantity() {
+            var totalInput = $('compare-total-quantity');
+            if (!totalInput) return;
+            var value = formValues('compare-form');
+            totalInput.value = formatQuantity(calculateCompareTotalQuantity(value));
+        }
+
         function buildComparePayload() {
             var value = formValues('compare-form');
             return compact({
                 productName: value.productName,
                 price: optionalNumber(value.price),
-                quantity: optionalNumber(value.quantity),
-                unit: optionalText(value.unit),
-                owner: optionalText(value.owner)
+                quantity: calculateCompareTotalQuantity(value),
+                unit: optionalText(value.unit)
             });
         }
 
@@ -1045,8 +919,9 @@
 
         function buildNormalizationPayload() {
             var value = formValues('normalization-form');
+            var action = value.action;
             var commonRule = compact({
-                action: value.action,
+                action: action,
                 ruleCode: value.ruleCode,
                 normalizedName: optionalText(value.normalizedName),
                 category: optionalText(value.category),
@@ -1054,19 +929,22 @@
                 unitFamily: optionalText(value.unitFamily),
                 priority: optionalNumber(value.priority)
             });
-            if (value.action === 'create_rule') {
+
+            if (action === 'create_rule') {
+                commonRule.enabled = value.enabled;
                 commonRule.keywords = splitKeywords(value.keywords);
                 commonRule.excludeKeywords = splitKeywords(value.excludeKeywords);
                 return commonRule;
             }
-            if (value.action === 'update_rule') {
+
+            if (action === 'update_rule') {
                 commonRule.enabled = value.enabled;
+                commonRule.keywords = splitKeywords(value.keywords);
+                commonRule.excludeKeywords = splitKeywords(value.excludeKeywords);
                 return commonRule;
             }
-            if (value.action === 'add_keyword' || value.action === 'disable_keyword') {
-                return compact({ action: value.action, ruleCode: value.ruleCode, keyword: value.keyword, matchType: value.matchType });
-            }
-            return { action: value.action, ruleCode: value.ruleCode };
+
+            return commonRule;
         }
 
         function buildImportPayload() {
@@ -1074,125 +952,157 @@
             return compact({ filePath: value.filePath, owner: optionalText(value.owner) });
         }
 
-        function htmlEscape(value) {
-            return String(value)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function isEmptyValue(value) {
-            return value === null || value === undefined || value === '';
-        }
-
-        function toFiniteNumber(value) {
-            var number = Number(value);
-            return Number.isFinite(number) ? number : null;
-        }
-
-        function trimZero(value) {
-            return String(value).replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
-        }
-
-        function display(value) {
-            if (isEmptyValue(value)) return '—';
-            if (Array.isArray(value)) return value.length ? value.join('；') : '—';
-            if (typeof value === 'object') return JSON.stringify(value);
-            return formatTextNumbers(String(value));
-        }
-
-        function formatDecimal(value, digits) {
-            if (isEmptyValue(value)) return '—';
-            var number = toFiniteNumber(value);
-            if (number === null) return display(value);
-            return number.toFixed(digits);
-        }
-
-        function formatAmount(value) { return formatDecimal(value, 2); }
-        function formatUnitPrice(value) { return formatDecimal(value, 2); }
-
-        function formatQuantity(value) {
-            if (isEmptyValue(value)) return '—';
-            var number = toFiniteNumber(value);
-            if (number === null) return display(value);
-            if (Number.isInteger(number)) return String(number);
-            return trimZero(number.toFixed(3));
-        }
-
-        function formatTextNumbers(value) {
-            if (isEmptyValue(value)) return '—';
-            return String(value).replace(/\d+\.\d{4,}/g, function (matched) {
-                var number = Number(matched);
-                return Number.isFinite(number) ? number.toFixed(2) : matched;
+        async function postJson(url, payload) {
+            var response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
             });
+            return readJsonResponse(response, '处理失败');
+        }
+
+        async function getJson(url) {
+            var response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                cache: 'no-store'
+            });
+            return readJsonResponse(response, '加载失败');
+        }
+
+        async function readJsonResponse(response, fallbackMessage) {
+            var raw = await response.text();
+            var data = null;
+            if (raw) {
+                try {
+                    data = JSON.parse(raw);
+                } catch (error) {
+                    throw new Error('返回内容格式不正确，请稍后再试。');
+                }
+            }
+            if (!response.ok || (data && (data.error || data.success === false))) {
+                var message = data && (data.message || data.error || data.detail || data.title);
+                throw new Error(message || fallbackMessage);
+            }
+            return data;
+        }
+
+        function setLoading(button, loading) {
+            if (!button) return;
+            if (loading) {
+                button.dataset.originalText = button.textContent;
+                button.textContent = '处理中...';
+                button.disabled = true;
+            } else {
+                button.textContent = button.dataset.originalText || button.textContent;
+                button.disabled = false;
+            }
+        }
+
+        function renderError(elementId, title, error) {
+            $(elementId).innerHTML = '<div class="empty-state"><div><strong>' + htmlEscape(title) + '</strong><span>' + htmlEscape(error.message || '请检查输入内容后重试。') + '</span></div></div>';
+        }
+
+        function metric(label, value, note) {
+            return '<div class="metric"><span>' + htmlEscape(label) + '</span><strong>' + htmlEscape(value) + '</strong>' + (note ? '<small>' + htmlEscape(note) + '</small>' : '') + '</div>';
+        }
+
+        function tableCell(row, column) {
+            var raw = typeof column.value === 'function' ? column.value(row) : row[column.key];
+            if (typeof column.formatter === 'function') return column.formatter(raw, row);
+            return display(raw);
+        }
+
+        function renderTable(columns, rows) {
+            if (!rows || !rows.length) return '';
+            var html = '<div class="table-wrap"><table><thead><tr>';
+            columns.forEach(function (column) { html += '<th>' + htmlEscape(column.label) + '</th>'; });
+            html += '</tr></thead><tbody>';
+            rows.forEach(function (row) {
+                html += '<tr' + (row.ruleCode ? ' class="rule-row" data-rule-code="' + htmlEscape(row.ruleCode) + '"' : '') + '>';
+                columns.forEach(function (column) {
+                    html += '<td' + (column.wrap ? ' class="wrap"' : '') + '>' + htmlEscape(tableCell(row, column)) + '</td>';
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            return html;
         }
 
         function formatSourceType(value) {
-            var map = {
-                historical_min: '历史最低',
-                median_sample: '历史中位',
-                latest: '最近购买',
-                current: '本次购买',
-                baseline: '基准样本'
-            };
+            var map = { historical_min: '历史最低', median_sample: '历史中位', latest: '最近购买', current: '本次购买', baseline: '基准样本' };
             return map[String(value || '').toLowerCase()] || display(value);
         }
 
         function formatPlatform(value) {
-            var key = String(value || '').trim().toLowerCase();
             var map = {
-                manual: '手动录入',
-                taobao: '淘宝',
-                tmall: '天猫',
-                jd: '京东',
-                jingdong: '京东',
-                pdd: '拼多多',
-                douyin: '抖音',
-                kuaishou: '快手',
-                xiaohongshu: '小红书',
-                vip: '唯品会',
-                suning: '苏宁',
-                offline: '线下购买'
+                manual: '手动录入', taobao: '淘宝', tmall: '天猫', jd: '京东', jingdong: '京东', pdd: '拼多多',
+                douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书', vip: '唯品会', suning: '苏宁', offline: '线下购买'
             };
-            return map[key] || display(value);
+            return map[String(value || '').trim().toLowerCase()] || display(value);
         }
 
         function formatScope(value) {
             var text = String(value || '').trim();
-            if (!text) return '全家庭';
-            if (text.toUpperCase() === 'FAMILY') return '全家庭';
+            if (!text || text.toUpperCase() === 'FAMILY') return '全家庭';
             return text;
         }
 
         function formatUnitFamily(value) {
+            var map = { volume: '体积', weight: '重量', mass: '重量', count: '计数', draw_count: '抽数', unknown: '未设置' };
+            return map[String(value || '').trim().toLowerCase()] || display(value);
+        }
+
+        function normalizeUnitFamily(value) {
             var key = String(value || '').trim().toLowerCase();
-            var map = {
-                volume: '体积',
-                weight: '重量',
-                mass: '重量',
-                count: '计数',
-                amount: '金额',
-                unknown: '未设置'
+            if (key === 'mass') return 'weight';
+            if (key === 'weight') return 'weight';
+            if (key === 'volume') return 'volume';
+            if (key === 'count') return 'count';
+            if (key === 'draw_count') return 'draw_count';
+            return key || 'volume';
+        }
+
+        function unitOptionsByFamily(unitFamily) {
+            var family = normalizeUnitFamily(unitFamily);
+            var options = {
+                volume: ['L', 'ml'],
+                weight: ['kg', 'g'],
+                count: ['件', '个', '片', '条', '包', '抽', '盒', '瓶', '袋'],
+                draw_count: ['抽', '包', '提', '箱']
             };
-            return map[key] || display(value);
+            return options[family] || [];
         }
 
-        function formatEnabled(value) {
-            return value ? '启用' : '停用';
+        function setDatalistOptions(datalistId, values) {
+            var datalist = $(datalistId);
+            if (!datalist) return;
+            datalist.innerHTML = '';
+            values.forEach(function (value) {
+                if (isEmptyValue(value)) return;
+                var option = document.createElement('option');
+                option.value = String(value);
+                datalist.appendChild(option);
+            });
         }
 
-        function renderKeywordTags(values, type) {
-            if (!values || !values.length) return '—';
-            return '<div class="library-tags">' + values.map(function (item) {
-                return '<span class="keyword-tag ' + (type === 'exclude' ? 'exclude' : '') + '">' + htmlEscape(item) + '</span>';
-            }).join('') + '</div>';
+        function uniqueValues(values) {
+            var seen = {};
+            var result = [];
+            values.forEach(function (value) {
+                var text = String(value || '').trim();
+                if (!text || seen[text]) return;
+                seen[text] = true;
+                result.push(text);
+            });
+            return result;
         }
 
-        function renderStatusPill(enabled) {
-            var className = enabled ? 'status-enabled' : 'status-disabled';
-            return '<span class="status-pill ' + className + '">' + htmlEscape(formatEnabled(enabled)) + '</span>';
+        function formatEnabled(value) { return value ? '启用' : '停用'; }
+
+        function formatKeywordList(values) {
+            if (!Array.isArray(values) || !values.length) return '—';
+            return values.join('、');
         }
 
         function formatNormalizedName(value, row) {
@@ -1204,17 +1114,7 @@
         }
 
         function formatDecision(value) {
-            var map = {
-                good_price: '价格不错',
-                fair_price: '价格正常',
-                high_price: '价格偏高',
-                insufficient_samples: '样本不足',
-                no_baseline: '暂无基准线',
-                unknown: '暂无法判断',
-                include: '可记录',
-                exclude: '不记录',
-                review: '需要确认'
-            };
+            var map = { good_price: '价格不错', fair_price: '价格正常', high_price: '价格偏高', insufficient_samples: '样本不足', no_baseline: '暂无基准线', include: '可记录', exclude: '不记录', review: '需要确认' };
             return map[String(value || '').toLowerCase()] || display(value);
         }
 
@@ -1222,157 +1122,53 @@
             var text = String(code || '').toLowerCase();
             if (text.indexOf('good') >= 0 || text === 'include') return 'decision-good';
             if (text.indexOf('high') >= 0 || text === 'exclude') return 'decision-bad';
-            if (text.indexOf('insufficient') >= 0 || text.indexOf('review') >= 0 || text.indexOf('watch') >= 0) return 'decision-watch';
+            if (text.indexOf('insufficient') >= 0 || text.indexOf('review') >= 0 || text.indexOf('watch') >= 0 || text.indexOf('fair') >= 0) return 'decision-watch';
             return 'decision-neutral';
         }
 
         function get(object, path) {
             if (!object) return undefined;
-            var current = object;
-            var parts = path.split('.');
-            for (var i = 0; i < parts.length; i++) {
-                if (current === null || current === undefined) return undefined;
-                current = current[parts[i]];
-            }
-            return current;
+            return path.split('.').reduce(function (current, key) {
+                return current && current[key] !== undefined ? current[key] : undefined;
+            }, object);
         }
 
         function firstValue(object, paths) {
-            for (var i = 0; i < paths.length; i++) {
+            for (var i = 0; i < paths.length; i += 1) {
                 var value = get(object, paths[i]);
                 if (!isEmptyValue(value)) return value;
             }
             return undefined;
         }
 
-        async function postJson(url, payload) {
-            var response;
-            try {
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-            } catch (error) {
-                throw new Error('暂时无法连接服务，请稍后再试。');
-            }
-
-            var raw = await response.text();
-            var data = null;
-            if (raw) {
-                try {
-                    data = JSON.parse(raw);
-                } catch (error) {
-                    throw new Error('返回内容暂时无法识别，请稍后再试。');
-                }
-            }
-
-            if (!response.ok || (data && (data.error || data.success === false))) {
-                var message = data && (data.message || data.error || data.detail || data.title);
-                throw new Error(friendlyError(message || response.statusText));
-            }
-            return data || {};
-        }
-
-        async function getJson(url) {
-            var response;
-            try {
-                response = await fetch(url, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-            } catch (error) {
-                throw new Error('暂时无法连接服务，请稍后再试。');
-            }
-
-            var raw = await response.text();
-            var data = null;
-            if (raw) {
-                try {
-                    data = JSON.parse(raw);
-                } catch (error) {
-                    throw new Error('返回内容暂时无法识别，请稍后再试。');
-                }
-            }
-
-            if (!response.ok || (data && (data.error || data.success === false))) {
-                var message = data && (data.message || data.error || data.detail || data.title);
-                throw new Error(friendlyError(message || response.statusText));
-            }
-            return data || [];
-        }
-
-        function friendlyError(message) {
-            var text = String(message || '操作没有成功，请检查输入后再试。');
-            if (/not found|no.*sample|样本|baseline/i.test(text)) return '没有找到足够的历史样本，可以换一个更接近订单的商品名再试。';
-            if (/required|不能为空|missing/i.test(text)) return '请先补全必填信息。';
-            if (/number|format|格式/i.test(text)) return '输入格式不正确，请检查价格、数量、日期等字段。';
-            return formatTextNumbers(text);
-        }
-
-        function setLoading(button, loading) {
-            if (loading) {
-                button.dataset.originalText = button.textContent;
-                button.textContent = '处理中...';
-                button.disabled = true;
-            } else {
-                button.textContent = button.dataset.originalText || button.textContent;
-                button.disabled = false;
-            }
-        }
-
-        function metric(label, value, hint) {
-            return '<div class="metric"><span>' + htmlEscape(label) + '</span><strong>' + htmlEscape(display(value)) + '</strong>' + (hint ? '<small>' + htmlEscape(hint) + '</small>' : '') + '</div>';
-        }
-
-        function renderTable(columns, rows) {
-            if (!rows || !rows.length) return '';
-            var head = columns.map(function (column) { return '<th>' + htmlEscape(column.label) + '</th>'; }).join('');
-            var body = rows.map(function (row) {
-                var cells = columns.map(function (column) {
-                    var raw = typeof column.value === 'function' ? column.value(row) : row[column.key];
-                    var text = typeof column.formatter === 'function' ? column.formatter(raw, row) : display(raw);
-                    return '<td class="' + (column.wrap ? 'wrap' : '') + '">' + htmlEscape(text) + '</td>';
-                }).join('');
-                return '<tr>' + cells + '</tr>';
-            }).join('');
-            return '<div class="table-card"><div class="table-scroll"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
-        }
-
-        function renderError(targetId, error) {
-            document.getElementById(targetId).innerHTML = '<div class="error-box">' + htmlEscape(error.message || '操作没有成功，请稍后再试。') + '</div>';
-        }
-
         function renderCompare(data) {
-            var payload = buildComparePayload();
-            var productName = firstValue(data, ['productName', 'current.productName']) || payload.productName;
-            var decisionCode = firstValue(data, ['decision.code', 'decision', 'decisionStatus']) || 'unknown';
-            var decisionReason = firstValue(data, ['decision.reason', 'reason', 'explanation']) || '当前结果仅供购买参考。';
-            var warnings = firstValue(data, ['warnings', 'warning']);
-            var sourceRecords = firstValue(data, ['evidence.sourceRecords', 'sourceRecords', 'records']) || [];
-            var currentUnitPrice = firstValue(data, ['current.unitPrice', 'currentUnitPrice', 'unitPrice']);
-            var unitText = firstValue(data, ['current.unit', 'unit']) || payload.unit;
-            var unitPriceUnit = firstValue(data, ['current.unitPriceUnit', 'unitPriceUnit']);
-
+            var payload = formValues('compare-form');
+            var decision = data.decision || {};
+            var code = decision.code || decision.text || data.decisionCode || data.decision || 'unknown';
+            var reason = decision.reason || data.reason || data.explanation || data.message || '可以结合历史价格、样本数量和规格变化一起判断。';
+            var warnings = data.warnings;
+            var sourceRecords = get(data, 'evidence.sourceRecords') || data.sourceRecords || data.records || [];
+            var unitText = firstValue(data, ['current.unitPriceUnit', 'baseline.unitPriceUnit', 'unitPriceUnit']);
             var html = '';
-            html += '<div class="result-head"><div><h3>' + htmlEscape(productName || '查询结果') + '</h3><p>根据已有购买记录计算出的价格参考。</p></div>';
-            html += '<span class="decision-pill ' + decisionClass(decisionCode) + '">' + htmlEscape(formatDecision(decisionCode)) + '</span></div>';
+            html += '<div class="result-head"><div><h3>本次价格判断</h3><p>' + htmlEscape(payload.productName || '—') + '</p></div><span class="decision-pill ' + decisionClass(code) + '">' + htmlEscape(formatDecision(code)) + '</span></div>';
             html += '<div class="metrics">';
-            html += metric('当前单价', formatUnitPrice(currentUnitPrice), unitPriceUnit ? '单位：' + unitPriceUnit : (unitText ? '单位：' + unitText : ''));
+            html += metric('当前单价', formatUnitPrice(firstValue(data, ['current.unitPrice', 'currentUnitPrice'])), unitText || '');
             html += metric('历史最低', formatUnitPrice(firstValue(data, ['baseline.historicalMin', 'historicalMin', 'minUnitPrice'])), '');
             html += metric('历史中位', formatUnitPrice(firstValue(data, ['baseline.historicalMedian', 'historicalMedian', 'medianUnitPrice'])), '');
             html += metric('历史均价', formatUnitPrice(firstValue(data, ['baseline.historicalAverage', 'historicalAverage', 'averageUnitPrice'])), '');
-            html += metric('样本数量', formatQuantity(firstValue(data, ['baseline.sampleSize', 'sampleSize', 'sampleCount'])), '');
+            html += metric('样本数量', formatQuantity(firstValue(data, ['baseline.sampleSize', 'baseline.sampleCount', 'sampleSize', 'sampleCount'])), '');
             html += metric('当前总价', formatAmount(firstValue(data, ['current.price', 'current.totalAmount']) || payload.price), '');
-            html += metric('规格数量', formatQuantity(firstValue(data, ['current.quantity']) || payload.quantity), '');
-            html += metric('单位', unitText || '—', '');
+            html += metric('SKU', formatQuantity(payload.skuQuantity), '单件规格');
+            html += metric('购买数量', formatQuantity(payload.quantity), '');
+            html += metric('总量', formatQuantity(firstValue(data, ['current.quantity']) || calculateCompareTotalQuantity(payload)), '用于本次单价计算');
+            html += metric('单位', payload.unit || '—', '');
             html += '</div>';
-            html += '<div class="reason-card"><h4>判断原因</h4>' + htmlEscape(formatTextNumbers(display(decisionReason))) + '</div>';
+            html += '<div class="reason-card"><h4>判断原因</h4>' + htmlEscape(reason) + '</div>';
             if (warnings && (!Array.isArray(warnings) || warnings.length)) {
-                html += '<div class="reason-card"><h4>需要注意</h4>' + htmlEscape(formatTextNumbers(display(warnings))) + '</div>';
+                html += '<div class="reason-card"><h4>需要注意</h4>' + htmlEscape(warnings) + '</div>';
             }
             if (sourceRecords.length) {
-                html += '<h4 class="section-title" style="margin-top:18px;">参考记录</h4>';
+                html += '<h4 class="section-title">参考记录</h4>';
                 html += renderTable([
                     { key: 'recordId', label: '记录' },
                     { key: 'role', label: '类型', formatter: formatSourceType },
@@ -1385,26 +1181,24 @@
                     { key: 'unitPrice', label: '单价', formatter: formatUnitPrice }
                 ], sourceRecords);
             }
-            document.getElementById('compare-result').innerHTML = html;
+            $('compare-result').className = '';
+            $('compare-result').innerHTML = html;
         }
 
         function renderSearch(data) {
-            var records = data.records || [];
-            var html = '';
-            html += '<div class="result-head"><div><h3>找到 ' + htmlEscape(formatQuantity(data.returnedCount || records.length)) + ' 条记录</h3><p>关键词：' + htmlEscape(data.keyword || formValues('search-form').keyword || '—') + '</p></div></div>';
+            var records = data.records || data.items || [];
+            var html = '<div class="result-head"><div><h3>找到 ' + htmlEscape(formatQuantity(data.returnedCount || records.length)) + ' 条记录</h3><p>关键词：' + htmlEscape(data.keyword || formValues('search-form').keyword || '—') + '</p></div></div>';
             html += '<div class="metrics">';
-            html += metric('匹配数量', formatQuantity(data.matchedCount), '');
+            html += metric('匹配数量', formatQuantity(data.matchedCount || records.length), '');
             html += metric('显示数量', formatQuantity(data.returnedCount || records.length), '');
             html += metric('归属范围', formatScope(data.scope || formValues('search-form').owner), '');
             html += metric('最多显示', formatQuantity(formValues('search-form').limit), '');
             html += '</div>';
-            if (data.warnings && data.warnings.length) {
-                html += '<div class="reason-card"><h4>提示</h4>' + htmlEscape(display(data.warnings)) + '</div>';
-            }
+            if (data.warnings && data.warnings.length) html += '<div class="reason-card"><h4>提示</h4>' + htmlEscape(data.warnings) + '</div>';
             if (!records.length) {
                 html += '<div class="empty-state"><div><strong>没有找到相关记录</strong><span>可以换一个更接近订单的关键词再试。</span></div></div>';
             } else {
-                html += '<h4 class="section-title" style="margin-top:18px;">购买记录</h4>';
+                html += '<h4 class="section-title">购买记录</h4>';
                 html += renderTable([
                     { key: 'orderTime', label: '时间' },
                     { key: 'platform', label: '平台', formatter: formatPlatform },
@@ -1419,14 +1213,14 @@
                     { key: 'shopName', label: '店铺', value: function (row) { return row.shopName || '—'; }, wrap: true }
                 ], records);
             }
-            document.getElementById('search-result').innerHTML = html;
+            $('search-result').className = '';
+            $('search-result').innerHTML = html;
         }
 
         function renderRecord(data) {
             var records = data.records || [];
             var first = records[0] || {};
-            var html = '';
-            html += '<div class="result-head"><div><h3>' + (data.dryRun ? '试算完成' : '处理完成') + '</h3><p>' + htmlEscape(first.productName || '请查看处理结果。') + '</p></div></div>';
+            var html = '<div class="result-head"><div><h3>' + htmlEscape(data.dryRun ? '试算完成' : '处理完成') + '</h3><p>' + htmlEscape(first.productName || formValues('record-form').productName || '—') + '</p></div></div>';
             html += '<div class="metrics">';
             html += metric('处理结果', formatDecision(first.decision), '');
             html += metric('归一化名称', formatNormalizedName(first.normalizedName, first), '');
@@ -1434,7 +1228,7 @@
             html += metric('记录编号', first.recordId, '');
             html += metric('已保存数量', formatQuantity(data.savedCount), '');
             html += metric('需确认数量', formatQuantity(data.reviewCount), '');
-            html += metric('是否需确认', first.reviewRequired, '');
+            html += metric('是否需确认', display(first.reviewRequired), '');
             html += metric('原因', display(first.reviewReasons), '');
             html += '</div>';
             if (records.length) {
@@ -1450,37 +1244,275 @@
                     { key: 'reviewReasons', label: '原因', wrap: true }
                 ], records);
             }
-            document.getElementById('record-result').innerHTML = html;
+            $('record-result').className = '';
+            $('record-result').innerHTML = html;
+        }
+
+        function renderKeywordTags(values, type) {
+            if (!Array.isArray(values) || !values.length) return '—';
+            return '<div class="keyword-tags">' + values.map(function (item) {
+                return '<span class="keyword-tag ' + (type === 'exclude' ? 'exclude' : '') + '">' + htmlEscape(item) + '</span>';
+            }).join('') + '</div>';
+        }
+
+        function renderNormalizationLibrary(items) {
+            var target = $('normalization-library-list');
+            if (!target) return;
+            normalizationLibraryItems = Array.isArray(items) ? items : [];
+            populateNormalizationRuleSelect();
+            populateCompareRuleOptions();
+            applyCompareRuleBinding();
+            if (!normalizationLibraryItems.length) {
+                target.className = 'library-state';
+                target.innerHTML = '<div><strong>还没有规则记录</strong><span>可以先新增一条规则。</span></div>';
+                return;
+            }
+            target.className = '';
+            target.innerHTML = renderTable([
+                { key: 'ruleCode', label: '规则编码' },
+                { key: 'normalizedName', label: '归一化名称' },
+                { key: 'category', label: '品类' },
+                { key: 'standardUnit', label: '标准单位' },
+                { key: 'unitFamily', label: '单位族', formatter: formatUnitFamily },
+                { key: 'sampleCount', label: '样本数量', formatter: formatQuantity },
+                { key: 'keywords', label: '正向关键词', value: function (row) { return renderKeywordTags(row.keywords, 'include'); }, wrap: true },
+                { key: 'excludeKeywords', label: '排除关键词', value: function (row) { return renderKeywordTags(row.excludeKeywords, 'exclude'); }, wrap: true },
+                { key: 'priority', label: '优先级', formatter: formatQuantity },
+                { key: 'enabled', label: '状态', formatter: formatEnabled },
+                { key: 'source', label: '来源' }
+            ], normalizationLibraryItems).replace(/&lt;div class=&quot;keyword-tags&quot;&gt;/g, '<div class="keyword-tags">')
+                .replace(/&lt;\/div&gt;/g, '</div>')
+                .replace(/&lt;span class=&quot;keyword-tag &quot;&gt;/g, '<span class="keyword-tag ">')
+                .replace(/&lt;span class=&quot;keyword-tag exclude&quot;&gt;/g, '<span class="keyword-tag exclude">')
+                .replace(/&lt;\/span&gt;/g, '</span>');
+            bindRuleRows();
+        }
+
+        async function loadNormalizationLibrary(force) {
+            var target = $('normalization-library-list');
+            if (!target) return;
+            if (normalizationLibraryLoaded && !force) return;
+            target.className = 'library-state';
+            target.innerHTML = '<div><strong>正在加载</strong><span>正在读取当前规则库。</span></div>';
+            try {
+                var items = await getJson(endpoints.normalizationLibrary);
+                normalizationLibraryLoaded = true;
+                renderNormalizationLibrary(items);
+            } catch (error) {
+                target.className = 'library-state';
+                target.innerHTML = '<div><strong>规则库加载失败</strong><span>' + htmlEscape(error.message || '请稍后重试。') + '</span></div>';
+            }
+        }
+
+        function findRuleByNormalizedName(normalizedName) {
+            var text = String(normalizedName || '').trim();
+            return normalizationLibraryItems.find(function (item) {
+                return String(item.normalizedName || '').trim() === text;
+            });
+        }
+
+        function findRuleByCode(ruleCode) {
+            return normalizationLibraryItems.find(function (item) { return item.ruleCode === ruleCode; });
+        }
+
+        function compareCandidateRules() {
+            return normalizationLibraryItems.filter(function (item) {
+                return item && item.normalizedName && item.enabled !== false;
+            });
+        }
+
+        function populateCompareRuleOptions() {
+            var select = $('compare-rule-select');
+            if (!select) return;
+
+            var currentRuleCode = select.value;
+            var currentName = $('compare-product-name') ? $('compare-product-name').value : '';
+            var matchedByName = findRuleByNormalizedName(currentName);
+            var rules = compareCandidateRules();
+
+            select.innerHTML = '';
+            var manualOption = document.createElement('option');
+            manualOption.value = '';
+            manualOption.textContent = '手动输入商品名称';
+            select.appendChild(manualOption);
+
+            rules.forEach(function (item) {
+                var option = document.createElement('option');
+                option.value = item.ruleCode || item.normalizedName || '';
+                option.textContent = (item.normalizedName || '未命名') + '（' + (item.standardUnit || '未设置单位') + '）';
+                option.dataset.normalizedName = item.normalizedName || '';
+                select.appendChild(option);
+            });
+
+            if (matchedByName && matchedByName.ruleCode) {
+                select.value = matchedByName.ruleCode;
+            } else if (currentRuleCode && findRuleByCode(currentRuleCode)) {
+                select.value = currentRuleCode;
+            } else {
+                select.value = '';
+            }
+        }
+
+        function populateCompareUnitOptions(rule) {
+            if (!rule) {
+                setDatalistOptions('compare-unit-options', []);
+                return;
+            }
+            var values = unitOptionsByFamily(rule.unitFamily);
+            if (rule.standardUnit) {
+                values = [rule.standardUnit].concat(values);
+            }
+            setDatalistOptions('compare-unit-options', uniqueValues(values));
+        }
+
+        function applyCompareRuleToCompareForm(rule, overwriteProductName) {
+            var nameInput = $('compare-product-name');
+            var unitInput = $('compare-unit');
+            var select = $('compare-rule-select');
+            var hint = $('compare-unit-hint');
+            if (!nameInput || !unitInput) return;
+
+            if (!rule) {
+                populateCompareUnitOptions(null);
+                if (select) select.value = '';
+                if (hint) hint.textContent = '当前商品名称未匹配到规则库，请自行填写单位。';
+                return;
+            }
+
+            if (overwriteProductName && rule.normalizedName) {
+                nameInput.value = rule.normalizedName;
+            }
+            if (select && rule.ruleCode) {
+                select.value = rule.ruleCode;
+            }
+            populateCompareUnitOptions(rule);
+            if (rule.standardUnit) {
+                unitInput.value = rule.standardUnit;
+            }
+            if (hint) {
+                hint.textContent = '已匹配规则库商品：' + (rule.normalizedName || rule.ruleCode || '—') + '，可从同一单位族中选择或自行输入。';
+            }
+        }
+
+        function applyCompareRuleBinding() {
+            var nameInput = $('compare-product-name');
+            if (!nameInput) return;
+            applyCompareRuleToCompareForm(findRuleByNormalizedName(nameInput.value), false);
+        }
+
+        function handleCompareRuleSelectChange() {
+            var select = $('compare-rule-select');
+            if (!select) return;
+            var rule = findRuleByCode(select.value);
+            if (!rule) {
+                populateCompareUnitOptions(null);
+                var hint = $('compare-unit-hint');
+                if (hint) hint.textContent = '可以手动输入商品名称和单位。';
+                return;
+            }
+            applyCompareRuleToCompareForm(rule, true);
+        }
+
+        function populateNormalizationRuleSelect() {
+            var select = $('normalization-rule-select');
+            if (!select) return;
+            var current = select.value;
+            select.innerHTML = '';
+            if (!normalizationLibraryItems.length) {
+                var emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = '请先加载规则库';
+                select.appendChild(emptyOption);
+                return;
+            }
+            normalizationLibraryItems.forEach(function (item) {
+                var option = document.createElement('option');
+                option.value = item.normalizedName || item.ruleCode;
+                option.dataset.ruleCode = item.ruleCode || '';
+                option.textContent = (item.normalizedName || '未命名') + '（' + (item.ruleCode || '无编码') + '）';
+                select.appendChild(option);
+            });
+            if (current && Array.prototype.some.call(select.options, function (option) { return option.value === current; })) {
+                select.value = current;
+            }
+        }
+
+        function fillRuleForm(rule) {
+            if (!rule) return;
+            $('normalization-rule-code').value = rule.ruleCode || '';
+            $('normalized-name-input').value = rule.normalizedName || '';
+            $('normalization-rule-select').value = rule.normalizedName || '';
+            $('normalization-category').value = rule.category || '';
+            $('normalization-standard-unit').value = rule.standardUnit || '';
+            $('normalization-unit-family').value = normalizeUnitFamily(rule.unitFamily);
+            $('normalization-priority').value = !isEmptyValue(rule.priority) ? rule.priority : '';
+            $('normalization-keywords').value = joinKeywords(rule.keywords);
+            $('normalization-exclude-keywords').value = joinKeywords(rule.excludeKeywords);
+            $('normalization-enabled').checked = Boolean(rule.enabled);
+            markSelectedRule(rule.ruleCode);
+        }
+
+        function markSelectedRule(ruleCode) {
+            Array.prototype.forEach.call(document.querySelectorAll('.rule-row'), function (row) {
+                row.classList.toggle('selected', row.dataset.ruleCode === ruleCode);
+            });
+        }
+
+        function bindRuleRows() {
+            Array.prototype.forEach.call(document.querySelectorAll('.rule-row'), function (row) {
+                row.addEventListener('click', function () {
+                    var rule = findRuleByCode(row.dataset.ruleCode);
+                    if (!rule) return;
+                    $('normalization-action').value = 'update_rule';
+                    updateNormalizationFormMode();
+                    fillRuleForm(rule);
+                });
+            });
+        }
+
+        function updateNormalizationFormMode() {
+            var action = $('normalization-action').value;
+            var isUpdate = action === 'update_rule';
+            $('normalized-name-input-field').classList.toggle('hidden', isUpdate);
+            $('normalized-name-select-field').classList.toggle('hidden', !isUpdate);
+            $('normalized-name-input').disabled = isUpdate;
+            $('normalization-rule-select').disabled = !isUpdate;
+            $('normalization-rule-code').readOnly = isUpdate;
+            $('rule-code-readonly-hint').classList.toggle('hidden', !isUpdate);
+            if (isUpdate) {
+                if (!normalizationLibraryLoaded) {
+                    loadNormalizationLibrary(true).then(function () {
+                        var rule = findRuleByNormalizedName($('normalization-rule-select').value) || normalizationLibraryItems[0];
+                        fillRuleForm(rule);
+                    });
+                } else {
+                    var rule = findRuleByNormalizedName($('normalization-rule-select').value) || normalizationLibraryItems[0];
+                    fillRuleForm(rule);
+                }
+            }
         }
 
         function renderNormalization(data) {
-            var html = '';
-            html += '<div class="result-head"><div><h3>规则已处理</h3><p>' + htmlEscape(data.message || '可以继续维护下一条规则。') + '</p></div></div>';
+            var values = formValues('normalization-form');
+            var html = '<div class="result-head"><div><h3>规则已处理</h3><p>' + htmlEscape(data.message || '可以继续维护下一条规则。') + '</p></div></div>';
             html += '<div class="metrics">';
-            html += metric('操作类型', formatNormalizationAction(data.action || formValues('normalization-form').action), '');
-            html += metric('规则编码', data.ruleCode || formValues('normalization-form').ruleCode, '');
-            html += metric('归一化名称', data.normalizedName || formValues('normalization-form').normalizedName, '');
-            html += metric('关键词', data.keyword || formValues('normalization-form').keyword, '');
+            html += metric('操作类型', formatNormalizationAction(data.action || values.action), '');
+            html += metric('规则编码', data.ruleCode || values.ruleCode, '');
+            html += metric('归一化名称', data.normalizedName || values.normalizedName, '');
             html += metric('影响数量', formatQuantity(data.affectedRows), '');
             html += metric('提示', data.warnings || data.message, '');
             html += '</div>';
-            document.getElementById('normalization-result').innerHTML = html;
+            $('normalization-result').className = '';
+            $('normalization-result').innerHTML = html;
         }
 
         function formatNormalizationAction(value) {
-            var map = {
-                create_rule: '新增规则',
-                update_rule: '更新规则',
-                add_keyword: '新增关键词',
-                disable_keyword: '停用关键词',
-                disable_rule: '停用规则'
-            };
+            var map = { create_rule: '新增规则', update_rule: '更新规则' };
             return map[String(value || '').toLowerCase()] || display(value);
         }
 
         function renderImport(data) {
-            var html = '';
-            html += '<div class="result-head"><div><h3>' + (data.batchId ? '导入完成' : '导入结果') + '</h3><p>' + htmlEscape(data.message || '请查看本次导入统计。') + '</p></div></div>';
+            var html = '<div class="result-head"><div><h3>' + htmlEscape(data.batchId ? '导入完成' : '导入结果') + '</h3><p>' + htmlEscape(data.message || '请查看本次导入统计。') + '</p></div></div>';
             html += '<div class="metrics">';
             html += metric('批次编号', data.batchId, '');
             html += metric('总数量', formatQuantity(data.totalCount), '');
@@ -1489,7 +1521,8 @@
             html += metric('重复样本', formatQuantity(data.duplicateCount), '');
             html += metric('提示', data.warnings, '');
             html += '</div>';
-            document.getElementById('import-result').innerHTML = html;
+            $('import-result').className = '';
+            $('import-result').innerHTML = html;
         }
 
         var builders = {
@@ -1508,15 +1541,20 @@
         };
 
         async function submit(moduleName, button) {
-            var form = document.getElementById(moduleName + '-form');
+            var form = $(moduleName + '-form');
             if (!form.reportValidity()) return;
             var payload = moduleName === 'record' ? buildRecordPayload(button.dataset.dryRun === 'true') : builders[moduleName]();
             setLoading(button, true);
             try {
                 var data = await postJson(endpoints[moduleName], payload);
                 renderers[moduleName](data || {});
+                if (moduleName === 'normalization') {
+                    normalizationLibraryLoaded = false;
+                    loadNormalizationLibrary(true);
+                }
             } catch (error) {
-                renderError(moduleName + '-result', error);
+                var titles = { compare: '暂时无法给出价格建议', search: '暂时没有找到记录', record: '样本处理失败', normalization: '规则保存失败', import: '订单导入失败' };
+                renderError(moduleName + '-result', titles[moduleName], error);
             } finally {
                 setLoading(button, false);
             }
@@ -1527,7 +1565,8 @@
                 Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (item) { item.classList.remove('active'); });
                 Array.prototype.forEach.call(document.querySelectorAll('.module'), function (item) { item.classList.remove('active'); });
                 tab.classList.add('active');
-                document.getElementById(tab.dataset.target).classList.add('active');
+                $(tab.dataset.target).classList.add('active');
+                if (tab.dataset.target === 'normalization' || tab.dataset.target === 'compare') loadNormalizationLibrary(false);
             });
         });
 
@@ -1538,6 +1577,39 @@
         Array.prototype.forEach.call(document.querySelectorAll('form'), function (form) {
             form.addEventListener('submit', function (event) { event.preventDefault(); });
         });
+
+        $('refresh-normalization-library').addEventListener('click', function () {
+            normalizationLibraryLoaded = false;
+            loadNormalizationLibrary(true);
+        });
+
+        $('normalization-action').addEventListener('change', updateNormalizationFormMode);
+        $('normalization-rule-select').addEventListener('change', function () {
+            fillRuleForm(findRuleByNormalizedName(this.value));
+        });
+
+        if ($('compare-rule-select')) {
+            $('compare-rule-select').addEventListener('change', handleCompareRuleSelectChange);
+        }
+
+        if ($('compare-product-name')) {
+            $('compare-product-name').addEventListener('input', applyCompareRuleBinding);
+            $('compare-product-name').addEventListener('change', applyCompareRuleBinding);
+        }
+
+        if ($('compare-sku-quantity')) {
+            $('compare-sku-quantity').addEventListener('input', updateCompareTotalQuantity);
+            $('compare-sku-quantity').addEventListener('change', updateCompareTotalQuantity);
+        }
+
+        if ($('compare-purchase-quantity')) {
+            $('compare-purchase-quantity').addEventListener('input', updateCompareTotalQuantity);
+            $('compare-purchase-quantity').addEventListener('change', updateCompareTotalQuantity);
+        }
+
+        updateNormalizationFormMode();
+        updateCompareTotalQuantity();
+        loadNormalizationLibrary(false);
     }());
 </script>
 </body>

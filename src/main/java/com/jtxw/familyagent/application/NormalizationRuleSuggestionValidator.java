@@ -45,7 +45,7 @@ public class NormalizationRuleSuggestionValidator {
     /**
      * 数量单位族允许的标准单位。
      */
-    private static final Set<String> COUNT_UNITS = Set.of("颗", "片", "条", "件");
+    private static final Set<String> COUNT_UNITS = Set.of("颗", "片", "条", "件","瓶");
     /**
      * keyword 安全校验器，负责拦截危险关键词。
      */
