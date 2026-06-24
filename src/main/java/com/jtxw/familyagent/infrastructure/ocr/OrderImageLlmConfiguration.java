@@ -2,6 +2,7 @@ package com.jtxw.familyagent.infrastructure.ocr;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.infrastructure.llm.LlmClient;
+import com.jtxw.familyagent.infrastructure.llm.LlmDebugLogger;
 import com.jtxw.familyagent.infrastructure.llm.OpenAiCompatibleLlmClient;
 import com.jtxw.familyagent.infrastructure.llm.OpenAiCompatibleLlmClientSettings;
 import org.springframework.context.annotation.Bean;
@@ -23,9 +24,10 @@ public class OrderImageLlmConfiguration {
      */
     @Bean("orderImageLlmClient")
     public LlmClient orderImageLlmClient(ParseOrderImageModelProperties properties,
-                                         ObjectMapper objectMapper) {
+                                         ObjectMapper objectMapper,
+                                         LlmDebugLogger debugLogger) {
         OpenAiCompatibleLlmClientSettings settings = new OpenAiCompatibleLlmClientSettings(
                 properties.getBaseUrl(), properties.getApiKey(), properties.getTimeoutSeconds());
-        return new OpenAiCompatibleLlmClient(settings, objectMapper);
+        return new OpenAiCompatibleLlmClient(settings, objectMapper, debugLogger);
     }
 }

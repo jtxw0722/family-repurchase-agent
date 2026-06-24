@@ -40,6 +40,10 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
      * JSON 请求构造和响应解析器。
      */
     private final ObjectMapper objectMapper;
+    /**
+     * LLM debug dump 写入器，关闭时不会创建目录或写文件。
+     */
+    private final LlmDebugLogger debugLogger;
 
     /**
      * 创建 OpenAI-compatible 通用供应商适配器，使用指定连接设置和 JSON 解析器。
@@ -48,8 +52,21 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
      * @param objectMapper JSON 请求构造和响应解析器
      */
     public OpenAiCompatibleLlmClient(OpenAiCompatibleLlmClientSettings settings, ObjectMapper objectMapper) {
+        this(settings, objectMapper, LlmDebugLogger.disabled(objectMapper));
+    }
+
+    /**
+     * 创建 OpenAI-compatible 通用供应商适配器，使用指定连接设置、JSON 解析器和 debug 写入器。
+     *
+     * @param settings     供应商连接设置
+     * @param objectMapper JSON 请求构造和响应解析器
+     * @param debugLogger  LLM debug dump 写入器
+     */
+    public OpenAiCompatibleLlmClient(OpenAiCompatibleLlmClientSettings settings, ObjectMapper objectMapper,
+                                     LlmDebugLogger debugLogger) {
         this.settings = settings;
         this.objectMapper = objectMapper;
+        this.debugLogger = debugLogger;
     }
 
     /**
@@ -63,9 +80,17 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         validate(request);
         String requestJson = buildRequestJson(request);
         long startNanos = System.nanoTime();
-        String responseJson = execute(requestJson);
-        long durationMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-        return parseResponse(responseJson, request.model(), durationMillis);
+        try {
+            String responseJson = execute(requestJson);
+            long durationMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
+            LlmResponse response = parseResponse(responseJson, request.model(), durationMillis);
+            debugLogger.logSuccess(request, response);
+            return response;
+        } catch (RuntimeException exception) {
+            long durationMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
+            debugLogger.logFailure(request, exception, durationMillis);
+            throw exception;
+        }
     }
 
     /**

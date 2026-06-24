@@ -53,6 +53,10 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
      * 模型 content 业务 JSON 解析器。
      */
     private final ObjectMapper objectMapper;
+    /**
+     * 订单截图隐私脱敏器，负责在返回 OCR 结果前隐藏收货信息和编号。
+     */
+    private final OrderImagePrivacySanitizer privacySanitizer;
 
     /**
      * 创建订单截图大模型场景适配器，使用指定配置、通用 LLM 客户端和 JSON 解析器。
@@ -64,10 +68,12 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
     public LlmOrderImageModelClient(
             ParseOrderImageModelProperties properties,
             @Qualifier("orderImageLlmClient") LlmClient llmClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            OrderImagePrivacySanitizer privacySanitizer) {
         this.properties = properties;
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
+        this.privacySanitizer = privacySanitizer;
     }
 
     /**
@@ -160,7 +166,8 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
                     }
                 });
             }
-            return new OcrResult(rawTextNode.asText().trim(), null, List.copyOf(warnings));
+            return new OcrResult(privacySanitizer.sanitizeRawText(rawTextNode.asText()).trim(),
+                    null, List.copyOf(warnings));
         } catch (OrderImageModelException exception) {
             throw exception;
         } catch (IOException exception) {

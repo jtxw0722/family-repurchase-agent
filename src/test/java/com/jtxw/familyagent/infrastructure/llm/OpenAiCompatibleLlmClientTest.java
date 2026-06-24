@@ -1,12 +1,16 @@
 package com.jtxw.familyagent.infrastructure.llm;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jtxw.familyagent.infrastructure.config.LlmDebugLogProperties;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,6 +27,9 @@ class OpenAiCompatibleLlmClientTest {
      * 测试用 JSON 解析器。
      */
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void shouldBuildImageRequestAndParseContentUsageAndModel() throws Exception {
@@ -60,6 +67,55 @@ class OpenAiCompatibleLlmClientTest {
 
             assertThat(requestBody.get()).contains("\"content\":\"plain user text\"")
                     .doesNotContain("image_url");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldWriteSuccessDebugFileWhenEnabled() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        String response = "{\"model\":\"actual-model\",\"choices\":[{\"message\":{\"content\":\"debug content\"}}],"
+                + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4}}";
+        HttpServer server = server(response, 200, requestBody);
+        server.start();
+        try {
+            Path debugDir = tempDir.resolve("openai-success");
+            client(server, "secret-debug-key", 2, debugDir).chat(imageRequest());
+
+            String debugJson = Files.readString(singleFile(debugDir), StandardCharsets.UTF_8);
+            assertThat(debugJson)
+                    .contains("\"scene\" : \"synthetic-scene\"")
+                    .contains("\"promptVersion\" : \"v1\"")
+                    .contains("\"content\" : \"debug content\"")
+                    .doesNotContain("Authorization")
+                    .doesNotContain("Bearer")
+                    .doesNotContain("secret-debug-key")
+                    .doesNotContain("data:image/jpeg;base64")
+                    .doesNotContain("AQID");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldWriteFailureDebugFileWhenProviderReturnsNon2xx() throws Exception {
+        HttpServer server = server("{\"error\":\"denied\"}", 429, new AtomicReference<>());
+        server.start();
+        try {
+            Path debugDir = tempDir.resolve("openai-failure");
+            assertThatThrownBy(() -> client(server, "secret-provider-key", 2, debugDir).chat(imageRequest()))
+                    .isInstanceOf(LlmException.class);
+
+            String debugJson = Files.readString(singleFile(debugDir), StandardCharsets.UTF_8);
+            assertThat(debugJson)
+                    .contains("\"success\" : false")
+                    .contains("\"type\" : \"LlmException\"")
+                    .doesNotContain("Authorization")
+                    .doesNotContain("Bearer")
+                    .doesNotContain("secret-provider-key")
+                    .doesNotContain("data:image/jpeg;base64")
+                    .doesNotContain("AQID");
         } finally {
             server.stop(0);
         }
@@ -166,6 +222,29 @@ class OpenAiCompatibleLlmClientTest {
         OpenAiCompatibleLlmClientSettings settings = new OpenAiCompatibleLlmClientSettings(
                 "http://127.0.0.1:" + server.getAddress().getPort() + "/", apiKey, timeoutSeconds);
         return new OpenAiCompatibleLlmClient(settings, objectMapper);
+    }
+
+    /**
+     * 使用开启 debug 的配置创建被测客户端。
+     */
+    private OpenAiCompatibleLlmClient client(HttpServer server, String apiKey, int timeoutSeconds, Path debugDir) {
+        OpenAiCompatibleLlmClientSettings settings = new OpenAiCompatibleLlmClientSettings(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/", apiKey, timeoutSeconds);
+        LlmDebugLogProperties properties = new LlmDebugLogProperties();
+        properties.setDebugLogEnabled(true);
+        properties.setDebugLogDir(debugDir.toString());
+        return new OpenAiCompatibleLlmClient(settings, objectMapper, new LlmDebugLogger(properties, objectMapper));
+    }
+
+    /**
+     * 读取 debug 目录中唯一生成的文件。
+     */
+    private Path singleFile(Path debugDir) throws IOException {
+        try (var files = Files.list(debugDir)) {
+            List<Path> debugFiles = files.toList();
+            assertThat(debugFiles).hasSize(1);
+            return debugFiles.get(0);
+        }
     }
 
     /**

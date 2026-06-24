@@ -79,7 +79,7 @@ class LlmOrderImageModelClientTest {
                 properties, request -> {
                     capturedRequest.set(request);
                     return response("{\"rawText\":\"ok\"}");
-                }, new ObjectMapper());
+                }, new ObjectMapper(), new OrderImagePrivacySanitizer());
 
         assertThatThrownBy(() -> client.recognize(image("large.jpeg", new byte[]{1, 2, 3})))
                 .isInstanceOf(OrderImageModelException.class)
@@ -128,11 +128,38 @@ class LlmOrderImageModelClientTest {
         assertThat(imageInput.toString()).contains("contentSize=2").doesNotContain("[1, 2]");
     }
 
+    @Test
+    void shouldSanitizePrivacyInfoFromModelRawText() throws IOException {
+        LlmOrderImageModelClient client = client(request -> response("{\"rawText\":\"收货人：张三\\n"
+                + "张三 130****0624 南环路179号1栋\\n订单编号：260604398102382163163\\n"
+                + "快递单号：777415590765148\\n商品名称：赵露思同款包包\\n规格：596ml*24瓶\\n实付：¥25.73\","
+                + "\"warnings\":[\"存在隐私字段\"]}"));
+
+        OcrResult result = client.recognize(image("privacy.jpg", new byte[]{1, 2, 3}));
+
+        assertThat(result.rawText())
+                .contains("[姓名已隐藏]")
+                .contains("[收货信息已隐藏]")
+                .contains("订单编号：[编号已隐藏]")
+                .contains("快递单号：[编号已隐藏]")
+                .contains("商品名称：赵露思同款包包")
+                .contains("规格：596ml*24瓶")
+                .contains("实付：¥25.73")
+                .doesNotContain("张三")
+                .doesNotContain("130****0624")
+                .doesNotContain("南环路179号")
+                .doesNotContain("260604398102382163163")
+                .doesNotContain("777415590765148");
+        assertThat(result.warnings()).containsExactly("存在隐私字段");
+    }
+
+
     /**
      * 使用默认合成配置和指定 LLM 客户端创建被测场景适配器。
      */
     private LlmOrderImageModelClient client(LlmClient llmClient) {
-        return new LlmOrderImageModelClient(properties(), llmClient, new ObjectMapper());
+        return new LlmOrderImageModelClient(properties(), llmClient,
+                new ObjectMapper(), new OrderImagePrivacySanitizer());
     }
 
     /**

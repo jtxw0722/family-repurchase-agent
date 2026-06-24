@@ -12,6 +12,11 @@ server:
 
 family-agent:
   reports-dir: ./reports
+  llm:
+    # 是否生成统一 LLM debug dump 文件，默认关闭；开启后 parse_order_image 和 normalization-rule-suggestions 都会写入
+    debug-log-enabled: true
+    # 统一 LLM debug dump 文件目录
+    debug-log-dir: logs/llm-debug
   # 请求未提供 owner 时使用的订单归属人
   default-owner: jtxw
   parse-order-image:
@@ -47,8 +52,3 @@ family-agent:
       extra-body-json: '{"temperature":0.8,"top_p":0.95,"thinking":{"type":"disabled"}}'
       # LLM 请求超时时间，单位秒
       request-timeout-seconds: 180
-
-      # 是否生成 LLM debug dump 文件
-      debug-log-enabled: true
-      # LLM debug dump 文件目录
-      debug-log-dir: logs/llm-debug
