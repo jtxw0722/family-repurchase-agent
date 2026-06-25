@@ -54,6 +54,11 @@ public class OrderImageTextParser {
     private static final Pattern LABELED_PRICE_PATTERN = Pattern.compile(
             "(?:实付款?|实际支付|支付金额|合计|订单金额|总价)\\s*[：:]?\\s*[¥￥]?\\s*(\\d+(?:\\.\\d{1,2})?)");
     /**
+     * 明确实付金额，优先级高于优惠、补贴价、商品划线价等页面金额。
+     */
+    private static final Pattern PAID_PRICE_PATTERN = Pattern.compile(
+            "实付款?\\s*[：:]?\\s*[¥￥]?\\s*(\\d+(?:\\.\\d{1,2})?)");
+    /**
      * 没有业务标签的低优先级金额。
      */
     private static final Pattern STANDALONE_PRICE_PATTERN = Pattern.compile(
@@ -66,7 +71,7 @@ public class OrderImageTextParser {
      * 商品规格字段，支持标签和值位于同一行。
      */
     private static final Pattern SKU_PATTERN = Pattern.compile(
-            "^(?:已购规格|商品规格|已选规格|购买规格|规格|颜色分类|套餐|型号|SKU)\\s*[：:;；]\\s*(.+)$",
+            "^(?:已购规格|商品规格|已选规格|购买规格|规格|颜色分类|套餐|型号|SKU)\\s*[：:;；]?\\s*(.+)$",
             Pattern.CASE_INSENSITIVE);
     /**
      * 可从下一条有效文本读取值的规格标签。
@@ -89,10 +94,16 @@ public class OrderImageTextParser {
      */
     private static final Pattern TRAILING_SKU_UI_PATTERN = Pattern.compile("\\s*[>〉]\\s*$");
     /**
-     * 订单日期或时间。
+     * 带明确订单语义标签的日期或时间，优先级高于物流和签收区域中的普通日期。
      */
-    private static final Pattern DATE_PATTERN = Pattern.compile(
-            "(?:下单时间|支付时间|订单时间|创建时间)?\\s*[：:]?\\s*(\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?)");
+    private static final Pattern LABELED_DATE_PATTERN = Pattern.compile(
+            "(?:下单时间|支付时间|订单时间|创建时间)\\s*[：:]?\\s*"
+                    + "(\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?)");
+    /**
+     * 任意日期或时间，仅在缺少明确订单日期标签时作为兜底。
+     */
+    private static final Pattern ANY_DATE_PATTERN = Pattern.compile(
+            "(\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?)");
     /**
      * 明确商品数量单位，不包含只表示外包装的包、袋、盒等单位。
      */
@@ -155,13 +166,15 @@ public class OrderImageTextParser {
      * 系统字段及交互文案，不应用作商品名称或规格值。
      */
     private static final Pattern SYSTEM_LINE_PATTERN = Pattern.compile(
-            "交易成功|为了补偿|门槛券|已签收|收货|地址|手机号|旗舰店|回头客好店|百亿补贴|品牌|降价补差|"
+            "交易成功|您的快件已取走|快件已取走|为了补偿|门槛券|已签收|收货|地址|手机号|\\[姓名已隐藏]|"
+                    + "\\[手机号已隐藏]|\\[地址已隐藏]|\\[收货信息已隐藏]|旗舰店|回头客好店|降价补差|"
                     + "分享商品|联系商家|申请退款|补贴后共优惠|实付|已购规格|商品规格|已选规格|购买规格|规格|"
                     + "该规格补贴价|已购数量|合计补贴价|平台优惠|订单号|商品快照|支付方式|物流公司|快递单号|"
                     + "下单时间|拼单时间|发货时间|成交时间|支付时间|订单时间|创建时间|优惠券|运费|合计|订单金额|"
                     + "总价|颜色分类|套餐|型号|SKU|更多|查看物流|追加评价|再次拼单|复制|仓库已发货|自动确认|"
                     + "直播中|好评率|退款|大促价保|破损包退|上门换新|加入购物车|申请售后|商品总价|店铺优惠|"
-                    + "平台及达人优惠|红包已抵|订单信息|收起|交易快照|支付宝交易号|催促配送|确认收货|客服");
+                    + "平台及达人优惠|红包已抵|订单信息|收起|交易快照|支付宝交易号|催促配送|确认收货|立即评价|"
+                    + "客服|退货包运费|7天无理由退货");
     /**
      * 单独出现的数量、金额和移动端状态文本，不应用作商品名称。
      */
@@ -174,6 +187,25 @@ public class OrderImageTextParser {
     private static final Pattern SPECIFICATION_MULTIPLIER_PATTERN = Pattern.compile(
             "\\d+(?:\\.\\d+)?\\s*" + TARGET_UNIT_PATTERN + "\\s*(?:装\\s*)?[xX*×]\\s*\\d+",
             Pattern.CASE_INSENSITIVE);
+    /**
+     * 商品名称行尾附着的商品价和购买数量，例如 ¥25.73 ×1。
+     */
+    private static final Pattern PRODUCT_NAME_TRAILING_PRICE_QUANTITY_PATTERN = Pattern.compile(
+            "\\s*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?\\s*(?:[xX×]\\s*\\d+)?\\s*$");
+    /**
+     * 商品名称行尾附着的单件购买数量按钮。
+     */
+    private static final Pattern PRODUCT_NAME_TRAILING_QUANTITY_PATTERN = Pattern.compile("\\s*[xX×]\\s*1\\s*[>√]*\\s*$");
+    /**
+     * 拼多多商品标题常见营销前缀，清理时必须保留后面的真实品牌和商品名。
+     */
+    private static final Pattern PDD_PRODUCT_MARKETING_PREFIX_PATTERN = Pattern.compile(
+            "^(?:百亿补贴[·\\s]*[^\\s]*\\s*品牌\\s*|百亿补贴\\s*品牌\\s*|百亿补贴\\s*|品牌好货\\s*|品牌\\s*)+");
+    /**
+     * 拼多多订单详情页平台强特征。
+     */
+    private static final Pattern PDD_PLATFORM_FEATURE_PATTERN = Pattern.compile(
+            "拼多多|百亿补贴|拼单|再次拼单|补贴后共优惠|退货包运费保障中");
     /**
      * 商品汇总区起始字段，SKU 无标签回退扫描到此处后停止。
      */
@@ -284,12 +316,13 @@ public class OrderImageTextParser {
 
         ProductNameCandidate bestCandidate = null;
         for (int index = 0; index < lines.size(); index++) {
-            String productNameCandidate = cleanProductNameCandidate(lines.get(index));
+            String rawLine = lines.get(index);
+            String productNameCandidate = cleanProductNameCandidate(rawLine);
             if (!isProductNameCandidate(productNameCandidate)) {
                 continue;
             }
             int score = scoreProductNameCandidate(
-                    productNameCandidate, index, shopIndex, paidIndex, skuDetailIndex);
+                    rawLine, productNameCandidate, index, shopIndex, paidIndex, skuDetailIndex);
             if (bestCandidate == null || score > bestCandidate.score()) {
                 bestCandidate = new ProductNameCandidate(productNameCandidate, score, index);
             }
@@ -374,9 +407,10 @@ public class OrderImageTextParser {
         if (!hasText(line)) {
             return line;
         }
-        String cleanedLine = line.trim()
-                .replaceFirst("\\s*√?\\s*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?.*$", "")
-                .replaceFirst("\\s*[xX]\\s*1\\s*[>√]*\\s*$", "")
+        String cleanedLine = PDD_PRODUCT_MARKETING_PREFIX_PATTERN.matcher(line.trim()).replaceFirst("");
+        cleanedLine = PRODUCT_NAME_TRAILING_PRICE_QUANTITY_PATTERN.matcher(cleanedLine).replaceFirst("")
+                .replaceFirst("\\s*√?\\s*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?.*$", "");
+        cleanedLine = PRODUCT_NAME_TRAILING_QUANTITY_PATTERN.matcher(cleanedLine).replaceFirst("")
                 .replaceFirst("[>√\\s]+$", "");
         return cleanedLine.trim();
     }
@@ -384,7 +418,8 @@ public class OrderImageTextParser {
     /**
      * 根据商品区块位置和规格特征计算标题候选分数。
      */
-    private int scoreProductNameCandidate(String line,
+    private int scoreProductNameCandidate(String rawLine,
+                                          String line,
                                           int lineIndex,
                                           int shopIndex,
                                           int paidIndex,
@@ -399,9 +434,19 @@ public class OrderImageTextParser {
         if (skuDetailIndex >= 0 && lineIndex < skuDetailIndex) {
             score += 10;
         }
+        boolean hasTrailingPriceAndQuantity = rawLine.matches(".*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?\\s*[xX×]\\s*\\d+.*");
+        boolean hasPrice = rawLine.matches(".*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?.*");
+        if (hasTrailingPriceAndQuantity) {
+            score += 40;
+        } else if (hasPrice) {
+            score += 25;
+        }
+        if (rawLine.contains("百亿补贴") || rawLine.contains("品牌好货") || rawLine.contains("品牌")) {
+            score += 20;
+        }
         // 完整乘法规格更可能是 SKU；保留含容量但不完整的 OCR 商品标题。
         if (SPECIFICATION_MULTIPLIER_PATTERN.matcher(line).find()) {
-            score -= 30;
+            score -= hasPrice ? 5 : 30;
         }
         return score;
     }
@@ -513,6 +558,10 @@ public class OrderImageTextParser {
      * @return 实付金额，未找到时返回空
      */
     private Double findPrice(String rawText) {
+        Matcher paidMatcher = PAID_PRICE_PATTERN.matcher(rawText);
+        if (paidMatcher.find()) {
+            return Double.valueOf(paidMatcher.group(1));
+        }
         Matcher labeledMatcher = LABELED_PRICE_PATTERN.matcher(rawText);
         if (labeledMatcher.find()) {
             return Double.valueOf(labeledMatcher.group(1));
@@ -727,8 +776,26 @@ public class OrderImageTextParser {
      * @return 标准化后的日期字符串，未找到时返回空
      */
     private String findDate(String rawText) {
-        Matcher matcher = DATE_PATTERN.matcher(rawText);
-        return matcher.find() ? matcher.group(1).replace('/', '-') : null;
+        Matcher labeledMatcher = LABELED_DATE_PATTERN.matcher(rawText);
+        if (labeledMatcher.find()) {
+            return normalizeDate(labeledMatcher.group(1));
+        }
+        Matcher anyMatcher = ANY_DATE_PATTERN.matcher(rawText);
+        if (!anyMatcher.find()) {
+            return null;
+        }
+        return normalizeDate(anyMatcher.group(1));
+    }
+
+    /**
+     * 将 OCR 日期统一归一化为 yyyy-MM-dd，丢弃时间部分以匹配购买日期字段语义。
+     *
+     * @param dateText OCR 中识别出的日期或日期时间
+     * @return 标准日期字符串
+     */
+    private String normalizeDate(String dateText) {
+        String normalizedDate = dateText.replace('/', '-');
+        return normalizedDate.length() > 10 ? normalizedDate.substring(0, 10) : normalizedDate;
     }
 
     /**
@@ -776,9 +843,6 @@ public class OrderImageTextParser {
      * @return 平台标识，例如 pdd、taobao、jd；无法识别时返回空
      */
     private String detectPlatform(String rawText) {
-        if (rawText.contains("拼多多")) {
-            return "pdd";
-        }
         if (rawText.contains("淘宝")) {
             return "taobao";
         }
@@ -787,6 +851,9 @@ public class OrderImageTextParser {
         }
         if (rawText.contains("京东")) {
             return "jd";
+        }
+        if (PDD_PLATFORM_FEATURE_PATTERN.matcher(rawText).find()) {
+            return "pdd";
         }
         if (rawText.contains("抖音")) {
             return "douyin";

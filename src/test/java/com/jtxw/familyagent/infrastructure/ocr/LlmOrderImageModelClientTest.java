@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/20 14:05:37
- * @Description: 订单截图 LLM 场景适配器测试，验证提示词、图片边界、请求语义和 OCR JSON 解析
+ * @Date: 2026/06/24 09:21:54
+ * @Description: 订单截图 LLM 场景适配器测试，验证提示词、本地或内存图片边界、请求语义和 OCR JSON 解析
  */
 class LlmOrderImageModelClientTest {
     /** JUnit 创建的合成图片隔离目录。 */
@@ -151,6 +152,41 @@ class LlmOrderImageModelClientTest {
                 .doesNotContain("260604398102382163163")
                 .doesNotContain("777415590765148");
         assertThat(result.warnings()).containsExactly("存在隐私字段");
+    }
+
+    @Test
+    void shouldBuildLlmImageInputFromBase64ImageInput() {
+        byte[] imageBytes = new byte[]{5, 6, 7};
+        String base64Text = Base64.getEncoder().encodeToString(imageBytes);
+        AtomicReference<LlmRequest> capturedRequest = new AtomicReference<>();
+        LlmOrderImageModelClient client = client(request -> {
+            capturedRequest.set(request);
+            return response("{\"rawText\":\"商品名称：内存图片咖啡\\n规格：268ml\",\"warnings\":[]}");
+        });
+
+        OcrResult result = client.recognize(OrderImageInput.base64("order.jpg", "image/jpeg", imageBytes));
+
+        assertThat(result.rawText()).contains("内存图片咖啡");
+        assertThat(capturedRequest.get().images()).hasSize(1);
+        assertThat(capturedRequest.get().images().get(0).fileName()).isEqualTo("order.jpg");
+        assertThat(capturedRequest.get().images().get(0).mimeType()).isEqualTo("image/jpeg");
+        assertThat(capturedRequest.get().images().get(0).content()).containsExactly(imageBytes);
+        assertThat(capturedRequest.get().userPrompt()).doesNotContain(base64Text);
+        assertThat(capturedRequest.get().images().get(0).toString()).doesNotContain(base64Text);
+    }
+
+    @Test
+    void shouldUseBase64MimeTypeWhenFileNameSuffixDiffers() {
+        AtomicReference<LlmRequest> capturedRequest = new AtomicReference<>();
+        LlmOrderImageModelClient client = client(request -> {
+            capturedRequest.set(request);
+            return response("{\"rawText\":\"ok\",\"warnings\":[]}");
+        });
+
+        client.recognize(OrderImageInput.base64("order.gif", "image/webp", new byte[]{1, 2}));
+
+        assertThat(capturedRequest.get().images().get(0).fileName()).isEqualTo("order.gif");
+        assertThat(capturedRequest.get().images().get(0).mimeType()).isEqualTo("image/webp");
     }
 
 

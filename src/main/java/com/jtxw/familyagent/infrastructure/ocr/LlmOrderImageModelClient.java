@@ -84,8 +84,19 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
      */
     @Override
     public OcrResult recognize(Path imagePath) {
+        return recognize(OrderImageInput.path(imagePath));
+    }
+
+    /**
+     * 通过通用 LLM 客户端提取订单截图原始文字，支持本地路径图片和 Base64 内存图片。
+     *
+     * @param imageInput 订单截图统一输入对象，不允许为空
+     * @return 模型 content 中解析出的 OCR 原始文本和警告
+     */
+    @Override
+    public OcrResult recognize(OrderImageInput imageInput) {
         validateConfiguration();
-        byte[] imageBytes = readImage(imagePath);
+        LlmImageInput image = buildImageInput(imageInput);
         LlmRequest request = new LlmRequest(
                 SCENE,
                 PROMPT_VERSION,
@@ -94,7 +105,7 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
                 properties.getModelName().trim(),
                 0D,
                 null,
-                List.of(new LlmImageInput(imagePath.getFileName().toString(), mimeType(imagePath), imageBytes))
+                List.of(image)
         );
         try {
             LlmResponse response = llmClient.chat(request);
@@ -107,6 +118,25 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
         } catch (LlmException exception) {
             throw new OrderImageModelException("视觉模型请求失败：" + exception.getMessage());
         }
+    }
+
+    /**
+     * 根据统一图片输入对象构造通用 LLM 图片输入，禁止把 Base64 内容写入请求文本。
+     *
+     * @param imageInput 订单截图统一输入对象
+     * @return 通用 LLM 图片输入
+     */
+    private LlmImageInput buildImageInput(OrderImageInput imageInput) {
+        if (imageInput == null) {
+            throw new OrderImageModelException("订单截图输入不能为空");
+        }
+        if (OrderImageInputType.BASE64.equals(imageInput.sourceType())) {
+            byte[] imageBytes = imageInput.content();
+            validateImageSize(imageBytes.length);
+            return new LlmImageInput(imageInput.displayName(), imageInput.mimeType(), imageBytes);
+        }
+        byte[] imageBytes = readImage(imageInput.path());
+        return new LlmImageInput(imageInput.displayName(), mimeType(imageInput.path()), imageBytes);
     }
 
     /**
@@ -130,17 +160,26 @@ public class LlmOrderImageModelClient implements OrderImageModelClient {
     private byte[] readImage(Path imagePath) {
         try {
             long imageSize = Files.size(imagePath);
-            long maxImageBytes = properties.getMaxImageBytes() > 0
-                    ? properties.getMaxImageBytes() : ParseOrderImageModelProperties.DEFAULT_MAX_IMAGE_BYTES;
-            if (imageSize > maxImageBytes) {
-                throw new OrderImageModelException(
-                        "订单截图大小超过视觉模型限制：" + imageSize + " > " + maxImageBytes + " 字节");
-            }
+            validateImageSize(imageSize);
             return Files.readAllBytes(imagePath);
         } catch (OrderImageModelException exception) {
             throw exception;
         } catch (IOException exception) {
             throw new OrderImageModelException("无法读取订单截图文件");
+        }
+    }
+
+    /**
+     * 校验图片大小不超过视觉模型配置限制。
+     *
+     * @param imageSize 图片字节数
+     */
+    private void validateImageSize(long imageSize) {
+        long maxImageBytes = properties.getMaxImageBytes() > 0
+                ? properties.getMaxImageBytes() : ParseOrderImageModelProperties.DEFAULT_MAX_IMAGE_BYTES;
+        if (imageSize > maxImageBytes) {
+            throw new OrderImageModelException(
+                    "订单截图大小超过视觉模型限制：" + imageSize + " > " + maxImageBytes + " 字节");
         }
     }
 

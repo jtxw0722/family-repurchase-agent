@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -27,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/20 12:40:44
- * @Description: 订单截图解析应用服务测试，覆盖路径安全、默认禁用 OCR 和只读候选返回边界
+ * @Date: 2026/06/24 09:21:54
+ * @Description: 订单截图解析应用服务测试，覆盖路径安全、Base64 优先、默认禁用 OCR 和只读候选返回边界
  */
 class ParseOrderImageApplicationServiceTest {
     /** JUnit 创建的隔离图片允许目录。 */
@@ -41,7 +42,7 @@ class ParseOrderImageApplicationServiceTest {
 
         assertThatThrownBy(() -> service.parse(command(" ", true)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("imagePath 不能为空");
+                .hasMessage("imageBase64 和 imagePath 至少需要提供一个");
     }
 
     @Test
@@ -209,6 +210,54 @@ class ParseOrderImageApplicationServiceTest {
                 .anyMatch(warning -> warning.contains("视觉模型识别失败，已回退本地 OCR"));
     }
 
+    @Test
+    void shouldPreferImageBase64WhenImagePathAlsoProvided() throws IOException {
+        Path outsideFile = Files.createTempFile("outside-order-", ".png");
+        ParseOrderImageApplicationService service = createService(fakeOcrClient());
+        String imageBase64 = dataUrl(new byte[]{1, 2, 3});
+        ParseOrderImageCommand command = new ParseOrderImageCommand(
+                outsideFile.toString(), imageBase64, "order.jpg", null,
+                "jtxw", "pdd", null, null, true);
+
+        ParseOrderImageResult result = service.parse(command);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.imagePath()).isEqualTo("order.jpg");
+        assertThat(result.imagePath()).doesNotContain(imageBase64);
+        assertThat(result.candidates()).hasSize(1);
+        Files.deleteIfExists(outsideFile);
+    }
+
+    @Test
+    void shouldRejectInvalidImageBase64WithSafeError() {
+        ParseOrderImageApplicationService service = createService(fakeOcrClient());
+        String invalidBase64 = "not-a-real-base64";
+        ParseOrderImageCommand command = new ParseOrderImageCommand(
+                null, invalidBase64, "order.jpg", "image/jpeg",
+                "jtxw", "pdd", null, null, true);
+
+        assertThatThrownBy(() -> service.parse(command))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("imageBase64 不是合法的 Base64 图片内容")
+                .hasMessageNotContaining(invalidBase64);
+    }
+
+    @Test
+    void shouldReturnCandidateFromImageBase64Mode() {
+        ParseOrderImageApplicationService service = createService(fakeOcrClient());
+        String imageBase64 = dataUrl(new byte[]{1, 2, 3});
+        ParseOrderImageCommand command = new ParseOrderImageCommand(
+                null, imageBase64, null, null,
+                "jtxw", "pdd", null, null, true);
+
+        ParseOrderImageResult result = service.parse(command);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.imagePath()).isEqualTo("base64-image");
+        assertThat(result.imagePath()).doesNotContain(imageBase64);
+        assertThat(result.candidates()).hasSize(1);
+    }
+
     /**
      * 使用默认归一化预览和测试安全目录创建被测解析服务。
      */
@@ -241,7 +290,7 @@ class ParseOrderImageApplicationServiceTest {
         ParseOrderImageApplicationService service = new ParseOrderImageApplicationService(
                 fakeOcrClient(), new OrderImageTextParser(), List.of(allowedDirectory), defaultOwner);
         ParseOrderImageCommand command = new ParseOrderImageCommand(
-                imageFile.toString(), commandOwner, "tmall", null, null, true);
+                imageFile.toString(), null, null, null, commandOwner, "tmall", null, null, true);
 
         return service.parse(command).candidates().get(0).owner();
     }
@@ -267,7 +316,14 @@ class ParseOrderImageApplicationServiceTest {
      * 创建指定图片路径和 dryRun 标志的合成解析命令。
      */
     private ParseOrderImageCommand command(String imagePath, Boolean dryRun) {
-        return new ParseOrderImageCommand(imagePath, "jtxw", "pdd", null, null, dryRun);
+        return new ParseOrderImageCommand(imagePath, null, null, null, "jtxw", "pdd", null, null, dryRun);
+    }
+
+    /**
+     * 构造不包含真实订单截图的合成图片 data URL。
+     */
+    private String dataUrl(byte[] imageBytes) {
+        return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(imageBytes);
     }
 
 }

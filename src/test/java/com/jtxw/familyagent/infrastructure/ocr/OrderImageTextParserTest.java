@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/19 22:48:00
- * @Description: 订单截图 OCR 文本规则解析器测试，覆盖单商品核心字段、优先级和缺失信息警告
+ * @Date: 2026/06/24 09:44:00
+ * @Description: 订单截图 OCR 文本规则解析器测试，覆盖单商品核心字段、拼多多详情页优先级和缺失信息警告
  */
 class OrderImageTextParserTest {
     /** 待测试的无状态 OCR 文本规则解析器。 */
@@ -30,7 +30,7 @@ class OrderImageTextParserTest {
         assertThat(candidate.quantity()).isEqualTo(780D);
         assertThat(candidate.unit()).isEqualTo("g");
         assertThat(candidate.shopName()).isEqualTo("宝洁官方旗舰店");
-        assertThat(candidate.purchaseDate()).isEqualTo("2024-06-27 10:20:00");
+        assertThat(candidate.purchaseDate()).isEqualTo("2024-06-27");
         assertThat(candidate.normalization()).isNull();
     }
 
@@ -133,7 +133,7 @@ class OrderImageTextParserTest {
         assertThat(candidate.quantity()).isEqualTo(2144D);
         assertThat(candidate.unit()).isEqualTo("ml");
         assertThat(candidate.shopName()).isEqualTo("雀巢咖啡食品旗舰店");
-        assertThat(candidate.purchaseDate()).isEqualTo("2026-05-22 13:09:39");
+        assertThat(candidate.purchaseDate()).isEqualTo("2026-05-22");
     }
 
     @Test
@@ -200,6 +200,99 @@ class OrderImageTextParserTest {
         assertThat(candidate.platform()).isEqualTo("tmall");
         assertThat(candidate.purchaseDate()).isEqualTo("2026-06-15");
         assertThat(candidate.shopName()).isEqualTo("天猫超市");
+    }
+
+    @Test
+    void shouldParsePddWahahaOrderDetailWithoutLogisticsNoise() {
+        String rawText = """
+                07:34
+                交易成功
+                [收货信息已隐藏]
+                百亿补贴·娃哈哈 品牌
+                百亿补贴 品牌 娃哈哈纯净水596ml*24瓶整箱家庭饮用水旅游... ¥25.73 ×1
+                娃哈哈纯净水596ml*24瓶【纸箱.塑模随机】
+                降价补差
+                分享商品 联系商家 申请退款
+                补贴后共优惠¥6.83 实付: ¥18.9 (免运费)
+                已购规格 娃哈哈纯净水596ml*24瓶【纸箱.塑模随机】
+                该规格补贴价 ¥25.73
+                已购数量 1
+                合计补贴价 ¥25.73
+                平台优惠 -¥6.83
+                订单编号：[编号已隐藏] 复制
+                支付方式：支付宝
+                物流公司：申通快递
+                快递单号：[编号已隐藏] 复制
+                下单时间：2026-06-04 11:57:17
+                更多 查看物流 再次拼单 立即评价
+                """;
+
+        ParsedPurchaseCandidate candidate = parser.parse(rawText, "jtxw", null, null).get(0);
+
+        assertThat(candidate.productName()).contains("娃哈哈纯净水596ml*24瓶");
+        assertThat(candidate.productName()).doesNotContain("您的快件已取走");
+        assertThat(candidate.productName()).doesNotContain("交易成功");
+        assertThat(candidate.productName()).doesNotContain("订单编号");
+        assertThat(candidate.productName()).doesNotContain("¥25.73");
+        assertThat(candidate.sku()).isEqualTo("娃哈哈纯净水596ml*24瓶【纸箱.塑模随机】");
+        assertThat(candidate.price()).isEqualTo(18.9D);
+        assertThat(candidate.platform()).isEqualTo("pdd");
+        assertThat(candidate.purchaseDate()).isEqualTo("2026-06-04");
+    }
+
+    @Test
+    void shouldParsePddHushubaoOrderDetailWithPurchasedSpec() {
+        String rawText = """
+                08:06
+                交易成功
+                [收货信息已隐藏]
+                百亿补贴·护舒宝 品牌
+                百亿补贴 品牌 护舒宝液体卫生巾防漏安睡裤夜用安心裤女... ¥21.86 ×1
+                防漏安睡裤L码*10条
+                退货包运费保障中
+                补贴后共优惠¥4.96 实付¥16.9（免运费）
+                已购规格 防漏安睡裤L码*10条
+                该规格补贴价 ¥21.86
+                已购数量 1
+                平台优惠 -¥4.96
+                下单时间：2026-06-05 09:08:07
+                更多 查看物流 再次拼单 立即评价
+                """;
+
+        ParsedPurchaseCandidate candidate = parser.parse(rawText, "jtxw", null, null).get(0);
+
+        assertThat(candidate.productName()).contains("护舒宝液体卫生巾防漏安睡裤");
+        assertThat(candidate.productName()).doesNotContain("交易成功", "¥21.86");
+        assertThat(candidate.sku()).isEqualTo("防漏安睡裤L码*10条");
+        assertThat(candidate.price()).isEqualTo(16.9D);
+        assertThat(candidate.platform()).isEqualTo("pdd");
+        assertThat(candidate.purchaseDate()).isEqualTo("2026-06-05");
+    }
+
+    @Test
+    void shouldPreferLabeledOrderDateOverLogisticsDate() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                您的快件已取走【合成驿站】
+                2026-06-07 12:08:34
+                商品名称：合成测试纸巾
+                规格：100抽
+                实付：12.50元
+                下单时间：2026-06-04 11:57:17
+                """, "jtxw", null, null).get(0);
+
+        assertThat(candidate.purchaseDate()).isEqualTo("2026-06-04");
+    }
+
+    @Test
+    void shouldNotDetectPddOnlyByConfirmReceiptButton() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                商品名称：合成测试纸巾
+                规格：100抽
+                实付：12.50元
+                确认收货
+                """, "jtxw", null, null).get(0);
+
+        assertThat(candidate.platform()).isNull();
     }
 
     @Test

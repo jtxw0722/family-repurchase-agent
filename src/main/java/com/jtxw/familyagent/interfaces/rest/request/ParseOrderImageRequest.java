@@ -2,22 +2,36 @@ package com.jtxw.familyagent.interfaces.rest.request;
 
 import com.jtxw.familyagent.application.command.ParseOrderImageCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/19 19:42:00
- * @Description: 订单截图候选样本解析 REST 请求，接收本地图片路径和可选补充字段
+ * @Date: 2026/06/24 09:21:54
+ * @Description: 订单截图候选样本解析 REST 请求，接收本地图片路径或前端 Base64 图片及可选补充字段
  */
 @Schema(description = "订单截图候选样本解析请求")
 public class ParseOrderImageRequest {
     /**
-     * 本地图片路径，必填且必须位于配置的允许目录内。
+     * 本地图片路径，允许为空；当 imageBase64 为空时必须提供且必须位于配置的允许目录内。
      */
-    @NotBlank
     @Schema(description = "允许目录内的本地订单图片路径", example = "data/inbox/screenshots/order-001.png",
-            requiredMode = Schema.RequiredMode.REQUIRED)
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private String imagePath;
+    /**
+     * 前端传入的订单截图 Base64，允许为空；非空时优先于 imagePath，支持 data URL 或纯 Base64。
+     */
+    @Schema(description = "前端传入的订单截图 Base64，支持 data URL 或纯 Base64",
+            example = "data:image/jpeg;base64,...")
+    private String imageBase64;
+    /**
+     * 前端原始图片文件名，允许为空；仅用于 MIME 推断和响应摘要，不作为服务器保存文件名。
+     */
+    @Schema(description = "前端原始图片文件名，仅用于格式推断和响应摘要", example = "order-img.jpg")
+    private String imageFileName;
+    /**
+     * 前端传入的图片 MIME 类型，允许为空；纯 Base64 且无法通过 data URL 判断类型时使用。
+     */
+    @Schema(description = "图片 MIME 类型，例如 image/jpeg、image/png 或 image/webp", example = "image/jpeg")
+    private String imageMimeType;
     /**
      * 订单归属人，允许为空，仅透传到候选样本。
      */
@@ -50,10 +64,52 @@ public class ParseOrderImageRequest {
     }
 
     /**
-     * @param imagePath 本地订单图片路径，不允许为空
+     * @param imagePath 本地订单图片路径，允许为空
      */
     public void setImagePath(String imagePath) {
         this.imagePath = imagePath;
+    }
+
+    /**
+     * @return 前端传入的订单截图 Base64，允许为空
+     */
+    public String getImageBase64() {
+        return imageBase64;
+    }
+
+    /**
+     * @param imageBase64 前端传入的订单截图 Base64，允许为空
+     */
+    public void setImageBase64(String imageBase64) {
+        this.imageBase64 = imageBase64;
+    }
+
+    /**
+     * @return 前端原始图片文件名，允许为空
+     */
+    public String getImageFileName() {
+        return imageFileName;
+    }
+
+    /**
+     * @param imageFileName 前端原始图片文件名，允许为空且仅用于安全摘要
+     */
+    public void setImageFileName(String imageFileName) {
+        this.imageFileName = imageFileName;
+    }
+
+    /**
+     * @return 图片 MIME 类型，允许为空
+     */
+    public String getImageMimeType() {
+        return imageMimeType;
+    }
+
+    /**
+     * @param imageMimeType 图片 MIME 类型，允许为空
+     */
+    public void setImageMimeType(String imageMimeType) {
+        this.imageMimeType = imageMimeType;
     }
 
     /**
@@ -132,6 +188,7 @@ public class ParseOrderImageRequest {
      * @return 不包含数据库写入语义的截图解析命令
      */
     public ParseOrderImageCommand toCommand() {
-        return new ParseOrderImageCommand(imagePath, owner, platform, purchaseDate, parseMode, dryRun);
+        return new ParseOrderImageCommand(imagePath, imageBase64, imageFileName, imageMimeType,
+                owner, platform, purchaseDate, parseMode, dryRun);
     }
 }

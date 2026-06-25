@@ -3,6 +3,7 @@ package com.jtxw.familyagent.interfaces.rest;
 import com.jtxw.familyagent.application.*;
 import com.jtxw.familyagent.application.command.ApplyNormalizationReviewCommand;
 import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
+import com.jtxw.familyagent.application.command.ParseOrderImageCommand;
 import com.jtxw.familyagent.application.command.RecordPurchaseCommand;
 import com.jtxw.familyagent.application.query.ComparePriceQuery;
 import com.jtxw.familyagent.application.query.ReviewItemQuery;
@@ -94,11 +95,51 @@ class AgentToolControllerTest {
     }
 
     @Test
-    void parseOrderImageShouldRejectMissingImagePath() throws Exception {
+    void parseOrderImageShouldAcceptBase64FieldsWithoutImagePath() throws Exception {
+        ParsedPurchaseCandidate candidate = new ParsedPurchaseCandidate(
+                "合成测试咖啡", "268ml", 12.5D, 268D, "ml", "tmall", "jtxw",
+                "2026-06-24", "合成测试旗舰店", "OCR 识别候选，需用户确认后再入库",
+                "合成 OCR 文本", 0.9D, List.of());
+        when(parseOrderImageApplicationService.parse(any()))
+                .thenReturn(new ParseOrderImageResult(true, "order.jpg", "order_screenshot",
+                        1, List.of(candidate), List.of("只返回候选样本"), "合成 OCR 文本"));
+
+        mockMvc.perform(post("/api/tools/parse-order-image")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "imageBase64": "data:image/jpeg;base64,AQID",
+                                  "imageFileName": "order.jpg",
+                                  "imageMimeType": "image/jpeg",
+                                  "owner": "jtxw",
+                                  "platform": "tmall",
+                                  "dryRun": true
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imagePath").value("order.jpg"))
+                .andExpect(jsonPath("$.candidateCount").value(1))
+                .andExpect(jsonPath("$.candidates[0].productName").value("合成测试咖啡"));
+
+        ArgumentCaptor<ParseOrderImageCommand> captor = ArgumentCaptor.forClass(ParseOrderImageCommand.class);
+        verify(parseOrderImageApplicationService).parse(captor.capture());
+        ParseOrderImageCommand command = captor.getValue();
+        assertThat(command.imagePath()).isNull();
+        assertThat(command.imageBase64()).isEqualTo("data:image/jpeg;base64,AQID");
+        assertThat(command.imageFileName()).isEqualTo("order.jpg");
+        assertThat(command.imageMimeType()).isEqualTo("image/jpeg");
+    }
+
+    @Test
+    void parseOrderImageShouldRejectWhenImagePathAndBase64BothMissing() throws Exception {
+        when(parseOrderImageApplicationService.parse(any()))
+                .thenThrow(new IllegalArgumentException("imageBase64 和 imagePath 至少需要提供一个"));
+
         mockMvc.perform(post("/api/tools/parse-order-image")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"owner\":\"jtxw\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("imageBase64 和 imagePath 至少需要提供一个"));
     }
 
     @Test

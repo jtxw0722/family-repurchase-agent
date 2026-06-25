@@ -33,14 +33,14 @@ public class ParseOrderImageToolController {
     }
 
     /**
-     * 解析允许目录内的本地订单图片并返回候选样本。
+     * 解析允许目录内的本地订单图片或前端 Base64 订单图片并返回候选样本。
      *
      * <p>该接口无论 dryRun 取值如何都不会写入 purchase_records。</p>
      *
-     * @param request 订单截图解析请求，imagePath 必填
+     * @param request 订单截图解析请求，imageBase64 和 imagePath 至少一个不为空
      * @return OCR 原文、候选样本和解析警告
      */
-    @Operation(summary = "解析订单截图候选样本", description = "解析本地订单图片，只返回候选样本，不写入购买记录。")
+    @Operation(summary = "解析订单截图候选样本", description = "解析本地路径或 Base64 订单图片，只返回候选样本，不写入购买记录。")
     @PostMapping("/parse-order-image")
     public ParseOrderImageResult parseOrderImage(@Valid @RequestBody ParseOrderImageRequest request) {
         return parseOrderImageApplicationService.parse(request.toCommand());

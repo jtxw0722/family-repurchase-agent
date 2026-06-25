@@ -513,6 +513,81 @@
         .rule-row { cursor: pointer; }
         .rule-row.selected { background: rgba(100, 92, 245, .08); }
 
+
+        .image-parser {
+            margin-bottom: 18px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            padding: 14px;
+            background: rgba(255, 255, 255, .42);
+        }
+
+        .image-parser .actions {
+            margin-top: 12px;
+        }
+
+        .file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .file-picker {
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid var(--line-strong);
+            border-radius: 16px;
+            padding: 7px 10px;
+            background: rgba(255, 255, 255, .66);
+            cursor: pointer;
+            transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+
+        .file-picker:hover {
+            border-color: rgba(100, 92, 245, .55);
+            box-shadow: 0 10px 24px rgba(100, 92, 245, .09);
+            background: rgba(255, 255, 255, .84);
+        }
+
+        .file-picker-button {
+            flex: 0 0 auto;
+            min-height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 12px;
+            border-radius: 999px;
+            color: #fff;
+            background: linear-gradient(135deg, #7183ff, var(--primary));
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .file-picker-name {
+            min-width: 0;
+            flex: 1 1 auto;
+            color: var(--text-soft);
+            font-size: 13px;
+            font-weight: 800;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .candidate-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
         .hidden { display: none !important; }
 
         @media (max-width: 1120px) {
@@ -638,11 +713,31 @@
                 <div class="panel">
                     <div class="panel-inner">
                         <div class="panel-title"><div><h2>记录样本</h2><p>把确认过的购买信息加入历史样本。</p></div></div>
+                        <div class="image-parser">
+                            <div class="field-label">订单截图
+                                <label class="file-picker" for="record-image-file">
+                                    <span class="file-picker-button">选择截图</span>
+                                    <span id="record-image-file-name" class="file-picker-name">未选择文件</span>
+                                </label>
+                                <input id="record-image-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+                            </div>
+                            <div class="actions">
+                                <button id="parse-order-image-button" class="btn btn-secondary" type="button">订单截图解析</button>
+                            </div>
+                            <div id="record-image-file-info" class="helper">支持 PNG、JPG、JPEG、WEBP 图片，解析结果会自动填入下面的记录表单。</div>
+                        </div>
                         <form id="record-form" class="form-grid">
                             <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
                             <label>购买日期<input name="purchaseDate" type="date"></label>
                             <label class="field-full">商品名称 *<input name="productName" required value="舒肤佳红石榴沐浴露" autocomplete="off"></label>
-                            <label>归一化名称<input name="normalizedName" value="沐浴露" autocomplete="off"></label>
+                            <label>从规则库选择
+                                <select id="record-normalized-rule-select">
+                                    <option value="">手动填写归一化名称</option>
+                                </select>
+                            </label>
+                            <label>归一化名称
+                                <input name="normalizedName" id="record-normalized-name" value="沐浴露" autocomplete="off">
+                            </label>
                             <label>规格 / SKU<input name="sku" value="780ml" autocomplete="off"></label>
                             <label>总价 *<input name="price" required type="number" min="0" step="0.01" value="35.22"></label>
                             <label>数量 *<input name="quantity" required type="number" min="0" step="any" value="780"></label>
@@ -650,6 +745,7 @@
                             <label>平台<input name="platform" value="MANUAL" autocomplete="off"></label>
                             <label class="field-full">店铺<input name="shopName" placeholder="可不填" autocomplete="off"></label>
                             <label class="field-full">备注<textarea name="note" placeholder="可记录满减、券后价、组合装说明等">页面手动录入</textarea></label>
+                            <textarea name="sourceText" id="record-source-text" class="hidden"></textarea>
                             <label class="inline-check field-full"><input name="confirmOutOfRange" type="checkbox">确认接受偏离历史价格区间的样本</label>
                         </form>
                         <div class="actions">
@@ -759,6 +855,7 @@
             compare: '/api/tools/compare-price',
             search: '/api/tools/purchase-records/search',
             record: '/api/tools/record-purchase',
+            parseOrderImage: '/api/tools/parse-order-image',
             normalization: '/api/tools/normalization-library',
             normalizationLibrary: '/api/tools/normalization-library',
             import: '/api/tools/import-file'
@@ -766,6 +863,8 @@
 
         var normalizationLibraryLoaded = false;
         var normalizationLibraryItems = [];
+        var lastParseOrderImageResult = null;
+        var lastParsedPurchaseCandidates = [];
 
         function $(id) { return document.getElementById(id); }
 
@@ -912,6 +1011,7 @@
                     shopName: optionalText(value.shopName),
                     sku: optionalText(value.sku),
                     note: optionalText(value.note),
+                    sourceText: optionalText(value.sourceText),
                     confirmOutOfRange: value.confirmOutOfRange
                 })]
             };
@@ -1217,6 +1317,223 @@
             $('search-result').innerHTML = html;
         }
 
+
+        function inferImageMimeType(file) {
+            if (!file) return undefined;
+            if (file.type) return file.type;
+            var name = String(file.name || '').toLowerCase();
+            if (name.endsWith('.png')) return 'image/png';
+            if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+            if (name.endsWith('.webp')) return 'image/webp';
+            return undefined;
+        }
+
+        function isSupportedImageFile(file) {
+            var mimeType = inferImageMimeType(file);
+            return ['image/png', 'image/jpeg', 'image/webp'].indexOf(mimeType) >= 0;
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise(function (resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function () { resolve(reader.result); };
+                reader.onerror = function () { reject(new Error('图片读取失败，请重新选择图片。')); };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function normalizeDateForInput(value) {
+            if (isEmptyValue(value)) return '';
+            var text = String(value).trim();
+            var matched = text.match(/^\d{4}-\d{2}-\d{2}/);
+            return matched ? matched[0] : '';
+        }
+
+        function setRecordField(name, value) {
+            var field = document.querySelector('#record-form [name="' + name + '"]');
+            if (!field) return;
+            field.value = isEmptyValue(value) ? '' : String(value);
+        }
+
+        function candidateNormalizedName(candidate) {
+            if (!candidate) return '';
+            if (candidate.normalization && candidate.normalization.normalizedName) {
+                return candidate.normalization.normalizedName;
+            }
+            return candidate.normalizedName || '';
+        }
+
+        function candidateWarnings(candidate) {
+            if (!candidate) return [];
+            var warnings = [];
+            if (Array.isArray(candidate.warnings)) {
+                warnings = warnings.concat(candidate.warnings);
+            }
+            if (candidate.normalization && candidate.normalization.warning) {
+                warnings.push(candidate.normalization.warning);
+            }
+            return warnings;
+        }
+
+        function fillRecordFormFromCandidate(candidate) {
+            if (!candidate) return;
+            setRecordField('owner', candidate.owner);
+            setRecordField('purchaseDate', normalizeDateForInput(candidate.purchaseDate));
+            setRecordField('productName', candidate.productName);
+            setRecordField('normalizedName', candidateNormalizedName(candidate));
+            setRecordField('sku', candidate.sku);
+            setRecordField('price', candidate.price);
+            setRecordField('quantity', candidate.quantity);
+            setRecordField('unit', candidate.unit);
+            syncRecordRuleSelectionByName(false);
+            setRecordField('platform', candidate.platform);
+            setRecordField('shopName', candidate.shopName);
+
+            var noteParts = [];
+            if (candidate.note) noteParts.push(candidate.note);
+            var warnings = candidateWarnings(candidate);
+            if (warnings.length) noteParts.push('解析提示：' + warnings.join('；'));
+            setRecordField('note', noteParts.join('\n') || '订单截图解析结果，请确认后录入。');
+            setRecordField('sourceText', candidate.sourceText || (lastParseOrderImageResult && lastParseOrderImageResult.rawText) || '');
+        }
+
+        function buildParseOrderImagePayload(file, imageDataUrl) {
+            var value = formValues('record-form');
+            return compact({
+                imageBase64: imageDataUrl,
+                imageFileName: file ? file.name : undefined,
+                imageMimeType: inferImageMimeType(file),
+                owner: optionalText(value.owner),
+                platform: optionalText(value.platform),
+                purchaseDate: optionalText(value.purchaseDate),
+                parseMode: 'order_screenshot',
+                dryRun: true
+            });
+        }
+
+        function renderCandidateAction(index, selectedIndex) {
+            var selected = index === selectedIndex;
+            return '<button class="btn btn-secondary btn-small" type="button" data-use-parsed-candidate="' + index + '">' +
+                (selected ? '已填入' : '填入表单') +
+                '</button>';
+        }
+
+        function renderOrderImageCandidateTable(candidates, selectedIndex) {
+            if (!candidates || !candidates.length) return '';
+            var html = '<div class="table-wrap"><table><thead><tr>' +
+                '<th>操作</th><th>商品名称</th><th>归一化</th><th>规格</th><th>总价</th><th>数量</th><th>单位</th><th>平台</th><th>归属人</th><th>购买日期</th><th>店铺</th><th>置信度</th><th>提示</th>' +
+                '</tr></thead><tbody>';
+            candidates.forEach(function (candidate, index) {
+                html += '<tr>' +
+                    '<td>' + renderCandidateAction(index, selectedIndex) + '</td>' +
+                    '<td class="wrap">' + htmlEscape(candidate.productName) + '</td>' +
+                    '<td>' + htmlEscape(candidateNormalizedName(candidate) || '—') + '</td>' +
+                    '<td class="wrap">' + htmlEscape(candidate.sku) + '</td>' +
+                    '<td>' + htmlEscape(formatAmount(candidate.price)) + '</td>' +
+                    '<td>' + htmlEscape(formatQuantity(candidate.quantity)) + '</td>' +
+                    '<td>' + htmlEscape(candidate.unit) + '</td>' +
+                    '<td>' + htmlEscape(formatPlatform(candidate.platform)) + '</td>' +
+                    '<td>' + htmlEscape(candidate.owner) + '</td>' +
+                    '<td>' + htmlEscape(candidate.purchaseDate) + '</td>' +
+                    '<td class="wrap">' + htmlEscape(candidate.shopName) + '</td>' +
+                    '<td>' + htmlEscape(formatDecimal(candidate.confidence, 2)) + '</td>' +
+                    '<td class="wrap">' + htmlEscape(candidateWarnings(candidate).join('；') || '—') + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        function bindParsedCandidateButtons() {
+            Array.prototype.forEach.call(document.querySelectorAll('[data-use-parsed-candidate]'), function (button) {
+                button.addEventListener('click', function () {
+                    var index = Number(button.dataset.useParsedCandidate);
+                    var candidate = lastParsedPurchaseCandidates[index];
+                    if (!candidate) return;
+                    fillRecordFormFromCandidate(candidate);
+                    renderParseOrderImageResult(lastParseOrderImageResult, index);
+                });
+            });
+        }
+
+        function renderParseOrderImageResult(data, selectedIndex) {
+            var candidates = data && Array.isArray(data.candidates) ? data.candidates : [];
+            var html = '<div class="result-head"><div><h3>截图解析完成</h3><p>' +
+                htmlEscape(data && data.imagePath ? data.imagePath : '订单截图') +
+                '</p></div><span class="tag">候选样本</span></div>';
+            html += '<div class="metrics">';
+            html += metric('候选数量', formatQuantity(data && !isEmptyValue(data.candidateCount) ? data.candidateCount : candidates.length), '');
+            html += metric('解析模式', data && data.parseMode, '');
+            html += metric('已填入', candidates.length ? '第 ' + (selectedIndex + 1) + ' 条' : '—', '');
+            html += metric('OCR 文本长度', data && data.rawText ? formatQuantity(String(data.rawText).length) : '—', '');
+            html += '</div>';
+
+            if (data && data.warnings && data.warnings.length) {
+                html += '<div class="reason-card"><h4>解析提示</h4>' + htmlEscape(data.warnings.join('；')) + '</div>';
+            }
+
+            if (!candidates.length) {
+                html += '<div class="empty-state"><div><strong>没有解析到候选样本</strong><span>可以换一张更清晰的订单截图，或手动填写表单。</span></div></div>';
+            } else {
+                html += '<div class="reason-card"><h4>已反写表单</h4>已将第 ' + htmlEscape(selectedIndex + 1) + ' 条候选样本填入左侧表单，请核对商品名称、金额、数量、单位和平台后再试算或确认录入。</div>';
+                html += '<h4 class="section-title">解析候选</h4>';
+                html += renderOrderImageCandidateTable(candidates, selectedIndex);
+            }
+
+            $('record-result').className = '';
+            $('record-result').innerHTML = html;
+            bindParsedCandidateButtons();
+        }
+
+        function updateRecordImageFileInfo() {
+            var fileInput = $('record-image-file');
+            var info = $('record-image-file-info');
+            var fileName = $('record-image-file-name');
+            if (!fileInput || !info) return;
+            var file = fileInput.files && fileInput.files[0];
+            if (!file) {
+                if (fileName) fileName.textContent = '未选择文件';
+                info.textContent = '支持 PNG、JPG、JPEG、WEBP 图片，解析结果会自动填入下面的记录表单。';
+                return;
+            }
+            var sizeKb = file.size ? Math.round(file.size / 1024) : 0;
+            if (fileName) fileName.textContent = file.name;
+            info.textContent = '已选择：' + file.name + '，大小约 ' + sizeKb + ' KB。';
+        }
+
+        async function parseOrderImage(button) {
+            var fileInput = $('record-image-file');
+            var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+            if (!file) {
+                renderError('record-result', '请选择订单截图', new Error('请先选择一张 PNG、JPG、JPEG 或 WEBP 图片。'));
+                return;
+            }
+            if (!isSupportedImageFile(file)) {
+                renderError('record-result', '图片格式不支持', new Error('当前只支持 PNG、JPG、JPEG、WEBP 图片。'));
+                return;
+            }
+
+            setLoading(button, true);
+            try {
+                var imageDataUrl = await readFileAsDataUrl(file);
+                var payload = buildParseOrderImagePayload(file, imageDataUrl);
+                var data = await postJson(endpoints.parseOrderImage, payload);
+                lastParseOrderImageResult = data || {};
+                lastParsedPurchaseCandidates = Array.isArray(lastParseOrderImageResult.candidates)
+                    ? lastParseOrderImageResult.candidates
+                    : [];
+                if (lastParsedPurchaseCandidates.length) {
+                    fillRecordFormFromCandidate(lastParsedPurchaseCandidates[0]);
+                }
+                renderParseOrderImageResult(lastParseOrderImageResult, 0);
+            } catch (error) {
+                renderError('record-result', '订单截图解析失败', error);
+            } finally {
+                setLoading(button, false);
+            }
+        }
+
+
         function renderRecord(data) {
             var records = data.records || [];
             var first = records[0] || {};
@@ -1261,7 +1578,9 @@
             normalizationLibraryItems = Array.isArray(items) ? items : [];
             populateNormalizationRuleSelect();
             populateCompareRuleOptions();
+            populateRecordRuleOptions();
             applyCompareRuleBinding();
+            syncRecordRuleSelectionByName(false);
             if (!normalizationLibraryItems.length) {
                 target.className = 'library-state';
                 target.innerHTML = '<div><strong>还没有规则记录</strong><span>可以先新增一条规则。</span></div>';
@@ -1411,6 +1730,80 @@
                 return;
             }
             applyCompareRuleToCompareForm(rule, true);
+        }
+
+        function populateRecordRuleOptions() {
+            var select = $('record-normalized-rule-select');
+            if (!select) return;
+
+            var currentRuleCode = select.value;
+            var currentName = $('record-normalized-name') ? $('record-normalized-name').value : '';
+            var matchedByName = findRuleByNormalizedName(currentName);
+            var rules = compareCandidateRules();
+
+            select.innerHTML = '';
+            var manualOption = document.createElement('option');
+            manualOption.value = '';
+            manualOption.textContent = '手动填写归一化名称';
+            select.appendChild(manualOption);
+
+            rules.forEach(function (item) {
+                var option = document.createElement('option');
+                option.value = item.ruleCode || item.normalizedName || '';
+                option.textContent = (item.normalizedName || '未命名') + '（' + (item.standardUnit || '未设置单位') + '）';
+                option.dataset.normalizedName = item.normalizedName || '';
+                select.appendChild(option);
+            });
+
+            if (matchedByName && matchedByName.ruleCode) {
+                select.value = matchedByName.ruleCode;
+            } else if (currentRuleCode && findRuleByCode(currentRuleCode)) {
+                select.value = currentRuleCode;
+            } else {
+                select.value = '';
+            }
+        }
+
+        function applyRecordRuleToForm(rule, overwriteNormalizedName, overwriteUnit) {
+            var select = $('record-normalized-rule-select');
+            var normalizedInput = $('record-normalized-name');
+            if (!select || !normalizedInput) return;
+
+            if (!rule) {
+                select.value = '';
+                return;
+            }
+
+            if (rule.ruleCode) {
+                select.value = rule.ruleCode;
+            }
+            if (overwriteNormalizedName && rule.normalizedName) {
+                normalizedInput.value = rule.normalizedName;
+            }
+            if (overwriteUnit && rule.standardUnit) {
+                setRecordField('unit', rule.standardUnit);
+            }
+        }
+
+        function handleRecordRuleSelectChange() {
+            var select = $('record-normalized-rule-select');
+            if (!select) return;
+            var rule = findRuleByCode(select.value);
+            if (!rule) return;
+            applyRecordRuleToForm(rule, true, true);
+        }
+
+        function syncRecordRuleSelectionByName(overwriteUnit) {
+            var input = $('record-normalized-name');
+            var select = $('record-normalized-rule-select');
+            if (!input || !select) return;
+
+            var rule = findRuleByNormalizedName(input.value);
+            if (!rule) {
+                select.value = '';
+                return;
+            }
+            applyRecordRuleToForm(rule, false, Boolean(overwriteUnit));
         }
 
         function populateNormalizationRuleSelect() {
@@ -1595,6 +1988,29 @@
         if ($('compare-product-name')) {
             $('compare-product-name').addEventListener('input', applyCompareRuleBinding);
             $('compare-product-name').addEventListener('change', applyCompareRuleBinding);
+        }
+
+        if ($('record-image-file')) {
+            $('record-image-file').addEventListener('change', updateRecordImageFileInfo);
+        }
+
+        if ($('parse-order-image-button')) {
+            $('parse-order-image-button').addEventListener('click', function () {
+                parseOrderImage(this);
+            });
+        }
+
+        if ($('record-normalized-rule-select')) {
+            $('record-normalized-rule-select').addEventListener('change', handleRecordRuleSelectChange);
+        }
+
+        if ($('record-normalized-name')) {
+            $('record-normalized-name').addEventListener('input', function () {
+                syncRecordRuleSelectionByName(false);
+            });
+            $('record-normalized-name').addEventListener('change', function () {
+                syncRecordRuleSelectionByName(false);
+            });
         }
 
         if ($('compare-sku-quantity')) {
