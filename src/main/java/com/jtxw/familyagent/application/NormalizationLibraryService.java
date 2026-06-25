@@ -208,7 +208,10 @@ public class NormalizationLibraryService {
     }
 
     /**
-     * 更新归一化规则主表基础信息。
+     * 更新归一化规则快照。
+     *
+     * <p>除规则主表基础字段外，keywords / excludeKeywords 传入非 null 时会按完整快照同步对应关键词。
+     * null 表示不修改该类型关键词，空列表表示清空该类型关键词。</p>
      *
      * @param command 更新规则命令
      * @return 规则更新结果
@@ -233,9 +236,22 @@ public class NormalizationLibraryService {
         if (normalizationRuleRepository.existsNormalizedName(normalizedName, rule.id())) {
             throw new IllegalArgumentException("归一化商品名称已存在：" + normalizedName);
         }
+        List<String> keywords = command.keywords() == null ? null : normalizeKeywords(command.keywords());
+        List<String> excludeKeywords = command.excludeKeywords() == null
+                ? null
+                : normalizeKeywords(command.excludeKeywords());
+        validateUpdateKeywordSnapshot(rule.id(), normalizedName, keywords, excludeKeywords);
 
         normalizationRuleRepository.updateRule(rule.id(), normalizedName, category, unitSpec.standardUnit(),
                 unitSpec.databaseUnitFamily(), priority, enabled);
+        if (keywords != null) {
+            normalizationRuleRepository.syncKeywords(rule.id(), MATCH_TYPE_INCLUDE, keywords,
+                    keywordPriority(priority), SOURCE_MANUAL);
+        }
+        if (excludeKeywords != null) {
+            normalizationRuleRepository.syncKeywords(rule.id(), MATCH_TYPE_EXCLUDE, excludeKeywords,
+                    keywordPriority(priority), SOURCE_MANUAL);
+        }
         return NormalizationRuleMutationResult.rule(ruleCode, normalizedName, "updated", "归一化规则已更新");
     }
 
@@ -357,7 +373,9 @@ public class NormalizationLibraryService {
                 requiredText(command.standardUnit(), "standardUnit 不能为空"),
                 requiredText(command.unitFamily(), "unitFamily 不能为空"),
                 command.priority(),
-                command.enabled()
+                command.enabled(),
+                command.keywords(),
+                command.excludeKeywords()
         ));
         return toOperationResult(action, result);
     }
@@ -411,6 +429,16 @@ public class NormalizationLibraryService {
      */
     private int priorityOrDefault(Integer priority) {
         return priority == null ? DEFAULT_PRIORITY : priority;
+    }
+
+    /**
+     * 返回关键词同步使用的优先级。
+     *
+     * @param rulePriority 规则优先级，允许为空
+     * @return 关键词优先级，未传时使用默认值
+     */
+    private int keywordPriority(Integer rulePriority) {
+        return rulePriority == null ? DEFAULT_PRIORITY : rulePriority;
     }
 
     /**
@@ -593,6 +621,57 @@ public class NormalizationLibraryService {
                 throw new IllegalArgumentException("同一规则下 keyword 不能同时作为 include 和 exclude：" + keyword);
             }
         }
+    }
+
+    /**
+     * 校验更新规则时的关键词快照。
+     *
+     * <p>当 include 和 exclude 快照同时传入时，以请求最终状态为准校验互斥；
+     * 只传入一侧时，需要继续校验该侧不会与另一侧当前启用关键词冲突。</p>
+     *
+     * @param ruleId          规则数据库 ID
+     * @param normalizedName  更新后的归一化商品名称
+     * @param keywords        include 关键词快照；null 表示不修改
+     * @param excludeKeywords exclude 关键词快照；null 表示不修改
+     */
+    private void validateUpdateKeywordSnapshot(long ruleId,
+                                               String normalizedName,
+                                               List<String> keywords,
+                                               List<String> excludeKeywords) {
+        List<String> finalExcludeKeywords = excludeKeywords == null
+                ? enabledKeywords(ruleId, MATCH_TYPE_EXCLUDE)
+                : excludeKeywords;
+        if (finalExcludeKeywords.contains(normalizedName)) {
+            throw new IllegalArgumentException("normalizedName 不能同时作为 exclude keyword：" + normalizedName);
+        }
+        if (keywords != null && excludeKeywords != null) {
+            validateKeywordListsNotConflict(keywords, excludeKeywords);
+            return;
+        }
+        if (keywords != null) {
+            for (String keyword : keywords) {
+                validateKeywordConflict(ruleId, keyword, MATCH_TYPE_INCLUDE);
+            }
+        }
+        if (excludeKeywords != null) {
+            for (String keyword : excludeKeywords) {
+                validateKeywordConflict(ruleId, keyword, MATCH_TYPE_EXCLUDE);
+            }
+        }
+    }
+
+    /**
+     * 查询当前启用关键词。
+     *
+     * @param ruleId    规则数据库 ID
+     * @param matchType 关键词类型
+     * @return 当前启用关键词列表
+     */
+    private List<String> enabledKeywords(long ruleId, String matchType) {
+        return normalizationRuleRepository.listKeywords(ruleId, matchType).stream()
+                .filter(NormalizationRuleRepository.NormalizationRuleKeywordRow::enabled)
+                .map(NormalizationRuleRepository.NormalizationRuleKeywordRow::keyword)
+                .toList();
     }
 
     /**

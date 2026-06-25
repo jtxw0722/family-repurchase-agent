@@ -3,7 +3,6 @@ package com.jtxw.familyagent.interfaces.rest.request;
 import com.jtxw.familyagent.application.command.NormalizationLibraryOperationCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -64,15 +63,15 @@ public class NormalizationLibraryOperationRequest {
     @Schema(description = "关键词类型", example = "include", allowableValues = {"include", "exclude"})
     private String matchType;
     /**
-     * 初始 include 关键词列表，create_rule 时允许为空列表。
+     * include 关键词列表，create_rule 时允许为空列表；update_rule 时 null 表示不修改，空数组表示清空。
      */
-    @Schema(description = "初始 include 关键词列表")
-    private List<String> keywords = new ArrayList<>();
+    @Schema(description = "include 关键词列表；update_rule 时 null 表示不修改，空数组表示清空")
+    private List<String> keywords;
     /**
-     * 初始 exclude 关键词列表，create_rule 时允许为空列表。
+     * exclude 关键词列表，create_rule 时允许为空列表；update_rule 时 null 表示不修改，空数组表示清空。
      */
-    @Schema(description = "初始 exclude 关键词列表")
-    private List<String> excludeKeywords = new ArrayList<>();
+    @Schema(description = "exclude 关键词列表；update_rule 时 null 表示不修改，空数组表示清空")
+    private List<String> excludeKeywords;
     /**
      * 历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选。
      * batchId 和 owner 都为空时，按全家庭历史样本扫描。

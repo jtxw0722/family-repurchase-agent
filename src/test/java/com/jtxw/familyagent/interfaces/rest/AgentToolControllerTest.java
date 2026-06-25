@@ -304,6 +304,42 @@ class AgentToolControllerTest {
     }
 
     @Test
+    void updateNormalizationRuleShouldPassKeywordSnapshots() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "update_rule", "归一化规则已更新", "cat_food", "猫粮", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "update_rule",
+                                  "ruleCode": "cat_food",
+                                  "normalizedName": "猫粮",
+                                  "category": "宠物用品",
+                                  "standardUnit": "kg",
+                                  "unitFamily": "weight",
+                                  "priority": 90,
+                                  "enabled": true,
+                                  "keywords": ["猫粮", "幼猫粮"],
+                                  "excludeKeywords": ["猫粮勺", "冻干"]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleCode").value("cat_food"))
+                .andExpect(jsonPath("$.action").value("update_rule"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        NormalizationLibraryOperationCommand command = captor.getValue();
+        assertThat(command.action()).isEqualTo("update_rule");
+        assertThat(command.ruleCode()).isEqualTo("cat_food");
+        assertThat(command.keywords()).containsExactly("猫粮", "幼猫粮");
+        assertThat(command.excludeKeywords()).containsExactly("猫粮勺", "冻干");
+    }
+
+    @Test
     void applyRuleToRecordsShouldUseUnifiedOperationEntry() throws Exception {
         when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
                 .thenReturn(new NormalizationApplyRuleToRecordsResult(

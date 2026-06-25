@@ -215,6 +215,89 @@ class NormalizationLibraryServiceTest {
     }
 
     @Test
+    void updateRuleShouldAddExcludeKeywordFromSnapshot() {
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food",
+                "猫粮",
+                "宠物用品",
+                "kg",
+                "weight",
+                90,
+                true,
+                null,
+                List.of("猫粮勺", "储粮桶", "冻干")
+        ));
+
+        assertThat(libraryItem("cat_food").excludeKeywords()).contains("猫粮勺", "储粮桶", "冻干");
+    }
+
+    @Test
+    void updateRuleShouldDisableRemovedExcludeKeywordFromSnapshot() {
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food", "猫粮", "宠物用品", "kg", "weight", 90, true,
+                null, List.of("猫粮勺", "储粮桶", "冻干")));
+
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food", "猫粮", "宠物用品", "kg", "weight", 90, true,
+                null, List.of("猫粮勺", "储粮桶")));
+
+        assertThat(libraryItem("cat_food").excludeKeywords()).contains("猫粮勺", "储粮桶");
+        assertThat(libraryItem("cat_food").excludeKeywords()).doesNotContain("冻干");
+    }
+
+    @Test
+    void updateRuleShouldAddIncludeKeywordFromSnapshot() {
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food",
+                "猫粮",
+                "宠物用品",
+                "kg",
+                "weight",
+                90,
+                true,
+                List.of("猫粮", "主粮"),
+                null
+        ));
+
+        assertThat(libraryItem("cat_food").keywords()).contains("猫粮", "主粮");
+        assertThat(providerRule("cat_food").includeKeywords()).contains("主粮");
+    }
+
+    @Test
+    void updateRuleShouldRejectIncludeAndExcludeKeywordConflict() {
+        assertThatThrownBy(() -> service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food",
+                "猫粮",
+                "宠物用品",
+                "kg",
+                "weight",
+                90,
+                true,
+                List.of("冻干"),
+                List.of("冻干")
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不能同时作为 include 和 exclude");
+    }
+
+    @Test
+    void updateRuleShouldClearExcludeKeywordsWhenSnapshotIsEmpty() {
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "cat_food",
+                "猫粮",
+                "宠物用品",
+                "kg",
+                "weight",
+                90,
+                true,
+                null,
+                List.of()
+        ));
+
+        assertThat(libraryItem("cat_food").excludeKeywords()).isEmpty();
+    }
+
+    @Test
     void shouldAddAndDisableIncludeKeyword() {
         service.addKeyword(new AddNormalizationRuleKeywordCommand(
                 "laundry_detergent", "衣物清洁液", "include", 100));

@@ -106,6 +106,37 @@ class NormalizationRuleRepositoryTest {
         assertThat(catLitter.source()).isEqualTo("system");
     }
 
+    @Test
+    void shouldSyncKeywordsByMatchTypeSnapshot() {
+        NormalizationRuleRepository.NormalizationRuleRow catFood = repository.findRuleByCode("cat_food")
+                .orElseThrow();
+
+        repository.syncKeywords(catFood.id(), "exclude", List.of("猫粮勺", "冻干"), 90, "manual");
+
+        NormalizationLibraryItem updatedItem = repository.listLibraryItems().stream()
+                .filter(item -> "cat_food".equals(item.ruleCode()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(updatedItem.excludeKeywords()).containsExactly("猫粮勺", "冻干");
+        assertThat(updatedItem.keywords()).contains("猫粮", "幼猫粮");
+
+        List<NormalizationRuleRepository.NormalizationRuleKeywordRow> excludeRows =
+                repository.listKeywords(catFood.id(), "exclude");
+        assertThat(excludeRows).anyMatch(keyword -> "储粮桶".equals(keyword.keyword()) && !keyword.enabled());
+        assertThat(excludeRows).anyMatch(keyword -> "冻干".equals(keyword.keyword()) && keyword.enabled());
+
+        repository.syncKeywords(catFood.id(), "exclude", List.of("猫粮勺", "储粮桶"), 90, "manual");
+
+        NormalizationLibraryItem restoredItem = repository.listLibraryItems().stream()
+                .filter(item -> "cat_food".equals(item.ruleCode()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(restoredItem.excludeKeywords()).containsExactly("猫粮勺", "储粮桶");
+        assertThat(restoredItem.excludeKeywords()).doesNotContain("冻干");
+        assertThat(repository.listKeywords(catFood.id(), "exclude"))
+                .anyMatch(keyword -> "储粮桶".equals(keyword.keyword()) && keyword.enabled());
+    }
+
     /**
      * 插入购买记录样本，用于验证名称库 sampleCount 与价格基准线有效样本口径一致。
      *

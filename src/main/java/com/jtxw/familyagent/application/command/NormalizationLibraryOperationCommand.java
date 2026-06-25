@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/14 23:10:00
+ * @Date: 2026/06/25 18:47:34
  * @Description: 归一化规则库统一写操作命令，承载 REST 统一入口传入的 action 和规则维护字段
  *
  * @param action          操作动作，不能为空，支持 create_rule / update_rule / disable_rule / add_keyword / disable_keyword
@@ -17,8 +17,8 @@ import java.util.List;
  * @param enabled         是否启用规则，仅 update_rule 使用，允许为空
  * @param keyword         单个关键词文本，add_keyword 和 disable_keyword 时不能为空
  * @param matchType       关键词类型，仅允许 include 或 exclude
- * @param keywords        初始 include 关键词列表，create_rule 时允许为空
- * @param excludeKeywords 初始 exclude 关键词列表，create_rule 时允许为空
+ * @param keywords        include 关键词列表，update_rule 时 null 表示不修改，空列表表示清空
+ * @param excludeKeywords exclude 关键词列表，update_rule 时 null 表示不修改，空列表表示清空
  * @param batchId         历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选
  * @param owner           历史记录回填归属人筛选，apply_rule_to_records 时可选；为空时不按归属人筛选；batchId 和 owner 都为空时按全家庭历史样本扫描
  * @param onlyLegacyFallback 是否只处理未命中明确规则的记录，apply_rule_to_records 默认 true
@@ -49,7 +49,8 @@ public record NormalizationLibraryOperationCommand(
     /**
      * 创建统一操作命令。
      *
-     * <p>列表字段在构造阶段做 null 兜底，Service 层继续负责 trim、去重和业务语义校验。</p>
+     * <p>列表字段在构造阶段只做不可变拷贝，保留 null 和空列表的差异。
+     * Service 层继续负责 trim、去重和业务语义校验。</p>
      *
      * @param action          操作动作
      * @param ruleCode        规则业务编码
@@ -71,8 +72,8 @@ public record NormalizationLibraryOperationCommand(
      * @param limit           最大候选数量
      */
     public NormalizationLibraryOperationCommand {
-        keywords = keywords == null ? List.of() : keywords.stream().toList();
-        excludeKeywords = excludeKeywords == null ? List.of() : excludeKeywords.stream().toList();
+        keywords = keywords == null ? null : keywords.stream().toList();
+        excludeKeywords = excludeKeywords == null ? null : excludeKeywords.stream().toList();
     }
 
     /**

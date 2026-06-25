@@ -279,6 +279,31 @@ public class NormalizationRuleRepository {
     }
 
     /**
+     * 查询指定规则和匹配类型下的全部关键词记录，包含已禁用记录。
+     *
+     * @param ruleId    规则数据库 ID
+     * @param matchType 关键词类型，include 或 exclude
+     * @return 关键词记录列表，按主键升序排列
+     */
+    public List<NormalizationRuleKeywordRow> listKeywords(long ruleId, String matchType) {
+        return jdbcTemplate.query("""
+                SELECT id, rule_id, keyword, match_type, priority, enabled, source
+                FROM normalization_rule_keywords
+                WHERE rule_id = ?
+                  AND match_type = ?
+                ORDER BY id ASC
+                """, (rs, rowNum) -> new NormalizationRuleKeywordRow(
+                rs.getLong("id"),
+                rs.getLong("rule_id"),
+                rs.getString("keyword"),
+                rs.getString("match_type"),
+                rs.getInt("priority"),
+                rs.getInt("enabled") == 1,
+                rs.getString("source")
+        ), ruleId, matchType);
+    }
+
+    /**
      * 判断同一规则下同一关键词是否存在启用的相反语义。
      *
      * @param ruleId    规则数据库 ID
@@ -314,6 +339,43 @@ public class NormalizationRuleRepository {
                     source, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 1, ?, ?, ?)
                 """, ruleId, keyword, matchType, priority, source, now, now);
+    }
+
+    /**
+     * 按快照同步指定类型的关键词。
+     *
+     * <p>目标列表中的关键词会被插入或重新启用；目标列表外的同类型旧关键词会被软禁用。
+     * 该方法不处理 include / exclude 之间的业务冲突，调用方应先完成校验。</p>
+     *
+     * @param ruleId         规则数据库 ID
+     * @param matchType      关键词类型，include 或 exclude
+     * @param targetKeywords 目标关键词快照，已由应用层完成 trim 和去重
+     * @param priority       新增或重新启用关键词使用的优先级
+     * @param source         新增或重新启用关键词的数据来源
+     */
+    public void syncKeywords(long ruleId,
+                             String matchType,
+                             List<String> targetKeywords,
+                             int priority,
+                             String source) {
+        List<NormalizationRuleKeywordRow> existingKeywords = listKeywords(ruleId, matchType);
+        for (NormalizationRuleKeywordRow existingKeyword : existingKeywords) {
+            if (!targetKeywords.contains(existingKeyword.keyword()) && existingKeyword.enabled()) {
+                disableKeyword(existingKeyword.id());
+            }
+        }
+        for (String targetKeyword : targetKeywords) {
+            Optional<NormalizationRuleKeywordRow> existingKeyword = existingKeywords.stream()
+                    .filter(keyword -> targetKeyword.equals(keyword.keyword()))
+                    .findFirst();
+            if (existingKeyword.isPresent()) {
+                if (!existingKeyword.get().enabled()) {
+                    enableKeyword(existingKeyword.get().id(), priority, source);
+                }
+            } else {
+                insertKeyword(ruleId, targetKeyword, matchType, priority, source);
+            }
+        }
     }
 
     /**
