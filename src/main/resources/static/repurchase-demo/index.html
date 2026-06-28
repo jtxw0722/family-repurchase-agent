@@ -582,6 +582,120 @@
             white-space: nowrap;
         }
 
+
+        .image-preview {
+            margin-top: 14px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, .50);
+            overflow: hidden;
+        }
+
+        .image-preview-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(118, 132, 158, .18);
+        }
+
+        .image-preview-title {
+            min-width: 0;
+            color: var(--text-soft);
+            font-size: 12px;
+            font-weight: 850;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .image-preview-viewport {
+            max-height: 340px;
+            overflow: auto;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 12px;
+            background:
+                    linear-gradient(45deg, rgba(100, 92, 245, .045) 25%, transparent 25%),
+                    linear-gradient(-45deg, rgba(100, 92, 245, .045) 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, rgba(100, 92, 245, .045) 75%),
+                    linear-gradient(-45deg, transparent 75%, rgba(100, 92, 245, .045) 75%);
+            background-size: 18px 18px;
+            background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+        }
+
+        .image-preview-viewport img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 14px 34px rgba(34, 48, 76, .14);
+            cursor: zoom-in;
+            background: #fff;
+        }
+
+        .preview-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(19, 32, 53, .48);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        .preview-modal-panel {
+            width: min(1080px, 100%);
+            max-height: calc(100vh - 48px);
+            border: 1px solid rgba(255, 255, 255, .72);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, .92);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .preview-modal-title {
+            min-width: 0;
+            font-size: 14px;
+            font-weight: 900;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .preview-modal-body {
+            overflow: auto;
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background: rgba(246, 248, 252, .72);
+        }
+
+        .preview-modal-body img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 16px 38px rgba(34, 48, 76, .16);
+        }
+
         .candidate-actions {
             display: flex;
             gap: 8px;
@@ -720,6 +834,15 @@
                                     <span id="record-image-file-name" class="file-picker-name">未选择文件</span>
                                 </label>
                                 <input id="record-image-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+                            </div>
+                            <div id="record-image-preview" class="image-preview hidden">
+                                <div class="image-preview-head">
+                                    <div id="record-image-preview-title" class="image-preview-title">订单截图预览</div>
+                                    <button id="open-record-image-preview" class="btn btn-secondary btn-small" type="button">查看大图</button>
+                                </div>
+                                <div class="image-preview-viewport">
+                                    <img id="record-image-preview-img" src="" alt="订单截图预览">
+                                </div>
                             </div>
                             <div class="actions">
                                 <button id="parse-order-image-button" class="btn btn-secondary" type="button">订单截图解析</button>
@@ -872,6 +995,18 @@
     </main>
 </div>
 
+<div id="record-image-modal" class="preview-modal hidden" aria-hidden="true">
+    <div class="preview-modal-panel" role="dialog" aria-modal="true" aria-labelledby="record-image-modal-title">
+        <div class="preview-modal-head">
+            <div id="record-image-modal-title" class="preview-modal-title">订单截图预览</div>
+            <button id="close-record-image-preview" class="btn btn-secondary btn-small" type="button">关闭</button>
+        </div>
+        <div class="preview-modal-body">
+            <img id="record-image-modal-img" src="" alt="订单截图大图预览">
+        </div>
+    </div>
+</div>
+
 <script>
     (function () {
         'use strict';
@@ -890,6 +1025,8 @@
         var normalizationLibraryItems = [];
         var lastParseOrderImageResult = null;
         var lastParsedPurchaseCandidates = [];
+        var lastSelectedImageDataUrl = null;
+        var lastSelectedImageFileName = '';
 
         function $(id) { return document.getElementById(id); }
 
@@ -1384,6 +1521,43 @@
             });
         }
 
+        function hideRecordImagePreview() {
+            var preview = $('record-image-preview');
+            var previewImg = $('record-image-preview-img');
+            var modalImg = $('record-image-modal-img');
+            if (preview) preview.classList.add('hidden');
+            if (previewImg) previewImg.removeAttribute('src');
+            if (modalImg) modalImg.removeAttribute('src');
+        }
+
+        function renderRecordImagePreview(imageDataUrl, fileName) {
+            var preview = $('record-image-preview');
+            var previewImg = $('record-image-preview-img');
+            var previewTitle = $('record-image-preview-title');
+            var modalImg = $('record-image-modal-img');
+            var modalTitle = $('record-image-modal-title');
+            if (!preview || !previewImg) return;
+            preview.classList.remove('hidden');
+            previewImg.src = imageDataUrl;
+            if (previewTitle) previewTitle.textContent = fileName || '订单截图预览';
+            if (modalImg) modalImg.src = imageDataUrl;
+            if (modalTitle) modalTitle.textContent = fileName || '订单截图预览';
+        }
+
+        function openRecordImagePreview() {
+            var modal = $('record-image-modal');
+            if (!modal || !lastSelectedImageDataUrl) return;
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeRecordImagePreview() {
+            var modal = $('record-image-modal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
         function normalizeDateForInput(value) {
             if (isEmptyValue(value)) return '';
             var text = String(value).trim();
@@ -1527,12 +1701,15 @@
             bindParsedCandidateButtons();
         }
 
-        function updateRecordImageFileInfo() {
+        async function updateRecordImageFileInfo() {
             var fileInput = $('record-image-file');
             var info = $('record-image-file-info');
             var fileName = $('record-image-file-name');
             if (!fileInput || !info) return;
             var file = fileInput.files && fileInput.files[0];
+            lastSelectedImageDataUrl = null;
+            lastSelectedImageFileName = '';
+            hideRecordImagePreview();
             if (!file) {
                 if (fileName) fileName.textContent = '未选择文件';
                 info.textContent = '支持 PNG、JPG、JPEG、WEBP 图片，解析结果会自动填入下面的记录表单。';
@@ -1540,7 +1717,18 @@
             }
             var sizeKb = file.size ? Math.round(file.size / 1024) : 0;
             if (fileName) fileName.textContent = file.name;
+            lastSelectedImageFileName = file.name;
+            if (!isSupportedImageFile(file)) {
+                info.textContent = '当前图片格式不支持，请选择 PNG、JPG、JPEG 或 WEBP 图片。';
+                return;
+            }
             info.textContent = '已选择：' + file.name + '，大小约 ' + sizeKb + ' KB。';
+            try {
+                lastSelectedImageDataUrl = await readFileAsDataUrl(file);
+                renderRecordImagePreview(lastSelectedImageDataUrl, file.name);
+            } catch (error) {
+                info.textContent = error.message || '图片预览失败，请重新选择图片。';
+            }
         }
 
         async function parseOrderImage(button) {
@@ -1557,7 +1745,10 @@
 
             setLoading(button, true);
             try {
-                var imageDataUrl = await readFileAsDataUrl(file);
+                var imageDataUrl = lastSelectedImageDataUrl || await readFileAsDataUrl(file);
+                lastSelectedImageDataUrl = imageDataUrl;
+                lastSelectedImageFileName = file.name;
+                renderRecordImagePreview(imageDataUrl, file.name);
                 var payload = buildParseOrderImagePayload(file, imageDataUrl);
                 var data = await postJson(endpoints.parseOrderImage, payload);
                 lastParseOrderImageResult = data || {};
@@ -2197,6 +2388,28 @@
         if ($('record-image-file')) {
             $('record-image-file').addEventListener('change', updateRecordImageFileInfo);
         }
+
+        if ($('open-record-image-preview')) {
+            $('open-record-image-preview').addEventListener('click', openRecordImagePreview);
+        }
+
+        if ($('record-image-preview-img')) {
+            $('record-image-preview-img').addEventListener('click', openRecordImagePreview);
+        }
+
+        if ($('close-record-image-preview')) {
+            $('close-record-image-preview').addEventListener('click', closeRecordImagePreview);
+        }
+
+        if ($('record-image-modal')) {
+            $('record-image-modal').addEventListener('click', function (event) {
+                if (event.target === this) closeRecordImagePreview();
+            });
+        }
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') closeRecordImagePreview();
+        });
 
         if ($('parse-order-image-button')) {
             $('parse-order-image-button').addEventListener('click', function () {
