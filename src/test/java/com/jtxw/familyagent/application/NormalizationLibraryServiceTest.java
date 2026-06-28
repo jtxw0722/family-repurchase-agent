@@ -138,6 +138,29 @@ class NormalizationLibraryServiceTest {
     }
 
     @Test
+    void createRuleShouldAllowOpenCountStandardUnits() {
+        List<String> countUnits = List.of("粒", "瓶", "台", "辆");
+        for (int index = 0; index < countUnits.size(); index++) {
+            String unit = countUnits.get(index);
+            String ruleCode = "count_unit_rule_" + index;
+            service.createRule(new CreateNormalizationRuleCommand(
+                    ruleCode,
+                    "自然计数商品" + index,
+                    "测试品类",
+                    unit,
+                    "count",
+                    80,
+                    List.of("自然计数商品" + index),
+                    List.of()
+            ));
+
+            NormalizationLibraryItem item = libraryItem(ruleCode);
+            assertThat(item.standardUnit()).isEqualTo(unit);
+            assertThat(item.unitFamily()).isEqualTo("count");
+        }
+    }
+
+    @Test
     void createRuleShouldAppendNormalizedNameWhenIncludeKeywordsOmitIt() {
         service.createRule(new CreateNormalizationRuleCommand(
                 "auto_keyword_rule",
@@ -298,6 +321,26 @@ class NormalizationLibraryServiceTest {
     }
 
     @Test
+    void updateRuleShouldAllowOpenCountStandardUnits() {
+        service.createRule(new CreateNormalizationRuleCommand(
+                "coffee_nestle", "雀巢丝滑拿铁", "饮料", "件", "count", 80,
+                List.of("雀巢丝滑拿铁"), List.of()));
+        service.createRule(new CreateNormalizationRuleCommand(
+                "dry_cell", "干电池", "电子", "个", "count", 80,
+                List.of("干电池"), List.of("充电宝")));
+
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "coffee_nestle", "雀巢丝滑拿铁", "饮料", "瓶", "count", 80, true));
+        service.updateRule(new UpdateNormalizationRuleCommand(
+                "dry_cell", "干电池", "电子", "粒", "count", 80, true));
+
+        assertThat(libraryItem("coffee_nestle").standardUnit()).isEqualTo("瓶");
+        assertThat(libraryItem("coffee_nestle").unitFamily()).isEqualTo("count");
+        assertThat(libraryItem("dry_cell").standardUnit()).isEqualTo("粒");
+        assertThat(libraryItem("dry_cell").unitFamily()).isEqualTo("count");
+    }
+
+    @Test
     void shouldAddAndDisableIncludeKeyword() {
         service.addKeyword(new AddNormalizationRuleKeywordCommand(
                 "laundry_detergent", "衣物清洁液", "include", 100));
@@ -362,6 +405,30 @@ class NormalizationLibraryServiceTest {
                 "bad_unit", "非法单位", "测试", "kg", "volume", 100, List.of(), List.of())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("standardUnit 与 unitFamily 不兼容");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_weight_unit", "重量非法单位", "测试", "粒", "weight", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("standardUnit 与 unitFamily 不兼容");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_volume_unit", "体积非法单位", "测试", "瓶", "volume", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("standardUnit 与 unitFamily 不兼容");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_draw_count_unit", "抽数非法单位", "测试", "粒", "draw_count", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("standardUnit 与 unitFamily 不兼容");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_count_blank_unit", "计数空单位", "测试", " ", "count", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("standardUnit 不能为空");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_count_separator_unit", "计数复合单位", "测试", "瓶/盒", "count", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("COUNT standardUnit 不能包含分隔符");
+        assertThatThrownBy(() -> service.createRule(new CreateNormalizationRuleCommand(
+                "bad_count_long_unit", "计数长单位", "测试", "很长很长很长很长的单位名称", "count", 100, List.of(), List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("COUNT standardUnit 过长");
         assertThatThrownBy(() -> service.addKeyword(new AddNormalizationRuleKeywordCommand(
                 "cat_litter", "猫砂", "positive", 100)))
                 .isInstanceOf(IllegalArgumentException.class)

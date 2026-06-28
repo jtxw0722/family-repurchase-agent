@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/14 16:50:03
+ * @Date: 2026/06/28 11:54:54
  * @Description: 归一化名称库应用服务，负责编排规则库查询、统一写操作和动态历史样本统计
  */
 @Service
@@ -82,9 +82,13 @@ public class NormalizationLibraryService {
      */
     private static final Set<String> DRAW_COUNT_UNITS = Set.of("抽");
     /**
-     * 数量单位族允许的标准单位。
+     * 自然计数单位最大字符长度，避免把复合规格或异常文本写成标准单位。
      */
-    private static final Set<String> COUNT_UNITS = Set.of("颗", "片", "条", "件");
+    private static final int COUNT_UNIT_MAX_LENGTH = 12;
+    /**
+     * 自然计数单位不允许包含的分隔符，用于拦截“瓶/盒”等复合单位。
+     */
+    private static final List<String> COUNT_UNIT_FORBIDDEN_SEPARATORS = List.of("/", "\\", ",", "，", ";", "；");
 
     /**
      * 数据库初始化组件，确保查询名称库前本地 SQLite 表结构和默认规则已存在。
@@ -580,14 +584,31 @@ public class NormalizationLibraryService {
                 }
                 throw incompatibleUnit(standardUnit, unitFamily);
             }
-            case COUNT -> {
-                if (COUNT_UNITS.contains(standardUnit)) {
-                    yield standardUnit;
-                }
-                throw incompatibleUnit(standardUnit, unitFamily);
-            }
+            case COUNT -> normalizeCountUnit(standardUnit);
             case UNKNOWN -> throw incompatibleUnit(standardUnit, unitFamily);
         };
+    }
+
+    /**
+     * 规范化自然计数单位。
+     *
+     * <p>COUNT 表示不可换算的自然计数单位，例如 个、只、粒、瓶、台、辆、件、条、片。
+     * 该单位族不使用固定白名单，避免每新增一种业务品类都需要修改代码。</p>
+     *
+     * @param standardUnit 外部传入标准计数单位
+     * @return trim 后的计数单位
+     */
+    private String normalizeCountUnit(String standardUnit) {
+        String unit = requiredText(standardUnit, "standardUnit 不能为空");
+        if (unit.length() > COUNT_UNIT_MAX_LENGTH) {
+            throw new IllegalArgumentException("COUNT standardUnit 过长：" + unit);
+        }
+        for (String separator : COUNT_UNIT_FORBIDDEN_SEPARATORS) {
+            if (unit.contains(separator)) {
+                throw new IllegalArgumentException("COUNT standardUnit 不能包含分隔符：" + unit);
+            }
+        }
+        return unit;
     }
 
     /**

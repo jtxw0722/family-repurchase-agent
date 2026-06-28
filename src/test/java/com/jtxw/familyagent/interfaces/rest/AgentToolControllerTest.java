@@ -250,6 +250,46 @@ class AgentToolControllerTest {
     }
 
     @Test
+    void createNormalizationRuleShouldAcceptCountUnitFromUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(NormalizationLibraryOperationResult.success(
+                        "create_rule", "归一化规则已新增", "dry_cell", "干电池", 1));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "create_rule",
+                                  "ruleCode": "dry_cell",
+                                  "normalizedName": "干电池",
+                                  "category": "电子",
+                                  "standardUnit": "粒",
+                                  "unitFamily": "count",
+                                  "priority": 80,
+                                  "enabled": true,
+                                  "keywords": ["干电池", "电池"],
+                                  "excludeKeywords": ["充电宝", "电池盒", "收纳"]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.ruleCode").value("dry_cell"))
+                .andExpect(jsonPath("$.normalizedName").value("干电池"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        NormalizationLibraryOperationCommand command = captor.getValue();
+        assertThat(command.action()).isEqualTo("create_rule");
+        assertThat(command.ruleCode()).isEqualTo("dry_cell");
+        assertThat(command.normalizedName()).isEqualTo("干电池");
+        assertThat(command.standardUnit()).isEqualTo("粒");
+        assertThat(command.unitFamily()).isEqualTo("count");
+        assertThat(command.keywords()).containsExactly("干电池", "电池");
+        assertThat(command.excludeKeywords()).containsExactly("充电宝", "电池盒", "收纳");
+    }
+
+    @Test
     void createNormalizationRuleShouldReturnBadRequestWhenNormalizedNameIsExcluded() throws Exception {
         when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
                 .thenThrow(new IllegalArgumentException("normalizedName cannot be both include and exclude"));
