@@ -781,11 +781,13 @@
                                 <select name="action" id="normalization-action">
                                     <option value="create_rule">新增规则</option>
                                     <option value="update_rule">更新规则</option>
+                                    <option value="apply_rule_to_records">补齐历史样本</option>
+                                    <option value="recheck_rule_records">重算历史样本</option>
                                 </select>
                             </label>
                             <label id="normalization-rule-code-field">规则编码 *
                                 <input name="ruleCode" id="normalization-rule-code" value="body_wash" required autocomplete="off">
-                                <span class="field-hint hidden" id="rule-code-readonly-hint">更新规则时，规则编码来自当前规则库，不允许修改。</span>
+                                <span class="field-hint hidden" id="rule-code-readonly-hint">更新、补齐或重算历史样本时，规则编码来自当前规则库，不允许修改。</span>
                             </label>
                             <label id="normalized-name-input-field">归一化名称
                                 <input name="normalizedName" id="normalized-name-input" value="沐浴露" autocomplete="off">
@@ -796,9 +798,9 @@
                                 </select>
                                 <span class="field-hint">选择已有规则后，下面的规则信息会自动带出。</span>
                             </label>
-                            <label>品类<input name="category" id="normalization-category" value="个护清洁" autocomplete="off"></label>
-                            <label>标准单位<input name="standardUnit" id="normalization-standard-unit" value="L" autocomplete="off"></label>
-                            <label>单位族
+                            <label id="normalization-category-field">品类<input name="category" id="normalization-category" value="个护清洁" autocomplete="off"></label>
+                            <label id="normalization-standard-unit-field">标准单位<input name="standardUnit" id="normalization-standard-unit" value="L" autocomplete="off"></label>
+                            <label id="normalization-unit-family-field">单位族
                                 <select name="unitFamily" id="normalization-unit-family">
                                     <option value="volume">体积</option>
                                     <option value="weight">重量</option>
@@ -806,17 +808,40 @@
                                     <option value="mass">重量</option>
                                 </select>
                             </label>
-                            <label>优先级<input name="priority" id="normalization-priority" type="number" value="80"></label>
-                            <label class="inline-check"><input name="enabled" id="normalization-enabled" type="checkbox" checked>规则启用</label>
-                            <label class="field-full">初始正向关键词
+                            <label id="normalization-priority-field">优先级<input name="priority" id="normalization-priority" type="number" value="80"></label>
+                            <label id="normalization-enabled-field" class="inline-check"><input name="enabled" id="normalization-enabled" type="checkbox" checked>规则启用</label>
+                            <label id="normalization-keywords-field" class="field-full">初始正向关键词
                                 <textarea name="keywords" id="normalization-keywords">沐浴露,沐浴乳</textarea>
                                 <span class="field-hint">多个关键词请以英文逗号隔开，例如：沐浴露,沐浴乳</span>
                             </label>
-                            <label class="field-full">初始排除关键词
+                            <label id="normalization-exclude-keywords-field" class="field-full">初始排除关键词
                                 <textarea name="excludeKeywords" id="normalization-exclude-keywords" placeholder="可不填；多个关键词请以英文逗号隔开"></textarea>
                             </label>
+                            <div id="apply-rule-fields" class="field-full hidden">
+                                <div class="reason-card">
+                                    <h4 id="history-operation-title">历史样本处理范围</h4>
+                                    <p id="history-operation-description" class="field-hint">选择规则和范围后，可以先预览再决定是否写入历史记录。</p>
+                                    <div class="form-grid">
+                                        <label>归属人
+                                            <input name="owner" id="apply-owner" placeholder="可不填，默认全家庭" autocomplete="off">
+                                            <span class="field-hint">为空时不按归属人筛选。</span>
+                                        </label>
+                                        <label>导入批次
+                                            <input name="batchId" id="apply-batch-id" type="number" min="1" step="1" placeholder="可不填">
+                                            <span class="field-hint">为空时不按批次筛选。</span>
+                                        </label>
+                                        <label>最多扫描
+                                            <input name="limit" id="apply-limit" type="number" min="1" max="500" step="1" value="100">
+                                            <span class="field-hint">最大 500 条。</span>
+                                        </label>
+                                        <label class="inline-check"><input name="dryRun" id="apply-dry-run" type="checkbox" checked>只预览，不写入历史记录</label>
+                                        <label id="apply-only-legacy-field" class="inline-check"><input name="onlyLegacyFallback" id="apply-only-legacy" type="checkbox" checked>只处理未命中明确规则的记录</label>
+                                        <label id="apply-only-excluded-field" class="inline-check"><input name="onlyExcluded" id="apply-only-excluded" type="checkbox" checked>只处理当前已排除的记录</label>
+                                    </div>
+                                </div>
+                            </div>
                         </form>
-                        <div class="actions"><button class="btn btn-primary" data-submit="normalization" type="button">保存规则</button></div>
+                        <div class="actions"><button id="normalization-submit-button" class="btn btn-primary" data-submit="normalization" type="button">保存规则</button></div>
                         <div class="helper">规则会影响后续购买记录的归一化和价格基准线统计。</div>
                     </div>
                 </div>
@@ -1020,6 +1045,23 @@
         function buildNormalizationPayload() {
             var value = formValues('normalization-form');
             var action = value.action;
+
+            if (action === 'apply_rule_to_records' || action === 'recheck_rule_records') {
+                var historyPayload = compact({
+                    action: action,
+                    ruleCode: value.ruleCode,
+                    batchId: optionalNumber(value.batchId),
+                    owner: optionalText(value.owner),
+                    dryRun: value.dryRun,
+                    limit: optionalNumber(value.limit)
+                });
+                if (action === 'apply_rule_to_records') {
+                    historyPayload.onlyLegacyFallback = value.onlyLegacyFallback;
+                    historyPayload.onlyExcluded = value.onlyExcluded;
+                }
+                return historyPayload;
+            }
+
             var commonRule = compact({
                 action: action,
                 ruleCode: value.ruleCode,
@@ -1863,16 +1905,65 @@
             });
         }
 
+        function setNormalizationRuleFieldsVisible(visible) {
+            ['normalization-category-field', 'normalization-standard-unit-field', 'normalization-unit-family-field',
+                'normalization-priority-field', 'normalization-enabled-field', 'normalization-keywords-field',
+                'normalization-exclude-keywords-field'].forEach(function (id) {
+                var element = $(id);
+                if (element) element.classList.toggle('hidden', !visible);
+            });
+        }
+
+        function updateNormalizationSubmitText(action) {
+            var button = $('normalization-submit-button');
+            if (!button) return;
+            var textMap = {
+                create_rule: '保存规则',
+                update_rule: '保存规则',
+                apply_rule_to_records: '补齐历史样本',
+                recheck_rule_records: '重算历史样本'
+            };
+            button.textContent = textMap[action] || '保存规则';
+        }
+
+        function updateHistoryOperationText(action) {
+            var title = $('history-operation-title');
+            var description = $('history-operation-description');
+            var onlyLegacyField = $('apply-only-legacy-field');
+            var onlyExcludedField = $('apply-only-excluded-field');
+            var isRecheck = action === 'recheck_rule_records';
+            if (title) {
+                title.textContent = isRecheck ? '重算范围' : '补齐范围';
+            }
+            if (description) {
+                description.textContent = isRecheck
+                    ? '先解绑命中当前规则排除词的历史样本，再按当前规则库重新匹配可归属到本规则的记录。'
+                    : '把未命中明确规则或当前已排除的历史记录，尝试补齐为当前规则下的可统计样本。';
+            }
+            if (onlyLegacyField) {
+                onlyLegacyField.classList.toggle('hidden', isRecheck);
+            }
+            if (onlyExcludedField) {
+                onlyExcludedField.classList.toggle('hidden', isRecheck);
+            }
+        }
+
         function updateNormalizationFormMode() {
             var action = $('normalization-action').value;
             var isUpdate = action === 'update_rule';
-            $('normalized-name-input-field').classList.toggle('hidden', isUpdate);
-            $('normalized-name-select-field').classList.toggle('hidden', !isUpdate);
-            $('normalized-name-input').disabled = isUpdate;
-            $('normalization-rule-select').disabled = !isUpdate;
-            $('normalization-rule-code').readOnly = isUpdate;
-            $('rule-code-readonly-hint').classList.toggle('hidden', !isUpdate);
-            if (isUpdate) {
+            var isHistoryOperation = action === 'apply_rule_to_records' || action === 'recheck_rule_records';
+            var useExistingRule = isUpdate || isHistoryOperation;
+            $('normalized-name-input-field').classList.toggle('hidden', useExistingRule);
+            $('normalized-name-select-field').classList.toggle('hidden', !useExistingRule);
+            $('normalized-name-input').disabled = useExistingRule;
+            $('normalization-rule-select').disabled = !useExistingRule;
+            $('normalization-rule-code').readOnly = useExistingRule;
+            $('rule-code-readonly-hint').classList.toggle('hidden', !useExistingRule);
+            setNormalizationRuleFieldsVisible(!isHistoryOperation);
+            $('apply-rule-fields').classList.toggle('hidden', !isHistoryOperation);
+            updateHistoryOperationText(action);
+            updateNormalizationSubmitText(action);
+            if (useExistingRule) {
                 if (!normalizationLibraryLoaded) {
                     loadNormalizationLibrary(true).then(function () {
                         var rule = findRuleByNormalizedName($('normalization-rule-select').value) || normalizationLibraryItems[0];
@@ -1882,14 +1973,122 @@
                     var rule = findRuleByNormalizedName($('normalization-rule-select').value) || normalizationLibraryItems[0];
                     fillRuleForm(rule);
                 }
+            } else {
+                markSelectedRule(null);
             }
+        }
+
+        function formatApplyStatus(value) {
+            var map = {
+                applicable: '可补齐',
+                updated: '已更新',
+                review_required: '需要复核',
+                skipped: '已跳过',
+                would_reset: '将解绑',
+                reset: '已解绑',
+                would_normalize: '将归一化',
+                normalized: '已归一化'
+            };
+            return map[String(value || '').toLowerCase()] || display(value);
+        }
+
+        function renderApplyRuleResult(data, values) {
+            var items = data.items || data.records || data.results || [];
+            var dryRun = data.dryRun !== undefined ? data.dryRun : values.dryRun;
+            var title = dryRun ? '历史样本补齐预览完成' : '历史样本补齐完成';
+            var html = '<div class="result-head"><div><h3>' + htmlEscape(title) + '</h3><p>' + htmlEscape(data.normalizedName || values.normalizedName || values.ruleCode || '—') + '</p></div></div>';
+            html += '<div class="metrics">';
+            html += metric('规则编码', data.ruleCode || values.ruleCode, '');
+            html += metric('扫描数量', formatQuantity(firstValue(data, ['candidateCount', 'scannedCount', 'totalCount'])), '');
+            html += metric('返回数量', formatQuantity(firstValue(data, ['itemCount', 'resultCount', 'matchedCount']) || items.length), '');
+            html += metric('可补齐', formatQuantity(data.applicableCount), '');
+            html += metric('需要复核', formatQuantity(data.reviewRequiredCount), '');
+            html += metric('已更新', formatQuantity(data.updatedCount), '');
+            html += metric('已跳过', formatQuantity(data.skippedCount), '');
+            html += metric('执行方式', dryRun ? '仅预览' : '已写入', '');
+            html += '</div>';
+            if (data.warnings && data.warnings.length) {
+                html += '<div class="reason-card"><h4>提示</h4>' + htmlEscape(data.warnings) + '</div>';
+            }
+            if (!items.length) {
+                html += '<div class="empty-state"><div><strong>没有匹配到可补齐记录</strong><span>可以放宽筛选条件，或确认规则关键词是否能命中历史购买记录。</span></div></div>';
+            } else {
+                html += '<h4 class="section-title">补齐记录</h4>';
+                html += renderTable([
+                    { key: 'recordId', label: '记录' },
+                    { key: 'status', label: '状态', formatter: formatApplyStatus },
+                    { key: 'productName', label: '商品名称', wrap: true },
+                    { key: 'sku', label: '规格', wrap: true },
+                    { key: 'beforeName', label: '原归一化', value: function (row) { return get(row, 'before.normalizedName'); } },
+                    { key: 'beforeDecision', label: '原决策', value: function (row) { return get(row, 'before.decision'); }, formatter: formatDecision },
+                    { key: 'beforeQuantity', label: '原数量', value: function (row) { return get(row, 'before.quantity'); }, formatter: formatQuantity },
+                    { key: 'beforeUnit', label: '原单位', value: function (row) { return get(row, 'before.unit'); } },
+                    { key: 'afterName', label: '新归一化', value: function (row) { return get(row, 'after.normalizedName'); } },
+                    { key: 'afterDecision', label: '新决策', value: function (row) { return get(row, 'after.decision'); }, formatter: formatDecision },
+                    { key: 'afterQuantity', label: '新数量', value: function (row) { return get(row, 'after.quantity'); }, formatter: formatQuantity },
+                    { key: 'afterUnit', label: '新单位', value: function (row) { return get(row, 'after.unit'); } },
+                    { key: 'afterUnitPrice', label: '新单价', value: function (row) { return get(row, 'after.unitPrice'); }, formatter: formatUnitPrice },
+                    { key: 'warnings', label: '说明', wrap: true }
+                ], items);
+            }
+            $('normalization-result').className = '';
+            $('normalization-result').innerHTML = html;
+        }
+
+        function renderRecheckRuleResult(data, values) {
+            var items = data.items || [];
+            var dryRun = data.dryRun !== undefined ? data.dryRun : values.dryRun;
+            var title = dryRun ? '历史样本重算预览完成' : '历史样本重算完成';
+            var html = '<div class="result-head"><div><h3>' + htmlEscape(title) + '</h3><p>' + htmlEscape(data.normalizedName || values.normalizedName || values.ruleCode || '—') + '</p></div></div>';
+            html += '<div class="metrics">';
+            html += metric('规则编码', data.ruleCode || values.ruleCode, '');
+            html += metric('扫描数量', formatQuantity(data.candidateCount), '');
+            html += metric('需处理', formatQuantity(data.matchedCount), '');
+            html += metric(dryRun ? '将解绑' : '已解绑', formatQuantity(firstValue(data, ['resetCount', 'excludedCount'])), '');
+            html += metric(dryRun ? '将归一化' : '已归一化', formatQuantity(data.normalizedCount), '');
+            html += metric('需要复核', formatQuantity(data.reviewRequiredCount), '');
+            html += metric('已更新', formatQuantity(data.updatedCount), '');
+            html += metric('已跳过', formatQuantity(data.skippedCount), '');
+            html += metric('执行方式', dryRun ? '仅预览' : '已写入', '');
+            html += '</div>';
+            if (data.warnings && data.warnings.length) {
+                html += '<div class="reason-card"><h4>提示</h4>' + htmlEscape(data.warnings) + '</div>';
+            }
+            if (!items.length) {
+                html += '<div class="empty-state"><div><strong>没有需要重算的记录</strong><span>当前筛选范围内没有需要解绑、重新归一化或人工复核的历史样本。</span></div></div>';
+            } else {
+                html += '<h4 class="section-title">重算记录</h4>';
+                html += renderTable([
+                    { key: 'recordId', label: '记录' },
+                    { key: 'status', label: '状态', formatter: formatApplyStatus },
+                    { key: 'matchedExcludeKeyword', label: '命中排除词' },
+                    { key: 'productName', label: '商品名称', wrap: true },
+                    { key: 'sku', label: '规格', wrap: true },
+                    { key: 'beforeName', label: '原归一化', value: function (row) { return get(row, 'before.normalizedName'); } },
+                    { key: 'beforeDecision', label: '原决策', value: function (row) { return get(row, 'before.decision'); }, formatter: formatDecision },
+                    { key: 'afterName', label: '新归一化', value: function (row) { return get(row, 'after.normalizedName'); } },
+                    { key: 'afterDecision', label: '新决策', value: function (row) { return get(row, 'after.decision'); }, formatter: formatDecision },
+                    { key: 'warnings', label: '说明', wrap: true }
+                ], items);
+            }
+            $('normalization-result').className = '';
+            $('normalization-result').innerHTML = html;
         }
 
         function renderNormalization(data) {
             var values = formValues('normalization-form');
+            var action = String(data.action || values.action || '').toLowerCase();
+            if (action === 'apply_rule_to_records') {
+                renderApplyRuleResult(data, values);
+                return;
+            }
+            if (action === 'recheck_rule_records') {
+                renderRecheckRuleResult(data, values);
+                return;
+            }
             var html = '<div class="result-head"><div><h3>规则已处理</h3><p>' + htmlEscape(data.message || '可以继续维护下一条规则。') + '</p></div></div>';
             html += '<div class="metrics">';
-            html += metric('操作类型', formatNormalizationAction(data.action || values.action), '');
+            html += metric('操作类型', formatNormalizationAction(action), '');
             html += metric('规则编码', data.ruleCode || values.ruleCode, '');
             html += metric('归一化名称', data.normalizedName || values.normalizedName, '');
             html += metric('影响数量', formatQuantity(data.affectedRows), '');
@@ -1900,7 +2099,12 @@
         }
 
         function formatNormalizationAction(value) {
-            var map = { create_rule: '新增规则', update_rule: '更新规则' };
+            var map = {
+                create_rule: '新增规则',
+                update_rule: '更新规则',
+                apply_rule_to_records: '补齐历史样本',
+                recheck_rule_records: '重算历史样本'
+            };
             return map[String(value || '').toLowerCase()] || display(value);
         }
 

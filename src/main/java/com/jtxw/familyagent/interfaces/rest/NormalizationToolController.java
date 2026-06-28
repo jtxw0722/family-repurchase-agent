@@ -70,10 +70,10 @@ public class NormalizationToolController {
     /**
      * 统一处理归一化规则库写操作。
      *
-     * @param request 统一写操作请求，使用 action 区分 create_rule、update_rule、disable_rule、add_keyword、disable_keyword
-     * @return 统一写操作响应结果；apply_rule_to_records 返回历史记录回填预览或执行结果
+     * @param request 统一写操作请求，使用 action 区分规则维护、历史回填和历史样本重算
+     * @return 统一写操作响应结果；apply_rule_to_records / recheck_rule_records 返回历史记录预览或执行结果
      */
-    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用、关键词维护和受控历史记录回填；apply_rule_to_records 默认扫描全家庭历史样本，owner 仅为显式回填过滤条件。")
+    @Operation(summary = "维护归一化规则库", description = "通过 action 统一处理归一化规则新增、更新、禁用、关键词维护、受控历史记录回填和历史样本重算；apply_rule_to_records 与 recheck_rule_records 默认 dry-run。")
     @PostMapping("/normalization-library")
     public Object operateNormalizationLibrary(
             @RequestBody NormalizationLibraryOperationRequest request) {

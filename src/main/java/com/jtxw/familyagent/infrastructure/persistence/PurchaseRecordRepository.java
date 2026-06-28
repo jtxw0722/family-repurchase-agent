@@ -234,6 +234,99 @@ public class PurchaseRecordRepository {
     }
 
     /**
+     * 查询指定规则的历史样本重算候选记录。
+     *
+     * <p>该查询只扫描已经纳入价格基准线的 include 记录，并且要求记录已归一化到当前规则编码或当前归一化名称；
+     * 不做全表无边界扫描，owner、batchId 和 limit 均由调用方显式控制。</p>
+     *
+     * @param ruleCode       归一化规则编码，不允许为空
+     * @param normalizedName 当前规则归一化商品名称，不允许为空
+     * @param batchId        可选导入批次 ID；为空时不按批次筛选
+     * @param owner          可选归属人；为空时不按归属人筛选
+     * @param limit          最大返回记录数，调用方已限制上限
+     * @return 按订单时间和 ID 倒序排列的候选购买记录
+     */
+    public List<PurchaseRecord> listRuleRecheckCandidates(String ruleCode,
+                                                          String normalizedName,
+                                                          Long batchId,
+                                                          String owner,
+                                                          int limit) {
+        return listCurrentRuleIncludeRecords(ruleCode, normalizedName, batchId, owner, limit);
+    }
+
+    /**
+     * 查询当前规则下已经纳入统计的历史样本。
+     *
+     * <p>用于 recheck_rule_records 第一阶段：只检查当前规则下 include 记录是否命中当前规则排除词，
+     * 命中后从当前规则解绑回 legacy_fallback。</p>
+     *
+     * @param ruleCode       归一化规则编码，不允许为空
+     * @param normalizedName 当前规则归一化商品名称，不允许为空
+     * @param batchId        可选导入批次 ID；为空时不按批次筛选
+     * @param owner          可选归属人；为空时不按归属人筛选
+     * @param limit          最大返回记录数，调用方已限制上限
+     * @return 当前规则下的 include 候选购买记录
+     */
+    public List<PurchaseRecord> listCurrentRuleIncludeRecords(String ruleCode,
+                                                              String normalizedName,
+                                                              Long batchId,
+                                                              String owner,
+                                                              int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT * FROM purchase_records
+                WHERE decision = 'include'
+                  AND (
+                        normalization_rule = ?
+                        OR normalized_name = ?
+                  )
+                """);
+        List<Object> args = new ArrayList<>();
+        args.add(ruleCode);
+        args.add(normalizedName);
+        if (batchId != null) {
+            sql.append(" AND batch_id = ?");
+            args.add(batchId);
+        }
+        if (owner != null && !owner.isBlank()) {
+            sql.append(" AND owner = ?");
+            args.add(owner.trim());
+        }
+        sql.append(" ORDER BY order_time DESC, id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper(), args.toArray());
+    }
+
+    /**
+     * 查询历史样本重算时可重新匹配规则的 include 记录。
+     *
+     * <p>用于 recheck_rule_records 第二阶段：不限制 legacy_fallback，以便当前规则可以重新认领
+     * 已被错误归一化到其他规则但完整规则匹配结果属于当前规则的记录。</p>
+     *
+     * @param batchId 可选导入批次 ID；为空时不按批次筛选
+     * @param owner   可选归属人；为空时不按归属人筛选
+     * @param limit   最大返回记录数，调用方已限制上限
+     * @return 可重新匹配规则的 include 候选购买记录
+     */
+    public List<PurchaseRecord> listIncludeRecordsForRuleRecheck(Long batchId, String owner, int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT * FROM purchase_records
+                WHERE decision = 'include'
+                """);
+        List<Object> args = new ArrayList<>();
+        if (batchId != null) {
+            sql.append(" AND batch_id = ?");
+            args.add(batchId);
+        }
+        if (owner != null && !owner.isBlank()) {
+            sql.append(" AND owner = ?");
+            args.add(owner.trim());
+        }
+        sql.append(" ORDER BY order_time DESC, id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper(), args.toArray());
+    }
+
+    /**
      * 查询指定商品的历史有效单价样本。
      *
      * <p>默认只返回正式统计口径内的记录：
@@ -483,6 +576,52 @@ public class PurchaseRecordRepository {
                     normalization_rule = ?
                 WHERE id = ?
                 """, normalizedName, quantity, unit, unitPrice, decision, normalizationRule, id);
+    }
+
+    /**
+     * 历史样本重算后从当前规则解绑购买记录。
+     *
+     * <p>该方法只更新 normalized_name、normalization_rule 和 decision；
+     * 用于把命中当前规则排除词的 include 记录恢复为 legacy_fallback，等待后续规则重新匹配。</p>
+     *
+     * @param id                购买记录 ID
+     * @param normalizedName    解绑后的归一化名称，通常恢复为原始 product_name
+     * @param normalizationRule 解绑后的规则标识，当前为 legacy_fallback
+     * @param decision          统计决策，当前保持 include
+     * @return 更新记录数
+     */
+    public int resetNormalizationAfterRuleRecheck(long id,
+                                                  String normalizedName,
+                                                  String normalizationRule,
+                                                  String decision) {
+        return jdbcTemplate.update("""
+                UPDATE purchase_records
+                SET normalized_name = ?,
+                    normalization_rule = ?,
+                    decision = ?
+                WHERE id = ?
+                """, normalizedName, normalizationRule, decision, id);
+    }
+
+    /**
+     * 历史样本重算后更新购买记录的归一化规则归属。
+     *
+     * <p>仅当记录现有单位已经与目标规则标准单位一致时使用；
+     * 不修改数量、单位、金额和单价，避免单位不一致时污染价格基准线。</p>
+     *
+     * @param id                购买记录 ID
+     * @param normalizedName    当前规则归一化商品名称
+     * @param normalizationRule 当前规则编码
+     * @return 更新记录数
+     */
+    public int updateNormalizationRuleAfterRecheck(long id, String normalizedName, String normalizationRule) {
+        return jdbcTemplate.update("""
+                UPDATE purchase_records
+                SET normalized_name = ?,
+                    normalization_rule = ?,
+                    decision = 'include'
+                WHERE id = ?
+                """, normalizedName, normalizationRule, id);
     }
 
     /**

@@ -30,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/06 17:58:26
+ * @Date: 2026/06/25 19:14:00
  * @Description: REST Tool API 控制器测试，覆盖工具接口响应结构和异常映射。
  */
 @WebMvcTest({
@@ -415,6 +415,81 @@ class AgentToolControllerTest {
         assertThat(command.onlyExcluded()).isTrue();
         assertThat(command.dryRun()).isTrue();
         assertThat(command.limit()).isEqualTo(50);
+    }
+
+    @Test
+    void recheckRuleRecordsShouldUseUnifiedOperationEntry() throws Exception {
+        when(normalizationLibraryService.operate(any(NormalizationLibraryOperationCommand.class)))
+                .thenReturn(new NormalizationRecheckRuleRecordsResult(
+                        "recheck_rule_records",
+                        true,
+                        "cat_food",
+                        "猫粮",
+                        true,
+                        1,
+                        1,
+                        1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        List.of("dryRun=true，仅返回预览，不写入 purchase_records"),
+                        List.of(new NormalizationRecheckRuleRecordsItem(
+                                22L,
+                                "某品牌冻干猫粮",
+                                "1kg",
+                                "would_reset",
+                                "冻干",
+                                new NormalizationApplyRuleRecordSnapshot(
+                                        "猫粮",
+                                        BigDecimal.ONE,
+                                        "kg",
+                                        BigDecimal.valueOf(39.9D),
+                                        "include",
+                                        "cat_food"
+                                ),
+                                new NormalizationApplyRuleRecordSnapshot(
+                                        "某品牌冻干猫粮",
+                                        BigDecimal.ONE,
+                                        "kg",
+                                        BigDecimal.valueOf(39.9D),
+                                        "include",
+                                        "legacy_fallback"
+                                ),
+                                List.of("命中当前规则排除关键词：冻干，预览从当前规则解绑")
+                        ))
+                ));
+
+        mockMvc.perform(post("/api/tools/normalization-library")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "action": "recheck_rule_records",
+                                  "ruleCode": "cat_food",
+                                  "owner": "jtxw",
+                                  "batchId": 9001,
+                                  "dryRun": true,
+                                  "limit": 500
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("recheck_rule_records"))
+                .andExpect(jsonPath("$.ruleCode").value("cat_food"))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.items[0].status").value("would_reset"))
+                .andExpect(jsonPath("$.items[0].matchedExcludeKeyword").value("冻干"));
+
+        ArgumentCaptor<NormalizationLibraryOperationCommand> captor =
+                ArgumentCaptor.forClass(NormalizationLibraryOperationCommand.class);
+        verify(normalizationLibraryService).operate(captor.capture());
+        NormalizationLibraryOperationCommand command = captor.getValue();
+        assertThat(command.action()).isEqualTo("recheck_rule_records");
+        assertThat(command.ruleCode()).isEqualTo("cat_food");
+        assertThat(command.owner()).isEqualTo("jtxw");
+        assertThat(command.batchId()).isEqualTo(9001L);
+        assertThat(command.dryRun()).isTrue();
+        assertThat(command.limit()).isEqualTo(500);
     }
 
     @Test

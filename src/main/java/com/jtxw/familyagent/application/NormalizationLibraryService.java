@@ -46,6 +46,10 @@ public class NormalizationLibraryService {
      */
     private static final String ACTION_APPLY_RULE_TO_RECORDS = "apply_rule_to_records";
     /**
+     * 统一入口重算当前规则下历史 include 样本动作。
+     */
+    private static final String ACTION_RECHECK_RULE_RECORDS = "recheck_rule_records";
+    /**
      * 手动维护规则的 source 标记。
      */
     private static final String SOURCE_MANUAL = "manual";
@@ -94,6 +98,10 @@ public class NormalizationLibraryService {
      * 归一化规则历史记录回填服务，负责 dry-run 预览和显式回填。
      */
     private final NormalizationRuleApplyService normalizationRuleApplyService;
+    /**
+     * 归一化规则历史样本重算服务，负责按当前排除词受控剔除历史 include 样本。
+     */
+    private final NormalizationRuleRecheckService normalizationRuleRecheckService;
 
     /**
      * 创建归一化名称库应用服务。
@@ -101,14 +109,17 @@ public class NormalizationLibraryService {
      * @param databaseInitializer           数据库初始化组件
      * @param normalizationRuleRepository   归一化规则仓储
      * @param normalizationRuleApplyService 归一化规则历史记录回填服务
+     * @param normalizationRuleRecheckService 归一化规则历史样本重算服务
      */
     @Autowired
     public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
                                        NormalizationRuleRepository normalizationRuleRepository,
-                                       NormalizationRuleApplyService normalizationRuleApplyService) {
+                                       NormalizationRuleApplyService normalizationRuleApplyService,
+                                       NormalizationRuleRecheckService normalizationRuleRecheckService) {
         this.databaseInitializer = databaseInitializer;
         this.normalizationRuleRepository = normalizationRuleRepository;
         this.normalizationRuleApplyService = normalizationRuleApplyService;
+        this.normalizationRuleRecheckService = normalizationRuleRecheckService;
     }
 
     /**
@@ -121,7 +132,7 @@ public class NormalizationLibraryService {
      */
     public NormalizationLibraryService(DatabaseInitializer databaseInitializer,
                                        NormalizationRuleRepository normalizationRuleRepository) {
-        this(databaseInitializer, normalizationRuleRepository, null);
+        this(databaseInitializer, normalizationRuleRepository, null, null);
     }
 
     /**
@@ -156,6 +167,7 @@ public class NormalizationLibraryService {
             case ACTION_DISABLE_KEYWORD -> toOperationResult(action, disableKeyword(
                     new DisableNormalizationRuleKeywordCommand(command.ruleCode(), command.keyword(), command.matchType())));
             case ACTION_APPLY_RULE_TO_RECORDS -> applyRuleToRecords(command);
+            case ACTION_RECHECK_RULE_RECORDS -> recheckRuleRecords(command);
             default -> throw new IllegalArgumentException("不支持的归一化规则库操作：" + command.action());
         };
     }
@@ -171,6 +183,19 @@ public class NormalizationLibraryService {
             throw new IllegalStateException("归一化规则历史记录回填服务未初始化");
         }
         return normalizationRuleApplyService.apply(command);
+    }
+
+    /**
+     * 分派 recheck_rule_records 操作到历史样本重算服务。
+     *
+     * @param command 统一操作命令，包含规则编码、筛选范围和 dry-run 配置
+     * @return 历史样本重算预览或执行结果
+     */
+    private Object recheckRuleRecords(NormalizationLibraryOperationCommand command) {
+        if (normalizationRuleRecheckService == null) {
+            throw new IllegalStateException("归一化规则历史样本重算服务未初始化");
+        }
+        return normalizationRuleRecheckService.recheck(command);
     }
 
     /**

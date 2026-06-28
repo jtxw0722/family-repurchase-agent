@@ -13,7 +13,8 @@ import java.util.List;
 @Schema(description = "归一化规则库统一写操作请求")
 public class NormalizationLibraryOperationRequest {
     /**
-     * 操作动作，不能为空，支持 create_rule、update_rule、disable_rule、add_keyword、disable_keyword。
+     * 操作动作，不能为空，支持 create_rule、update_rule、disable_rule、add_keyword、disable_keyword、
+     * apply_rule_to_records、recheck_rule_records。
      */
     @Schema(description = "操作动作", example = "create_rule")
     private String action;
@@ -73,16 +74,16 @@ public class NormalizationLibraryOperationRequest {
     @Schema(description = "exclude 关键词列表；update_rule 时 null 表示不修改，空数组表示清空")
     private List<String> excludeKeywords;
     /**
-     * 历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选。
+     * 历史记录处理批次筛选，apply_rule_to_records 和 recheck_rule_records 时可选；为空时不按批次筛选。
      * batchId 和 owner 都为空时，按全家庭历史样本扫描。
      */
-    @Schema(description = "历史记录回填批次筛选；为空时不按批次筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "1")
+    @Schema(description = "历史记录处理批次筛选；为空时不按批次筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "1")
     private Long batchId;
     /**
-     * 历史记录回填归属人筛选，apply_rule_to_records 时可选；为空时不按归属人筛选。
+     * 历史记录处理归属人筛选，apply_rule_to_records 和 recheck_rule_records 时可选；为空时不按归属人筛选。
      * batchId 和 owner 都为空时，按全家庭历史样本扫描。
      */
-    @Schema(description = "历史记录回填归属人筛选；为空时不按归属人筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "lj")
+    @Schema(description = "历史记录处理归属人筛选；为空时不按归属人筛选，batchId 和 owner 都为空时扫描全家庭历史样本", example = "lj")
     private String owner;
     /**
      * 是否只处理 normalization_rule 为空或 legacy_fallback 的记录，apply_rule_to_records 默认 true。
@@ -95,14 +96,14 @@ public class NormalizationLibraryOperationRequest {
     @Schema(description = "是否只处理当前已排除记录", example = "true")
     private Boolean onlyExcluded;
     /**
-     * 是否只预览不写库，apply_rule_to_records 默认 true；只有显式 false 才回填。
+     * 是否只预览不写库，apply_rule_to_records 和 recheck_rule_records 默认 true；只有显式 false 才写库。
      */
     @Schema(description = "是否只预览不写库", example = "true")
     private Boolean dryRun;
     /**
-     * 历史记录回填候选数量上限，默认 100，最大 500。
+     * 历史记录处理候选数量上限，默认 100，最大 500。
      */
-    @Schema(description = "历史记录回填候选数量上限", example = "100")
+    @Schema(description = "历史记录处理候选数量上限", example = "100")
     private Integer limit;
 
     public String getAction() {

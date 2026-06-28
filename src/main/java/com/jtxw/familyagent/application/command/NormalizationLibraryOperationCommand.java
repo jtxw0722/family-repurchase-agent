@@ -7,7 +7,7 @@ import java.util.List;
  * @Date: 2026/06/25 18:47:34
  * @Description: 归一化规则库统一写操作命令，承载 REST 统一入口传入的 action 和规则维护字段
  *
- * @param action          操作动作，不能为空，支持 create_rule / update_rule / disable_rule / add_keyword / disable_keyword
+ * @param action          操作动作，不能为空，支持 create_rule / update_rule / disable_rule / add_keyword / disable_keyword / apply_rule_to_records / recheck_rule_records
  * @param ruleCode        规则业务编码，涉及规则维护时不能为空
  * @param normalizedName  归一化商品名称，新增和更新规则时不能为空
  * @param category        商品品类，允许为空
@@ -19,12 +19,12 @@ import java.util.List;
  * @param matchType       关键词类型，仅允许 include 或 exclude
  * @param keywords        include 关键词列表，update_rule 时 null 表示不修改，空列表表示清空
  * @param excludeKeywords exclude 关键词列表，update_rule 时 null 表示不修改，空列表表示清空
- * @param batchId         历史记录回填批次筛选，apply_rule_to_records 时可选；为空时不按批次筛选
- * @param owner           历史记录回填归属人筛选，apply_rule_to_records 时可选；为空时不按归属人筛选；batchId 和 owner 都为空时按全家庭历史样本扫描
+ * @param batchId         历史记录处理批次筛选，apply_rule_to_records / recheck_rule_records 时可选；为空时不按批次筛选
+ * @param owner           历史记录处理归属人筛选，apply_rule_to_records / recheck_rule_records 时可选；为空时不按归属人筛选
  * @param onlyLegacyFallback 是否只处理未命中明确规则的记录，apply_rule_to_records 默认 true
  * @param onlyExcluded    是否只处理当前已排除记录，apply_rule_to_records 默认 true
- * @param dryRun          是否只预览不写库，apply_rule_to_records 默认 true
- * @param limit           历史记录回填候选数量上限，apply_rule_to_records 默认 100，最大 500
+ * @param dryRun          是否只预览不写库，apply_rule_to_records / recheck_rule_records 默认 true
+ * @param limit           历史记录候选数量上限，apply_rule_to_records / recheck_rule_records 默认 100，最大 500
  */
 public record NormalizationLibraryOperationCommand(
         String action,
