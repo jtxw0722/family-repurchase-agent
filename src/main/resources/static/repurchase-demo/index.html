@@ -861,9 +861,17 @@
                             <label>归一化名称
                                 <input name="normalizedName" id="record-normalized-name" value="沐浴露" autocomplete="off">
                             </label>
-                            <label>规格 / SKU<input name="sku" value="780ml" autocomplete="off"></label>
+                            <label>规格 / SKU文本
+                                <input name="sku" value="780ml" placeholder="例如：780ml / 100抽*8包" autocomplete="off">
+                                <span class="field-hint">实际写入购买记录的规格文本。</span>
+                            </label>
                             <label>总价 *<input name="price" required type="number" min="0" step="0.01" value="35.22"></label>
-                            <label>数量 *<input name="quantity" required type="number" min="0" step="any" value="780"></label>
+                            <label>SKU / 单件规格
+                                <input name="skuQuantity" id="record-sku-quantity" type="number" min="0" step="any" placeholder="例如：550">
+                                <span class="field-hint">只用于计算总量，不写入规格字段。</span>
+                            </label>
+                            <label>购买数量 *<input name="purchaseQuantity" id="record-purchase-quantity" required type="number" min="0" step="any" value="780"></label>
+                            <label>总量<input id="record-total-quantity" type="text" value="780" readonly></label>
                             <label>单位 *<input name="unit" required value="ml" autocomplete="off"></label>
                             <label>平台<input name="platform" value="MANUAL" autocomplete="off"></label>
                             <label class="field-full">店铺<input name="shopName" placeholder="可不填" autocomplete="off"></label>
@@ -875,7 +883,7 @@
                             <button class="btn btn-secondary" data-submit="record" data-dry-run="true" type="button">先试算</button>
                             <button class="btn btn-primary" data-submit="record" data-dry-run="false" type="button">确认录入</button>
                         </div>
-                        <div class="helper">建议先试算，确认无误后再正式写入样本库。</div>
+                        <div class="helper">建议先试算；规格 / SKU文本会写入记录，SKU / 单件规格只用于计算总量。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
@@ -1136,6 +1144,23 @@
             totalInput.value = formatQuantity(calculateCompareTotalQuantity(value));
         }
 
+        function calculateRecordTotalQuantity(values) {
+            var skuQuantity = optionalNumber(values.skuQuantity);
+            var purchaseQuantity = optionalNumber(values.purchaseQuantity);
+
+            if (purchaseQuantity === undefined) return undefined;
+            if (skuQuantity === undefined) return purchaseQuantity;
+
+            return skuQuantity * purchaseQuantity;
+        }
+
+        function updateRecordTotalQuantity() {
+            var totalInput = $('record-total-quantity');
+            if (!totalInput) return;
+            var value = formValues('record-form');
+            totalInput.value = formatQuantity(calculateRecordTotalQuantity(value));
+        }
+
         function buildComparePayload() {
             var value = formValues('compare-form');
             return compact({
@@ -1165,7 +1190,7 @@
                     productName: value.productName,
                     normalizedName: optionalText(value.normalizedName),
                     price: optionalNumber(value.price),
-                    quantity: optionalNumber(value.quantity),
+                    quantity: calculateRecordTotalQuantity(value),
                     unit: value.unit,
                     platform: optionalText(value.platform),
                     purchaseDate: optionalText(value.purchaseDate),
@@ -1598,9 +1623,11 @@
             setRecordField('productName', candidate.productName);
             setRecordField('normalizedName', candidateNormalizedName(candidate));
             setRecordField('sku', candidate.sku);
+            setRecordField('skuQuantity', '');
             setRecordField('price', candidate.price);
-            setRecordField('quantity', candidate.quantity);
+            setRecordField('purchaseQuantity', candidate.quantity);
             setRecordField('unit', candidate.unit);
+            updateRecordTotalQuantity();
             syncRecordRuleSelectionByName(false);
             setRecordField('platform', candidate.platform);
             setRecordField('shopName', candidate.shopName);
@@ -1620,8 +1647,6 @@
                 imageFileName: file ? file.name : undefined,
                 imageMimeType: inferImageMimeType(file),
                 owner: optionalText(value.owner),
-                platform: optionalText(value.platform),
-                purchaseDate: optionalText(value.purchaseDate),
                 parseMode: 'order_screenshot',
                 dryRun: true
             });
@@ -1637,7 +1662,7 @@
         function renderOrderImageCandidateTable(candidates, selectedIndex) {
             if (!candidates || !candidates.length) return '';
             var html = '<div class="table-wrap"><table><thead><tr>' +
-                '<th>操作</th><th>商品名称</th><th>归一化</th><th>规格</th><th>总价</th><th>数量</th><th>单位</th><th>平台</th><th>归属人</th><th>购买日期</th><th>店铺</th><th>置信度</th><th>提示</th>' +
+                '<th>操作</th><th>商品名称</th><th>归一化</th><th>规格</th><th>总价</th><th>总量</th><th>单位</th><th>平台</th><th>归属人</th><th>购买日期</th><th>店铺</th><th>置信度</th><th>提示</th>' +
                 '</tr></thead><tbody>';
             candidates.forEach(function (candidate, index) {
                 html += '<tr>' +
@@ -1709,6 +1734,8 @@
             var file = fileInput.files && fileInput.files[0];
             lastSelectedImageDataUrl = null;
             lastSelectedImageFileName = '';
+            lastParseOrderImageResult = null;
+            lastParsedPurchaseCandidates = [];
             hideRecordImagePreview();
             if (!file) {
                 if (fileName) fileName.textContent = '未选择文件';
@@ -1787,7 +1814,7 @@
                     { key: 'productName', label: '商品名称', wrap: true },
                     { key: 'normalizedName', label: '归一化', formatter: formatNormalizedName },
                     { key: 'price', label: '价格', formatter: formatAmount },
-                    { key: 'quantity', label: '数量', formatter: formatQuantity },
+                    { key: 'quantity', label: '总量', formatter: formatQuantity },
                     { key: 'unit', label: '单位' },
                     { key: 'unitPrice', label: '单价', formatter: formatUnitPrice },
                     { key: 'decision', label: '结果', formatter: formatDecision },
@@ -2440,8 +2467,19 @@
             $('compare-purchase-quantity').addEventListener('change', updateCompareTotalQuantity);
         }
 
+        if ($('record-sku-quantity')) {
+            $('record-sku-quantity').addEventListener('input', updateRecordTotalQuantity);
+            $('record-sku-quantity').addEventListener('change', updateRecordTotalQuantity);
+        }
+
+        if ($('record-purchase-quantity')) {
+            $('record-purchase-quantity').addEventListener('input', updateRecordTotalQuantity);
+            $('record-purchase-quantity').addEventListener('change', updateRecordTotalQuantity);
+        }
+
         updateNormalizationFormMode();
         updateCompareTotalQuantity();
+        updateRecordTotalQuantity();
         loadNormalizationLibrary(false);
     }());
 </script>
