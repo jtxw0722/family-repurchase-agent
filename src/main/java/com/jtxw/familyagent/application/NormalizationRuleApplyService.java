@@ -156,12 +156,20 @@ public class NormalizationRuleApplyService {
             throw new IllegalArgumentException("归一化规则未启用：" + request.ruleCode());
         }
         ProductRule targetRule = enabledRule(request.ruleCode());
-        List<PurchaseRecord> candidates = purchaseRecordRepository.listRuleApplyCandidates(
-                request.batchId(), request.owner(), request.onlyLegacyFallback(), request.onlyExcluded(),
-                request.limit());
         List<String> taskWarnings = new ArrayList<>();
         if (request.dryRun()) {
             taskWarnings.add("dryRun=true，仅返回预览，不写入 purchase_records");
+        }
+        List<String> recallKeywords = recallKeywords(targetRule);
+        if (recallKeywords.isEmpty()) {
+            taskWarnings.add("当前规则缺少归一化名称和关键词，无法召回历史样本。");
+        }
+        List<PurchaseRecord> candidates;
+        if (recallKeywords.isEmpty()) {
+            candidates = List.of();
+        } else {
+            candidates = purchaseRecordRepository.listRuleApplyCandidates(recallKeywords, request.batchId(),
+                    request.owner(), request.onlyLegacyFallback(), request.onlyExcluded(), request.limit());
         }
         ApplyCounters counters = new ApplyCounters();
         List<NormalizationApplyRuleToRecordsItem> items = new ArrayList<>();
@@ -1169,6 +1177,36 @@ public class NormalizationRuleApplyService {
     private NormalizationApplyRuleRecordSnapshot snapshot(PurchaseRecord record) {
         return new NormalizationApplyRuleRecordSnapshot(record.normalizedName(), decimal(record.quantity()),
                 record.unit(), decimal(record.unitPrice()), record.decision(), record.normalizationRule());
+    }
+
+    /**
+     * 构造当前规则的 SQL 召回词。
+     *
+     * <p>召回词只使用 normalizedName 和 include keywords；exclude keywords 仍在 Java 规则评估阶段判断，
+     * 避免用排除词扩大候选集合。</p>
+     *
+     * @param targetRule 当前目标规则
+     * @return 去空白、去重后的召回词列表
+     */
+    private List<String> recallKeywords(ProductRule targetRule) {
+        Set<String> keywords = new LinkedHashSet<>();
+        addRecallKeyword(keywords, targetRule.normalizedName());
+        for (String keyword : targetRule.includeKeywords()) {
+            addRecallKeyword(keywords, keyword);
+        }
+        return new ArrayList<>(keywords);
+    }
+
+    /**
+     * 添加单个规则召回词。
+     *
+     * @param keywords 召回词集合
+     * @param keyword  原始关键词，允许为空
+     */
+    private void addRecallKeyword(Set<String> keywords, String keyword) {
+        if (keyword != null && !keyword.isBlank()) {
+            keywords.add(keyword.trim());
+        }
     }
 
     /**

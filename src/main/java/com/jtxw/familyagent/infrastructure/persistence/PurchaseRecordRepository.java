@@ -192,11 +192,13 @@ public class PurchaseRecordRepository {
     }
 
     /**
-     * 查询归一化规则回填候选购买记录。
+     * 按当前规则召回词查询归一化规则回填候选购买记录。
      *
-     * <p>该查询只按 batchId、owner、legacy fallback 和 exclude 状态缩小候选范围；
-     * 最终是否命中指定规则必须由应用层复用规则匹配器判断，不能只依赖 SQL 关键词匹配。</p>
+     * <p>该查询先通过当前规则 normalizedName 和 include keywords 在 product_name / sku 中预过滤候选，
+     * 再按 batchId、owner、legacy fallback 和 exclude 状态缩小范围；最终是否命中指定规则仍由应用层
+     * 复用完整规则匹配器判断，不能只依赖 SQL 关键词匹配。</p>
      *
+     * @param recallKeywords     当前规则召回词，来自 normalizedName 和 include keywords，不允许为空
      * @param batchId            可选导入批次 ID；为空时不按批次筛选
      * @param owner              可选订单归属人；为空时不按归属人筛选
      * @param onlyLegacyFallback 是否只处理未命中明确规则的记录
@@ -204,11 +206,15 @@ public class PurchaseRecordRepository {
      * @param limit              最大返回条数
      * @return 候选购买记录列表
      */
-    public List<PurchaseRecord> listRuleApplyCandidates(Long batchId,
+    public List<PurchaseRecord> listRuleApplyCandidates(List<String> recallKeywords,
+                                                        Long batchId,
                                                         String owner,
                                                         boolean onlyLegacyFallback,
                                                         boolean onlyExcluded,
                                                         int limit) {
+        if (recallKeywords == null || recallKeywords.isEmpty()) {
+            return List.of();
+        }
         StringBuilder sql = new StringBuilder("""
                 SELECT * FROM purchase_records
                 WHERE 1 = 1
@@ -228,9 +234,35 @@ public class PurchaseRecordRepository {
         if (onlyExcluded) {
             sql.append(" AND decision = 'exclude'");
         }
+        sql.append(" AND (");
+        List<String> keywordConditions = new ArrayList<>();
+        for (String keyword : recallKeywords) {
+            if (keyword == null || keyword.isBlank()) {
+                continue;
+            }
+            keywordConditions.add("(product_name LIKE ? ESCAPE '\\' OR sku LIKE ? ESCAPE '\\')");
+            String likePattern = toLikePattern(keyword);
+            args.add(likePattern);
+            args.add(likePattern);
+        }
+        if (keywordConditions.isEmpty()) {
+            return List.of();
+        }
+        sql.append(String.join(" OR ", keywordConditions));
+        sql.append(")");
         sql.append(" ORDER BY order_time DESC, id DESC LIMIT ?");
         args.add(limit);
         return jdbcTemplate.query(sql.toString(), rowMapper(), args.toArray());
+    }
+
+    /**
+     * 将召回关键词转换为 SQL LIKE 参数。
+     *
+     * @param keyword 召回关键词，允许包含 %、_ 或反斜杠
+     * @return 已转义并包裹百分号的 LIKE 参数
+     */
+    private String toLikePattern(String keyword) {
+        return "%" + escapeLikeKeyword(keyword.trim()) + "%";
     }
 
     /**

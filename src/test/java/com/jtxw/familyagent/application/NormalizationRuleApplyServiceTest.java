@@ -145,7 +145,7 @@ class NormalizationRuleApplyServiceTest {
 
         NormalizationApplyRuleToRecordsResult result = service.apply(command(false, null, null, null));
 
-        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.candidateCount()).isZero();
         assertThat(result.matchedCount()).isZero();
         assertThat(result.items()).isEmpty();
     }
@@ -665,6 +665,131 @@ class NormalizationRuleApplyServiceTest {
     }
 
     @Test
+    void shouldRecallCurrentRuleCandidatesBeforeApplyingLimit() {
+        createBodyHairRule();
+        for (int index = 0; index < 600; index++) {
+            saveCandidate("无关商品" + index, "默认规格", "exclude", "legacy_fallback", 10D);
+        }
+        long shampooRecordId = saveCandidate("清爽洗发水", "600ml", "exclude", "legacy_fallback", 60D);
+        long lotionRecordId = saveCandidate("滋润洗发露", "700ml", "exclude", "legacy_fallback", 70D);
+        long creamRecordId = saveCandidate("老牌洗头膏", "500ml", "exclude", "legacy_fallback", 50D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRuleWithScope("body_hair",
+                null, null, true, true, true, 500));
+
+        assertThat(result.candidateCount()).isEqualTo(3);
+        assertThat(result.applicableCount()).isEqualTo(3);
+        assertThat(result.items()).extracting("recordId")
+                .contains(shampooRecordId, lotionRecordId, creamRecordId);
+    }
+
+    @Test
+    void shouldRecallCandidateByNormalizedNameBeforeJavaRuleEvaluation() {
+        createRule("normalized_name_recall_rule", "洗发水", "ml", "volume", 120,
+                List.of("护发素"), List.of());
+        saveCandidate("清爽洗发水", "600ml", "exclude", "legacy_fallback", 60D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRuleWithScope(
+                "normalized_name_recall_rule", null, null, true, true, true, 100));
+
+        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.matchedCount()).isZero();
+        assertThat(result.items()).isEmpty();
+    }
+
+    @Test
+    void shouldRecallCandidateByIncludeKeywordWhenNormalizedNameDoesNotMatch() {
+        createRule("keyword_recall_rule", "洗发水", "ml", "volume", 120,
+                List.of("洗发露"), List.of());
+        long recordId = saveCandidate("滋润洗发露", "700ml", "exclude", "legacy_fallback", 70D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRuleWithScope(
+                "keyword_recall_rule", null, null, true, true, true, 100));
+
+        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.applicableCount()).isEqualTo(1);
+        assertThat(result.items()).extracting("recordId").containsExactly(recordId);
+    }
+
+    @Test
+    void shouldKeepOnlyLegacyFallbackFilterDuringKeywordRecall() {
+        createContactLensRule();
+        long fallbackRecordId = saveCandidate("美瞳日抛 10片", "自然棕", "exclude",
+                "legacy_fallback", 33.79D);
+        long otherRuleRecordId = saveCandidate("美瞳日抛 20片", "自然黑", "exclude",
+                "other_rule", 40D);
+
+        NormalizationApplyRuleToRecordsResult legacyOnlyResult = service.apply(commandWithScope(
+                null, null, true, true, true, 100));
+        NormalizationApplyRuleToRecordsResult allRuleResult = service.apply(commandWithScope(
+                null, null, true, false, true, 100));
+
+        assertThat(legacyOnlyResult.candidateCount()).isEqualTo(1);
+        assertThat(legacyOnlyResult.items()).extracting("recordId").containsExactly(fallbackRecordId);
+        assertThat(allRuleResult.candidateCount()).isEqualTo(2);
+        assertThat(allRuleResult.items()).extracting("recordId").containsExactly(otherRuleRecordId, fallbackRecordId);
+    }
+
+    @Test
+    void shouldKeepOnlyExcludedFilterDuringKeywordRecall() {
+        createContactLensRule();
+        long excludedRecordId = saveCandidate("美瞳日抛 10片", "自然棕", "exclude",
+                "legacy_fallback", 33.79D);
+        saveCandidate("美瞳日抛 20片", "自然黑", "include", "legacy_fallback", 40D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandWithScope(
+                null, null, true, true, true, 100));
+
+        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.items()).extracting("recordId").containsExactly(excludedRecordId);
+    }
+
+    @Test
+    void shouldKeepOwnerAndBatchFiltersDuringKeywordRecall() {
+        createContactLensRule();
+        long targetRecordId = saveCandidate(9001L, "lj", "美瞳日抛 10片", "自然棕",
+                "exclude", "legacy_fallback", 33.79D, false, "unique");
+        saveCandidate(9001L, "jtxw", "美瞳日抛 20片", "自然黑",
+                "exclude", "legacy_fallback", 40D, false, "unique");
+        saveCandidate(9002L, "lj", "美瞳日抛 30片", "自然灰",
+                "exclude", "legacy_fallback", 60D, false, "unique");
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandWithScope(
+                9001L, "lj", true, true, true, 100));
+
+        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.items()).extracting("recordId").containsExactly(targetRecordId);
+    }
+
+    @Test
+    void shouldEscapeLikeWildcardsWhenRecallingCandidates() {
+        createRule("like_escape_rule", "特殊百分号商品", "ml", "volume", 120,
+                List.of("ab%"), List.of());
+        long literalKeywordRecordId = saveCandidate("ab%洗发露", "100ml", "exclude",
+                "legacy_fallback", 20D);
+        saveCandidate("abx洗发露", "100ml", "exclude", "legacy_fallback", 20D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRuleWithScope(
+                "like_escape_rule", null, null, true, true, true, 100));
+
+        assertThat(result.candidateCount()).isEqualTo(1);
+        assertThat(result.items()).extracting("recordId").containsExactly(literalKeywordRecordId);
+    }
+
+    @Test
+    void shouldNotScanAllRecordsWhenRuleHasNoRecallKeywords() {
+        createRule("empty_recall_rule", " ", "片", "count", 120, List.of(), List.of());
+        saveCandidate("美瞳日抛 10片", "自然棕", "exclude", "legacy_fallback", 33.79D);
+
+        NormalizationApplyRuleToRecordsResult result = service.apply(commandForRuleWithScope(
+                "empty_recall_rule", null, null, true, true, true, 100));
+
+        assertThat(result.candidateCount()).isZero();
+        assertThat(result.items()).isEmpty();
+        assertThat(result.warnings()).anyMatch(warning -> warning.contains("无法召回历史样本"));
+    }
+
+    @Test
     void shouldUseDefaultSafetyOptionsInFamilyScope() {
         createContactLensRule();
         long firstRecordId = saveCandidate("美瞳日抛 10片", "默认安全参数", "exclude", "legacy_fallback", 33.79D);
@@ -828,6 +953,29 @@ class NormalizationRuleApplyServiceTest {
         long ruleId = normalizationRuleRepository.createRule(
                 "contact_lenses", "美瞳", "个护美妆", "片", "count", 120, "test");
         normalizationRuleRepository.insertKeyword(ruleId, "美瞳", "include", 100, "test");
+        return ruleId;
+    }
+
+    private long createBodyHairRule() {
+        return createRule("body_hair", "洗发水", "ml", "volume", 120,
+                List.of("洗发水", "洗发露", "洗头膏"), List.of());
+    }
+
+    private long createRule(String ruleCode,
+                            String normalizedName,
+                            String standardUnit,
+                            String unitFamily,
+                            int priority,
+                            List<String> includeKeywords,
+                            List<String> excludeKeywords) {
+        long ruleId = normalizationRuleRepository.createRule(
+                ruleCode, normalizedName, "测试品类", standardUnit, unitFamily, priority, "test");
+        for (String keyword : includeKeywords) {
+            normalizationRuleRepository.insertKeyword(ruleId, keyword, "include", 100, "test");
+        }
+        for (String keyword : excludeKeywords) {
+            normalizationRuleRepository.insertKeyword(ruleId, keyword, "exclude", 100, "test");
+        }
         return ruleId;
     }
 
