@@ -19,8 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/14 16:50:03
- * @Description: 归一化规则仓储测试，验证 SQLite 规则加载、关键词拆分和动态样本统计口径
+ * @Date: 2026/11/11 13:20:37
+ * @Description: 归一化规则仓储测试，验证 SQLite 规则加载、关键词拆分、有效样本数量与单价中位数
  */
 class NormalizationRuleRepositoryTest {
     /**
@@ -102,8 +102,77 @@ class NormalizationRuleRepositoryTest {
         assertThat(catLitter.keywords()).contains("猫砂", "豆腐砂");
         assertThat(catLitter.excludeKeywords()).contains("猫砂盆", "猫砂铲");
         assertThat(catLitter.sampleCount()).isEqualTo(1);
+        assertThat(catLitter.medianUnitPrice()).isEqualByComparingTo("6.8");
         assertThat(catLitter.enabled()).isTrue();
         assertThat(catLitter.source()).isEqualTo("system");
+    }
+
+    @Test
+    void shouldReturnNullMedianWhenNoEffectiveSamplesExist() {
+        assertThat(catLitterItem().medianUnitPrice()).isNull();
+        insertPurchaseRecord(1L, "猫砂", "exclude", 0, "unique", 9D, 90D);
+        insertPurchaseRecord(2L, "猫砂", "include", 1, "duplicate", 8D, 80D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", null, 70D);
+        insertPurchaseRecord(4L, "猫砂", "include", 0, "unique", 6D, 0D);
+        insertPurchaseRecord(5L, "猫砂", "include", 0, "pending", 5D, 50D);
+        assertThat(catLitterItem().medianUnitPrice()).isNull();
+    }
+
+    @Test
+    void shouldSelectMiddlePriceFromUnsortedOddSamples() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 9D, 90D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 1D, 10D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", 5D, 50D);
+        assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("5");
+    }
+
+    @Test
+    void shouldAverageTwoMiddlePricesAndIgnoreInvalidRecordsForEvenSamples() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 9.99D, 99.9D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 1.11D, 11.1D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", 2.22D, 22.2D);
+        insertPurchaseRecord(4L, "猫砂", "include", 0, "unique", 8.88D, 88.8D);
+        insertPurchaseRecord(5L, "猫砂", "exclude", 0, "unique", 100D, 1000D);
+        insertPurchaseRecord(6L, "猫砂", "include", 1, "duplicate", 100D, 1000D);
+        insertPurchaseRecord(7L, "猫砂", "include", 0, "unique", 100D, 0D);
+        insertPurchaseRecord(8L, "猫砂", "include", 0, "pending", 100D, 1000D);
+        insertPurchaseRecord(9L, "猫粮", "include", 0, "unique", 100D, 1000D);
+        assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("5.55");
+    }
+
+    @Test
+    void shouldKeepIdenticalPricesAsSeparateEffectiveSamples() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 1D, 10D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 1D, 10D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", 10D, 100D);
+        insertPurchaseRecord(4L, "猫砂", "include", 0, "unique", 100D, 1000D);
+        assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("5.5");
+    }
+
+    @Test
+    void shouldExcludeOtherUnitsAndIncludeAllHouseholdOwners() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 6D, 60D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 8D, 80D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", 100D, 1000D);
+        jdbcTemplate.update("UPDATE purchase_records SET unit = 'g' WHERE id = 3");
+        jdbcTemplate.update("UPDATE purchase_records SET owner = 'owner_a' WHERE id = 1");
+        jdbcTemplate.update("UPDATE purchase_records SET owner = 'owner_b', unit = ' KG ' WHERE id = 2");
+        assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("7");
+        jdbcTemplate.update("UPDATE purchase_records SET unit = 'g'");
+        assertThat(catLitterItem().medianUnitPrice()).isNull();
+    }
+
+    @Test
+    void shouldPreserveDecimalPrecisionWhenAveraging() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 1.001D, 10.01D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 1.002D, 10.02D);
+        assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("1.0015");
+    }
+
+    /** 读取猫砂规则，复用真实 SQLite 查询路径验证列表展示值。 */
+    private NormalizationLibraryItem catLitterItem() {
+        return repository.listLibraryItems().stream()
+                .filter(item -> "cat_litter".equals(item.ruleCode())).findFirst().orElseThrow();
     }
 
     @Test

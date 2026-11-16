@@ -9,6 +9,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
@@ -17,8 +18,8 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/14 16:50:03
- * @Description: 归一化规则仓储，负责从 SQLite normalization_rules 及关键词表读取运行期商品规则
+ * @Date: 2026/11/11 13:20:37
+ * @Description: 归一化规则仓储，负责读取和维护 SQLite 商品规则、关键词及有效历史样本统计
  */
 @Repository
 public class NormalizationRuleRepository {
@@ -36,6 +37,10 @@ public class NormalizationRuleRepository {
      */
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * 创建归一化规则仓储。
+     * @param jdbcTemplate SQLite 访问模板，不允许为空
+     */
     public NormalizationRuleRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -67,7 +72,8 @@ public class NormalizationRuleRepository {
      * 查询归一化名称库展示数据。
      *
      * <p>sampleCount 使用现有价格基准线仓储的有效历史样本口径：
-     * decision = include、非重复、dedupe_status = unique、unit_price 有效且 total_amount 大于 0。</p>
+     * decision = include、非重复、dedupe_status = unique、unit_price 有效且 total_amount 大于 0。
+     * 单价中位数还要求历史单位与当前标准单位相同，避免混算不同计量单位。</p>
      *
      * @return 按 priority 降序排列的名称库条目
      */
@@ -91,7 +97,8 @@ public class NormalizationRuleRepository {
                     countEffectiveSamples(normalizedName),
                     rs.getInt("priority"),
                     rs.getInt("enabled") == 1,
-                    rs.getString("source")
+                    rs.getString("source"),
+                    medianEffectiveUnitPrice(normalizedName, rs.getString("standard_unit"))
             );
         });
     }
@@ -444,6 +451,42 @@ public class NormalizationRuleRepository {
                   AND total_amount > 0
                 """, Integer.class, normalizedName);
         return count == null ? 0 : count;
+    }
+
+    /**
+     * 查询当前标准单位下的历史单价中位数，不写入数据库。
+     *
+     * @param normalizedName 归一化商品名称
+     * @param standardUnit 当前标准单位，大小写和首尾空白不影响匹配
+     * @return 单价中位数，单位为元/标准单位；无匹配样本或未配置标准单位时返回 null
+     */
+    private BigDecimal medianEffectiveUnitPrice(String normalizedName, String standardUnit) {
+        if (standardUnit == null || standardUnit.isBlank()) {
+            return null;
+        }
+        // 奇数个样本取中间值，偶数个取中间两项；仅返回最多两项，避免载入全部历史记录。
+        List<BigDecimal> middlePrices = jdbcTemplate.query("""
+                WITH ranked_prices AS (
+                    SELECT unit_price,
+                           ROW_NUMBER() OVER (ORDER BY unit_price) AS price_rank,
+                           COUNT(*) OVER () AS sample_count
+                    FROM purchase_records
+                    WHERE normalized_name = ?
+                      AND decision = 'include'
+                      AND is_duplicate = 0
+                      AND dedupe_status = 'unique'
+                      AND unit_price IS NOT NULL
+                      AND total_amount > 0
+                      AND LOWER(TRIM(unit)) = LOWER(TRIM(?))
+                )
+                SELECT unit_price FROM ranked_prices
+                WHERE price_rank IN ((sample_count + 1) / 2, (sample_count + 2) / 2)
+                """, (rs, rowNum) -> rs.getBigDecimal("unit_price"), normalizedName, standardUnit);
+        if (middlePrices.isEmpty()) {
+            return null;
+        }
+        return middlePrices.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(middlePrices.size()));
     }
 
     /**
