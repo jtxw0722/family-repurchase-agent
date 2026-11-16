@@ -285,6 +285,10 @@ curl -X GET "http://localhost:8080/api/tools/normalization-llm-tasks/1"
 
 ### 写入归一化规则库
 
+页面“新增规则”填写归一化名称后，会自动建议小写英文规则编码，并以下划线分词（例如“橄榄油”对应 `olive_oil`）。手动修改编码后保留手填值，清空编码可恢复自动生成；更新已有规则时编码保持只读。重复编码会提示修改，不自动覆盖已有规则。
+
+编码建议接口为 `POST /api/tools/normalization-rule-code-suggestion`，请求示例 `{"normalizedName":"橄榄油"}`，响应示例 `{"ruleCode":"olive_oil","exists":false}`。接口不保存规则；已有归一化名称沿用其编码，英文名称直接格式化，中文名称查询 Maven 依赖 `io.github.shenbinglife:offline-translate:1.0.0` 自带的中英词库，运行时不联网、不调用模型、不需要 API Key。为兼容 Java 17，仅使用该依赖的词库资源，不加载要求 Java 21 的翻译 API，也不引入其分词器。只匹配完整名称；词库未收录或译义不明确时提示手动填写，不逐字拼接或回退到拼音。例如“橄榄油”可生成 `olive_oil`；词库未覆盖所有商品名称，已有“猫粮”规则仍优先复用原编码。前端交互测试可执行 `node --test src/test/js/normalization-rule-code.test.cjs`。
+
 ```powershell
 curl -X POST "http://localhost:8080/api/tools/normalization-library" `
   -H "Content-Type: application/json" `

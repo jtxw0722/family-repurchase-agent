@@ -21,6 +21,7 @@
         <sqlite-jdbc.version>3.53.1.0</sqlite-jdbc.version>
         <commons-csv.version>1.14.0</commons-csv.version>
         <poi.version>5.4.1</poi.version>
+        <offline-translate.version>1.0.0</offline-translate.version>
         <argLine/>
     </properties>
 
@@ -57,6 +58,21 @@
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>${poi.version}</version>
+        </dependency>
+
+        <dependency>
+            <!-- 仅使用第三方中英词库资源，不加载其 Java 21 API，保持主项目 Java 17 兼容。 -->
+            <groupId>io.github.shenbinglife</groupId>
+            <artifactId>offline-translate</artifactId>
+            <version>${offline-translate.version}</version>
+            <scope>runtime</scope>
+            <exclusions>
+                <!-- 不采用逐字分词拼接翻译，无需引入分词器及其大型词典。 -->
+                <exclusion>
+                    <groupId>org.ansj</groupId>
+                    <artifactId>ansj_seg</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
