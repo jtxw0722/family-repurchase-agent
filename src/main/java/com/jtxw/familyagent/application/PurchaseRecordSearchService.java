@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/12 13:09:27
+ * @Date: 2026/11/11 19:06:04
  * @Description: 原始购买记录检索应用服务，负责清洗查询参数并返回只读历史订单样本。
  */
 @Service
@@ -33,6 +33,7 @@ public class PurchaseRecordSearchService {
      */
     private static final String SCOPE_OWNER = "OWNER";
 
+    /** 购买记录仓储，负责只读检索订单及其原始店铺名称，不允许为空。 */
     private final PurchaseRecordRepository purchaseRecordRepository;
 
     /**
@@ -189,7 +190,8 @@ public class PurchaseRecordSearchService {
                 record.totalAmount(),
                 record.currency(),
                 record.normalizedName(),
-                record.unitPrice()
+                record.unitPrice(),
+                record.shopName()
         );
     }
 

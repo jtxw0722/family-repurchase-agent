@@ -1,10 +1,15 @@
 package com.jtxw.familyagent.application;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jtxw.familyagent.application.query.SearchPurchaseRecordsQuery;
 import com.jtxw.familyagent.domain.model.PurchaseRecord;
 import com.jtxw.familyagent.infrastructure.persistence.DatabaseInitializer;
 import com.jtxw.familyagent.infrastructure.persistence.PurchaseRecordRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -17,10 +22,45 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/12 13:09:27
- * @Description: 原始购买记录检索应用服务测试，覆盖关键词、owner、limit 和空结果等只读查询场景。
+ * @Date: 2026/11/11 19:06:04
+ * @Description: 原始购买记录检索应用服务测试，覆盖关键词、归属人、条数、店铺透传和空结果等只读查询场景。
  */
 class PurchaseRecordSearchServiceTest {
+    /** 使用真实 SQLite 保存和查询记录，确认店铺字段完整传递到检索结果及 JSON。 */
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"圣农食品官方旗舰店", "京东自营", "高高的宠物小铺"})
+    void searchShouldPreserveStoredShopNameInResultAndJson(String shopName) throws Exception {
+        Fixture fixture = fixture("shop-name.sqlite");
+        fixture.save(record("2026-10-28 21:50:54", "jtxw", "圣农琵琶腿", "2.5kg",
+                "食品", "鸡肉", "鸡腿肉", 2.5D, shopName));
+
+        SearchPurchaseRecordsResult result = fixture.service.search(query("鸡腿", null, 20));
+
+        assertThat(result.records()).hasSize(1);
+        assertThat(result.records().get(0).shopName()).isEqualTo(shopName);
+        JsonNode itemJson = new ObjectMapper().valueToTree(result.records().get(0));
+        assertThat(itemJson.has("shopName")).isTrue();
+        if (shopName == null) {
+            assertThat(itemJson.path("shopName").isNull()).isTrue();
+        } else {
+            assertThat(itemJson.path("shopName").asText()).isEqualTo(shopName);
+        }
+    }
+
+    /** 同一商品的不同订单应保留各自店铺，不能按商品名使用一条店铺记录覆盖其他订单。 */
+    @Test
+    void searchShouldReturnEachRecordsOwnShopName() throws Exception {
+        Fixture fixture = fixture("different-shops.sqlite");
+        fixture.save(record("2026-10-29 10:00:00", "jtxw", "圣农琵琶腿", "2.5kg",
+                "食品", "鸡肉", "鸡腿肉", 2.5D, "圣农食品官方旗舰店"));
+        fixture.save(record("2026-10-28 10:00:00", "jtxw", "圣农琵琶腿", "2.5kg",
+                "食品", "鸡肉", "鸡腿肉", 2.5D, "京东自营"));
+
+        SearchPurchaseRecordsResult result = fixture.service.search(query("鸡腿", null, 20));
+        assertThat(result.records()).extracting(SearchPurchaseRecordsResult.Item::shopName)
+                .containsExactly("圣农食品官方旗舰店", "京东自营");
+    }
     @Test
     void searchShouldMatchProductName() throws Exception {
         Fixture fixture = fixture("match-product-name.sqlite");
@@ -218,6 +258,7 @@ class PurchaseRecordSearchServiceTest {
         }
     }
 
+    /** 构造不带店铺的历史记录，保留原有查询场景的默认行为。 */
     private PurchaseRecord record(String orderTime,
                                   String owner,
                                   String productName,
@@ -226,11 +267,18 @@ class PurchaseRecordSearchServiceTest {
                                   String subCategory,
                                   String normalizedName,
                                   Double quantity) {
+        return record(orderTime, owner, productName, sku, category, subCategory, normalizedName, quantity, null);
+    }
+
+    /** 构造带有明确店铺来源的购买记录，不从商品名称或归一化规则推测店铺。 */
+    private PurchaseRecord record(String orderTime, String owner, String productName, String sku,
+                                  String category, String subCategory, String normalizedName,
+                                  Double quantity, String shopName) {
         return new PurchaseRecord(
                 null, 1L, orderTime, "taobao", owner, productName, normalizedName, sku,
                 category, subCategory, quantity, "kg", 119.3D, 119.3D, 119.3D, null,
                 "paid_amount", 11.93D, "CNY", "include", false, "unique",
-                "test.csv", null, null, null, "2026-06-12 13:09:27"
+                "test.csv", shopName, null, null, "2026-06-12 13:09:27"
         );
     }
 

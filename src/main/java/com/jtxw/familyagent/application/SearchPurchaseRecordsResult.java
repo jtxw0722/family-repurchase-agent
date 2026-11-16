@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/12 13:09:27
+ * @Date: 2026/11/11 19:06:04
  * @Description: 原始购买记录关键词检索结果，返回原始订单样本和查询范围说明，不表达价格基线语义。
  *
  * @param keyword       清洗后的查询关键词，不允许为空
@@ -26,8 +26,8 @@ public record SearchPurchaseRecordsResult(
 ) {
     /**
      * @Author: jtxw
-     * @Date: 2026/06/12 13:09:27
-     * @Description: 原始购买记录检索结果明细，保留订单原始字段供 LLM 做弱参考。
+     * @Date: 2026/11/11 19:06:04
+     * @Description: 原始购买记录检索结果明细，保留商品、金额及店铺等订单字段供页面展示与工具调用方参考。
      *
      * @param recordId       购买记录主键 ID，来自 purchase_records.id
      * @param orderTime      订单发生时间，原始存储格式为 yyyy-MM-dd HH:mm:ss
@@ -43,6 +43,7 @@ public record SearchPurchaseRecordsResult(
      * @param currency       交易币种，通常为 CNY，允许为空
      * @param normalizedName 当前记录中的归一化名称，可能来自历史规则或导入兜底，不代表已完成可信归一化
      * @param unitPrice      当前记录中的单位价格，单位为元/记录单位，允许为空
+     * @param shopName       该条购买记录的店铺名称，来自 purchase_records.shop_name；允许为空，不从其他记录推测
      */
     public record Item(
             Long recordId,
@@ -58,7 +59,32 @@ public record SearchPurchaseRecordsResult(
             Double totalAmount,
             String currency,
             String normalizedName,
-            Double unitPrice
+            Double unitPrice,
+            String shopName
     ) {
+        /**
+         * 兼容未提供店铺字段的既有调用方，店铺默认 null，不影响原有记录字段含义。
+         *
+         * @param recordId 购买记录主键 ID
+         * @param orderTime 订单时间
+         * @param platform 购买平台
+         * @param owner 订单归属人
+         * @param productName 原始商品名称
+         * @param sku 商品规格
+         * @param category 一级分类
+         * @param subCategory 二级分类
+         * @param quantity 商品数量
+         * @param unit 数量单位
+         * @param totalAmount 统计金额
+         * @param currency 交易币种
+         * @param normalizedName 归一化名称
+         * @param unitPrice 历史单价
+         */
+        public Item(Long recordId, String orderTime, String platform, String owner, String productName,
+                    String sku, String category, String subCategory, Double quantity, String unit,
+                    Double totalAmount, String currency, String normalizedName, Double unitPrice) {
+            this(recordId, orderTime, platform, owner, productName, sku, category, subCategory,
+                    quantity, unit, totalAmount, currency, normalizedName, unitPrice, null);
+        }
     }
 }
