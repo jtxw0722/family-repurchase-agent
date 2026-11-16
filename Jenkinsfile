@@ -25,6 +25,9 @@ pipeline {
 
         REMOTE_TMP_JAR = '/tmp/family-repurchase-agent.jar'
         REMOTE_APP_JAR = '/opt/family-repurchase-agent/app/family-repurchase-agent.jar'
+        REMOTE_OCR_DIR = '/opt/family-repurchase-agent/scripts'
+        REMOTE_TMP_OCR_SCRIPT = '/tmp/family-repurchase-local-ocr.py'
+        REMOTE_TMP_OCR_REQUIREMENTS = '/tmp/family-repurchase-requirements-ocr.txt'
     }
 
     stages {
@@ -155,6 +158,16 @@ pipeline {
 
                     echo ===== Upload jar to server =====
                     scp -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "%BACKEND_LOCAL_JAR%" "%DEPLOY_USER%@%DEPLOY_HOST%:%REMOTE_TMP_JAR%"
+                    if errorlevel 1 exit /b %errorlevel%
+
+                    rem 本地 OCR 脚本不包含在 JAR 中，必须与后端同步部署。
+                    scp -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "scripts\\local-ocr.py" "%DEPLOY_USER%@%DEPLOY_HOST%:%REMOTE_TMP_OCR_SCRIPT%"
+                    if errorlevel 1 exit /b %errorlevel%
+                    scp -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "requirements-ocr.txt" "%DEPLOY_USER%@%DEPLOY_HOST%:%REMOTE_TMP_OCR_REQUIREMENTS%"
+                    if errorlevel 1 exit /b %errorlevel%
+
+                    echo ===== Install local OCR files =====
+                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=accept-new "%DEPLOY_USER%@%DEPLOY_HOST%" "sudo mkdir -p %REMOTE_OCR_DIR% && sudo install -o familyapp -g familyapp -m 644 %REMOTE_TMP_OCR_SCRIPT% %REMOTE_OCR_DIR%/local-ocr.py && sudo install -o familyapp -g familyapp -m 644 %REMOTE_TMP_OCR_REQUIREMENTS% %REMOTE_OCR_DIR%/requirements-ocr.txt"
                     if errorlevel 1 exit /b %errorlevel%
 
                     echo ===== Restart remote service =====

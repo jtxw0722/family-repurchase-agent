@@ -31,8 +31,15 @@ family-agent:
       fallback-to-local-ocr: true
       max-image-bytes: 10485760
     local-ocr:
-      # 默认关闭本地 OCR；仅在用户明确配置本机命令后启用
+      # 本地 OCR 兜底依赖运行后端的主机已安装 Python 和 RapidOCR
       enabled: true
+      # 服务器建议配置虚拟环境 Python 的绝对路径，避免依赖服务进程的 PATH
+      executable: ${FAMILY_AGENT_LOCAL_OCR_EXECUTABLE:python}
+      arguments:
+        # 部署 JAR 时需同时部署此脚本；服务器建议配置脚本的绝对路径
+        - ${FAMILY_AGENT_LOCAL_OCR_SCRIPT:scripts/local-ocr.py}
+        - --image
+        - "{imagePath}"
   normalization:
     llm:
       # 是否启用 LLM 规则维护建议
