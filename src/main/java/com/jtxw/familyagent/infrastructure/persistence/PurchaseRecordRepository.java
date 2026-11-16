@@ -19,13 +19,19 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/06 00:27:12
+ * @Date: 2026/11/11 19:34:39
  * @Description: 购买记录仓储，负责订单明细的写入和价格统计查询。
  */
 @Repository
 public class PurchaseRecordRepository {
+    /** 购买记录数据库访问模板，不允许为空。 */
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * 创建购买记录仓储，不执行读写。
+     *
+     * @param jdbcTemplate 数据库访问模板，不允许为空
+     */
     public PurchaseRecordRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -111,6 +117,25 @@ public class PurchaseRecordRepository {
                 record.quantity(), record.quantity(), record.unit(), record.totalAmount(), record.totalAmount(),
                 record.currency());
         return count != null && count > 0;
+    }
+
+    /**
+     * 只读查询截图候选在同一归属人、购买日和实付金额下的历史记录，商品与订单号由领域策略进一步核对。
+     *
+     * @param owner 归属人，不允许为空，忽略首尾空格及英文大小写
+     * @param purchaseDay 购买日期，格式 yyyy-MM-dd，不允许为空
+     * @param amount 实付金额，单位元，不允许为空
+     * @return 可能匹配的历史记录，包含已排除统计的记录；不会新增、更新记录或改变统计状态
+     */
+    public List<PurchaseRecord> findOrderImageMatches(String owner, String purchaseDay, Double amount) {
+        return jdbcTemplate.query("""
+                SELECT * FROM purchase_records
+                WHERE lower(trim(COALESCE(owner, ''))) = lower(trim(?))
+                  AND substr(order_time, 1, 10) = ?
+                  AND total_amount = ?
+                  AND upper(COALESCE(currency, 'CNY')) = 'CNY'
+                ORDER BY id DESC
+                """, rowMapper(), owner, purchaseDay, amount);
     }
 
     /**

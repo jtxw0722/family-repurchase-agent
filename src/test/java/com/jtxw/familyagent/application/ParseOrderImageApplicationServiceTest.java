@@ -28,13 +28,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/24 09:21:54
+ * @Date: 2026/11/10 12:30:39
  * @Description: 订单截图解析应用服务测试，覆盖路径安全、Base64 优先、默认禁用 OCR 和只读候选返回边界
  */
 class ParseOrderImageApplicationServiceTest {
     /** JUnit 创建的隔离图片允许目录。 */
     @TempDir
     private Path allowedDirectory;
+
+    /**
+     * 件数必须经过归一化预览完整保留，并随实际识别来源一起返回给页面。
+     *
+     * @throws IOException 隔离测试图片创建失败时抛出
+     */
+    @Test
+    void shouldPreservePurchaseCountAndRecognitionSourceAfterEnrichment() throws IOException {
+        Path imageFile = Files.createFile(allowedDirectory.resolve("purchase-count.jpg"));
+        ParseOrderImageApplicationService service = createService(path -> new OcrResult(
+                "商品名称：合成测试大米\n规格：5kg*1袋\n×2\n实付：79.8元", null, List.of()));
+
+        ParseOrderImageResult result = service.parse(command(imageFile.toString(), true));
+
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LOCAL);
+        assertThat(result.candidates().get(0).purchaseQuantity()).isEqualTo(2D);
+        assertThat(result.candidates().get(0).quantity()).isEqualTo(5D);
+        assertThat(result.candidates().get(0).normalization()).isNotNull();
+    }
 
     @Test
     void shouldRejectBlankImagePath() {
@@ -186,6 +205,7 @@ class ParseOrderImageApplicationServiceTest {
 
         assertThat(result.success()).isTrue();
         assertThat(result.rawText()).contains("模型合成纸巾");
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LLM);
         assertThat(result.candidates().get(0).productName()).isEqualTo("模型合成纸巾");
         assertThat(localCalled).isFalse();
     }
@@ -206,6 +226,7 @@ class ParseOrderImageApplicationServiceTest {
 
         assertThat(result.success()).isTrue();
         assertThat(result.rawText()).contains("合成测试纸巾");
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LOCAL);
         assertThat(result.warnings())
                 .anyMatch(warning -> warning.contains("视觉模型识别失败，已回退本地 OCR"));
     }

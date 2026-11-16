@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/20 11:38:51
+ * @Date: 2026/11/10 12:30:39
  * @Description: 订单截图识别编排服务，负责按配置执行视觉模型优先、本地 OCR 兜底并合并安全警告
  */
 @Service
@@ -85,14 +85,24 @@ public class OrderImageRecognitionService {
             if (modelResult == null || modelResult.rawText() == null || modelResult.rawText().isBlank()) {
                 throw new OrderImageModelException("视觉模型返回空文本");
             }
-            return modelResult;
+            return modelResult.withRecognitionSource(OcrResult.SOURCE_LLM);
         } catch (RuntimeException exception) {
             String safeMessage = safeMessage(exception);
+            LOGGER.warn("订单截图视觉模型识别失败，modelName={}，fallbackToLocalOcr={}，reason={}",
+                    modelProperties.getModelName(), modelProperties.isFallbackToLocalOcr(), safeMessage);
             if (!modelProperties.isFallbackToLocalOcr()) {
                 throw new OrderImageModelException(
                         "视觉模型识别失败，且未启用本地 OCR 兜底：" + safeMessage);
             }
-            OcrResult fallbackResult = recognizeByLocalOcr(imageInput);
+            OcrResult fallbackResult;
+            try {
+                fallbackResult = recognizeByLocalOcr(imageInput);
+            } catch (RuntimeException localException) {
+                // 两条识别链路均失败时保留各自原因，避免本地环境异常掩盖模型失败原因。
+                // 只返回脱敏后的摘要，不附加可能包含密钥或图片内容的原始异常链。
+                throw new OrderImageModelException("视觉模型识别失败：" + safeMessage
+                        + "；本地 OCR 兜底失败：" + safeMessage(localException));
+            }
             List<String> warnings = new ArrayList<>();
             if (fallbackResult != null && fallbackResult.warnings() != null) {
                 warnings.addAll(fallbackResult.warnings());
@@ -100,7 +110,7 @@ public class OrderImageRecognitionService {
             warnings.add("视觉模型识别失败，已回退本地 OCR：" + safeMessage);
             String rawText = fallbackResult == null ? "" : fallbackResult.rawText();
             Double confidence = fallbackResult == null ? null : fallbackResult.confidence();
-            return new OcrResult(rawText, confidence, List.copyOf(warnings));
+            return new OcrResult(rawText, confidence, List.copyOf(warnings), OcrResult.SOURCE_LOCAL);
         }
     }
 
@@ -126,13 +136,22 @@ public class OrderImageRecognitionService {
      * @return 本地 OCR 识别结果
      */
     private OcrResult recognizeByLocalOcr(OrderImageInput imageInput) {
-        if (OrderImageInputType.PATH.equals(imageInput.sourceType())) {
-            return localOcrClient.recognize(imageInput.path());
-        }
         Path tempPath = null;
         try {
-            tempPath = createTemporaryImageFile(imageInput);
-            return localOcrClient.recognize(tempPath);
+            OcrResult localResult;
+            if (OrderImageInputType.PATH.equals(imageInput.sourceType())) {
+                localResult = localOcrClient.recognize(imageInput.path());
+            } else {
+                tempPath = createTemporaryImageFile(imageInput);
+                localResult = localOcrClient.recognize(tempPath);
+            }
+            // 按实际成功的链路赋值，即使客户端未标记来源，或 LLM 失败后回退，也不会显示错误来源。
+            return localResult == null ? null : localResult.withRecognitionSource(OcrResult.SOURCE_LOCAL);
+        } catch (RuntimeException exception) {
+            // 页面只展示重试建议，具体失败原因在后台记录脱敏摘要，不输出图片及原始异常链。
+            LOGGER.warn("订单截图本地 OCR 识别失败，inputType={}，reason={}",
+                    imageInput.sourceType(), safeMessage(exception));
+            throw exception;
         } finally {
             deleteTemporaryImageFile(tempPath);
         }
@@ -189,9 +208,9 @@ public class OrderImageRecognitionService {
     }
 
     /**
-     * 从模型异常生成可返回的短错误信息，并移除已配置 API Key 和图片 data URL。
+     * 从识别异常生成可返回的短错误信息，并移除已配置 API Key 和图片 data URL。
      *
-     * @param exception 视觉模型调用异常
+     * @param exception 视觉模型或本地 OCR 调用异常
      * @return 不超过固定长度且不含已知敏感配置的错误信息
      */
     private String safeMessage(RuntimeException exception) {

@@ -3,6 +3,7 @@ package com.jtxw.familyagent.application;
 import com.jtxw.familyagent.application.command.ParseOrderImageCommand;
 import com.jtxw.familyagent.domain.model.ParseOrderImageResult;
 import com.jtxw.familyagent.domain.model.ParsedPurchaseCandidate;
+import com.jtxw.familyagent.domain.policy.OrderImageDuplicatePolicy;
 import com.jtxw.familyagent.infrastructure.ocr.OcrClient;
 import com.jtxw.familyagent.infrastructure.ocr.OcrResult;
 import com.jtxw.familyagent.infrastructure.ocr.OrderImageBase64Decoder;
@@ -21,8 +22,8 @@ import java.util.*;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/19 20:38:00
- * @Description: 订单截图解析应用服务，负责本地图片安全校验、OCR 调用和候选样本解析编排，不访问购买记录仓储
+ * @Date: 2026/11/11 19:34:39
+ * @Description: 订单截图解析应用服务，负责图片安全校验、识别、归一化及只读历史查重编排，不写入购买记录
  */
 @Service
 public class ParseOrderImageApplicationService {
@@ -60,6 +61,8 @@ public class ParseOrderImageApplicationService {
      * OCR 候选归一化预览服务。
      */
     private final NormalizationPreviewService normalizationPreviewService;
+    /** 截图候选历史查重预览服务，仅执行读取，不允许为空。 */
+    private final OrderImageDuplicatePreviewService duplicatePreviewService;
     /**
      * 图片可读取的规范绝对目录列表。
      */
@@ -73,8 +76,10 @@ public class ParseOrderImageApplicationService {
      * 创建订单截图解析应用服务。
      *
      * @param recognitionService          订单截图识别编排服务
+     * @param orderImageBase64Decoder     Base64 图片解析组件
      * @param orderImageTextParser        OCR 原始文本规则解析器
      * @param normalizationPreviewService OCR 候选归一化预览服务
+     * @param duplicatePreviewService     历史购买记录只读查重预览服务
      * @param allowedDirectoriesProperty  允许读取的目录，多个目录使用逗号或分号分隔
      * @param defaultOwner                请求未提供 owner 时使用的默认订单归属人，允许为空
      */
@@ -84,11 +89,12 @@ public class ParseOrderImageApplicationService {
             OrderImageBase64Decoder orderImageBase64Decoder,
             OrderImageTextParser orderImageTextParser,
             NormalizationPreviewService normalizationPreviewService,
+            OrderImageDuplicatePreviewService duplicatePreviewService,
             @Value("${family-agent.import.allowed-dirs:${FAMILY_AGENT_IMPORT_ALLOWED_DIRS:./data/inbox}}")
             String allowedDirectoriesProperty,
             @Value("${family-agent.default-owner:jtxw}") String defaultOwner) {
         this(recognitionService, orderImageBase64Decoder, orderImageTextParser, normalizationPreviewService,
-                parseAllowedDirectories(allowedDirectoriesProperty), defaultOwner);
+                duplicatePreviewService, parseAllowedDirectories(allowedDirectoriesProperty), defaultOwner);
     }
 
     /**
@@ -175,10 +181,34 @@ public class ParseOrderImageApplicationService {
                                              NormalizationPreviewService normalizationPreviewService,
                                              List<Path> allowedDirectories,
                                              String defaultOwner) {
+        this(recognitionService, orderImageBase64Decoder, orderImageTextParser, normalizationPreviewService,
+                new OrderImageDuplicatePreviewService(null, new OrderImageDuplicatePolicy()),
+                allowedDirectories, defaultOwner);
+    }
+
+    /**
+     * 创建包含只读历史查重的完整解析服务，保持旧构造器供隔离测试使用。
+     *
+     * @param recognitionService 识别编排服务
+     * @param orderImageBase64Decoder Base64 图片解析组件
+     * @param orderImageTextParser 文本解析器
+     * @param normalizationPreviewService 归一化预览服务
+     * @param duplicatePreviewService 只读历史查重服务
+     * @param allowedDirectories 图片允许目录，不允许为空
+     * @param defaultOwner 默认归属人，允许为空
+     */
+    public ParseOrderImageApplicationService(OrderImageRecognitionService recognitionService,
+                                             OrderImageBase64Decoder orderImageBase64Decoder,
+                                             OrderImageTextParser orderImageTextParser,
+                                             NormalizationPreviewService normalizationPreviewService,
+                                             OrderImageDuplicatePreviewService duplicatePreviewService,
+                                             List<Path> allowedDirectories,
+                                             String defaultOwner) {
         this.recognitionService = recognitionService;
         this.orderImageBase64Decoder = orderImageBase64Decoder;
         this.orderImageTextParser = orderImageTextParser;
         this.normalizationPreviewService = normalizationPreviewService;
+        this.duplicatePreviewService = duplicatePreviewService;
         if (allowedDirectories == null || allowedDirectories.isEmpty()) {
             throw new IllegalArgumentException("图片允许目录不能为空");
         }
@@ -191,7 +221,7 @@ public class ParseOrderImageApplicationService {
     /**
      * 安全读取本地订单图片并解析候选样本。
      *
-     * <p>该用例只返回候选样本，不依赖 PurchaseRecordRepository，也不会调用 record_purchase。
+     * <p>该用例只返回候选样本，通过查重预览服务读取历史记录，不会调用 record_purchase。
      * 即使 dryRun=false，仍不会产生任何数据库副作用。</p>
      *
      * @param command 订单截图解析命令，imageBase64 和 imagePath 至少一个不为空
@@ -219,7 +249,8 @@ public class ParseOrderImageApplicationService {
         String effectiveOwner = hasText(command.owner()) ? command.owner().trim() : defaultOwner;
         List<ParsedPurchaseCandidate> parsedCandidates = orderImageTextParser.parse(
                 rawText, effectiveOwner, command.platform(), command.purchaseDate());
-        List<ParsedPurchaseCandidate> candidates = normalizationPreviewService.enrich(parsedCandidates);
+        List<ParsedPurchaseCandidate> candidates = duplicatePreviewService.enrich(
+                normalizationPreviewService.enrich(parsedCandidates), rawText);
 
         List<String> warnings = new ArrayList<>();
         warnings.add(READ_ONLY_WARNING);
@@ -232,7 +263,8 @@ public class ParseOrderImageApplicationService {
         String parseMode = command.parseMode() == null || command.parseMode().isBlank()
                 ? DEFAULT_PARSE_MODE : command.parseMode().trim();
         return new ParseOrderImageResult(true, resultImagePath, parseMode, candidates.size(),
-                candidates, List.copyOf(warnings), rawText);
+                candidates, List.copyOf(warnings), rawText,
+                ocrResult == null ? null : ocrResult.recognitionSource());
     }
 
     /**

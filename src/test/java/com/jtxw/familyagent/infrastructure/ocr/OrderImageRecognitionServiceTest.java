@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/24 09:21:54
+ * @Date: 2026/11/10 12:30:39
  * @Description: 订单截图识别编排服务测试，覆盖模型开关、模型优先、Base64 临时文件、本地 OCR 兜底和敏感配置脱敏
  */
 class OrderImageRecognitionServiceTest {
@@ -42,6 +42,7 @@ class OrderImageRecognitionServiceTest {
         OcrResult result = service.recognize(IMAGE_PATH);
 
         assertThat(result.rawText()).isEqualTo("local text");
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LOCAL);
         assertThat(localCalled).isTrue();
         assertThat(modelCalled).isFalse();
     }
@@ -58,6 +59,7 @@ class OrderImageRecognitionServiceTest {
         OcrResult result = service.recognize(IMAGE_PATH);
 
         assertThat(result.rawText()).isEqualTo("model text");
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LLM);
         assertThat(localCalled).isFalse();
     }
 
@@ -74,6 +76,36 @@ class OrderImageRecognitionServiceTest {
         assertThat(result.rawText()).isEqualTo("local text");
         assertThat(result.warnings()).anyMatch(warning -> warning.contains("视觉模型识别失败，已回退本地 OCR"));
         assertThat(result.warnings()).allMatch(warning -> !warning.contains(SECRET_API_KEY));
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LOCAL);
+    }
+
+    /**
+     * 验证双重失败仍返回两条链路的原因，同时脱敏密钥和图片内容并删除 Base64 临时文件。
+     */
+    @Test
+    void shouldReportBothFailuresSafelyAndDeleteTemporaryImage() {
+        AtomicReference<Path> capturedTempPath = new AtomicReference<>();
+        OrderImageRecognitionService service = new OrderImageRecognitionService(
+                path -> {
+                    capturedTempPath.set(path);
+                    assertThat(Files.exists(path)).isTrue();
+                    throw new IllegalStateException("无法启动 python：" + SECRET_API_KEY
+                            + " data:image/png;base64,AQID");
+                },
+                modelClient(input -> {
+                    throw new OrderImageModelException("连接失败：" + SECRET_API_KEY
+                            + " data:image/png;base64,BAUG");
+                }), properties(true, true));
+
+        assertThatThrownBy(() -> service.recognize(base64Input()))
+                .isInstanceOfSatisfying(OrderImageModelException.class, exception -> {
+                    assertThat(exception.getMessage())
+                            .contains("视觉模型识别失败：连接失败", "本地 OCR 兜底失败：无法启动 python")
+                            .doesNotContain(SECRET_API_KEY, "data:image", "AQID", "BAUG");
+                    assertThat(exception.getCause()).isNull();
+                });
+        assertThat(capturedTempPath.get()).isNotNull();
+        assertThat(Files.exists(capturedTempPath.get())).isFalse();
     }
 
     @Test
@@ -126,6 +158,7 @@ class OrderImageRecognitionServiceTest {
         assertThat(result.rawText()).isEqualTo("model text");
         assertThat(modelCalled).isTrue();
         assertThat(localCalled).isFalse();
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LLM);
     }
 
     @Test
@@ -146,6 +179,7 @@ class OrderImageRecognitionServiceTest {
         assertThat(result.rawText()).isEqualTo("local text");
         assertThat(capturedTempPath.get()).isNotNull();
         assertThat(Files.exists(capturedTempPath.get())).isFalse();
+        assertThat(result.recognitionSource()).isEqualTo(OcrResult.SOURCE_LOCAL);
     }
 
     @Test

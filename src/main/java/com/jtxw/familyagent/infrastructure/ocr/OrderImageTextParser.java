@@ -3,6 +3,7 @@ package com.jtxw.familyagent.infrastructure.ocr;
 import com.jtxw.familyagent.domain.model.ParsedPurchaseCandidate;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -11,7 +12,7 @@ import java.util.regex.Pattern;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/19 19:26:00
+ * @Date: 2026/11/14 22:31:14
  * @Description: 订单截图 OCR 文本规则解析器，使用可解释启发式规则生成待确认购买候选样本
  */
 @Component
@@ -21,9 +22,9 @@ public class OrderImageTextParser {
      */
     private static final int MAX_SOURCE_TEXT_LENGTH = 500;
     /**
-     * 候选样本固定说明。
+     * 无状态赠品分离器，避免赠品区块污染主商品的字段和价格判断。
      */
-    private static final String CANDIDATE_NOTE = "OCR 识别候选，需用户确认后再入库";
+    private final OrderImageGiftParser giftParser = new OrderImageGiftParser();
     /**
      * 多商品截图不能可靠分摊订单总金额的警告。
      */
@@ -32,6 +33,19 @@ public class OrderImageTextParser {
      * SKU 包装数量与商品标题规格冲突时的人工确认警告。
      */
     private static final String PACKAGE_COUNT_CONFLICT_WARNING = "SKU 包装数量与商品标题规格数量不一致，需用户确认";
+    /** 只有营销文字而没有可见商品主体时，要求用户展开原图或补填名称。 */
+    private static final Pattern MARKETING_ONLY_TITLE_PATTERN = Pattern.compile(
+            "^[【\\[]?[^】\\]]*(?:直播间爆品|直播间专享)[】\\]]?$");
+    /** 次卡规格必须同时具有明确包装数和次数，不能凭商品图或卡名猜测总权益。 */
+    private static final Pattern CARD_SPECIFICATION_PATTERN = Pattern.compile(
+            "(\\d+(?:\\.\\d+)?)\\s*(kg|g|ml|L|片|条|抽|颗)\\s*[xX*×]\\s*(\\d+)\\s*(?:包|袋|盒|瓶|罐|支|条|卷)\\s*[xX*×]\\s*(\\d+)\\s*次", Pattern.CASE_INSENSITIVE);
+    /** 次卡名称中的明确权益次数，用于与规格乘数交叉核对。 */
+    private static final Pattern CARD_COUNT_PATTERN = Pattern.compile("(\\d+)\\s*次卡");
+    /** 只有未闭合规格括号后的包装乘数可跨越一行独立商品价。 */
+    private static final Pattern SKU_CONTINUATION_PATTERN = Pattern.compile(
+            "^[xX*×]\\s*\\d+\\s*(?:次|包|袋|盒|瓶|罐|支|条|卷)\\s*[）)\\]】].*");
+    /** 次卡含量计算后的人工核对说明，不改变购买件数。 */
+    private static final String CARD_TOTAL_WARNING = "次卡按全部权益计算，请确认实付金额对应整张卡";
     /**
      * 明确乘法规格的候选优先级。
      */
@@ -57,7 +71,7 @@ public class OrderImageTextParser {
      * 明确实付金额，优先级高于优惠、补贴价、商品划线价等页面金额。
      */
     private static final Pattern PAID_PRICE_PATTERN = Pattern.compile(
-            "实付款?\\s*[：:]?\\s*[¥￥]?\\s*(\\d+(?:\\.\\d{1,2})?)");
+            "实付款?(?:\\s*[（(][^）)\\r\\n]*[）)])?\\s*[：:]?\\s*[¥￥]?\\s*(\\d+(?:\\.\\d{1,2})?)");
     /**
      * 没有业务标签的低优先级金额。
      */
@@ -174,13 +188,18 @@ public class OrderImageTextParser {
                     + "总价|颜色分类|套餐|型号|SKU|更多|查看物流|追加评价|再次拼单|复制|仓库已发货|自动确认|"
                     + "直播中|好评率|退款|大促价保|破损包退|上门换新|加入购物车|申请售后|商品总价|店铺优惠|"
                     + "平台及达人优惠|红包已抵|订单信息|收起|交易快照|支付宝交易号|催促配送|确认收货|立即评价|"
-                    + "客服|退货包运费|7天无理由退货");
+                    + "客服|退货包运费|7天无理由退货|闲鱼转卖|优惠解析|一键解析优惠|^直播$|^预售$|^赠品$|^\\d+件$");
     /**
      * 单独出现的数量、金额和移动端状态文本，不应用作商品名称。
      */
     private static final Pattern NON_PRODUCT_VALUE_PATTERN = Pattern.compile(
             "^(?:[xX×*]\\s*\\d+|[¥￥]\\s*[-+]?\\d+(?:\\.\\d+)?|[-+]?\\d+(?:\\.\\d+)?\\s*元|"
                     + "\\d{1,2}:\\d{2}[a-zA-Z]?|\\d+[Gg]?)$");
+    /**
+     * 收货联系行中的完整或部分隐藏手机号，不得作为商品标题；不修改或输出原始联系信息。
+     */
+    private static final Pattern RECIPIENT_CONTACT_PATTERN = Pattern.compile(
+            "1[3-9]\\d{9}|1[3-9]\\d{1,2}\\*{3,4}\\d{4}");
     /**
      * 商品名称候选中的明确规格乘法，通常表示 SKU 而不是商品主体标题。
      */
@@ -202,15 +221,21 @@ public class OrderImageTextParser {
     private static final Pattern PDD_PRODUCT_MARKETING_PREFIX_PATTERN = Pattern.compile(
             "^(?:百亿补贴[·\\s]*[^\\s]*\\s*品牌\\s*|百亿补贴\\s*品牌\\s*|百亿补贴\\s*|品牌好货\\s*|品牌\\s*)+");
     /**
-     * 拼多多订单详情页平台强特征。
+     * 拼多多订单详情页平台特征；百亿补贴为多平台共用文案，不能单独用于判断平台。
      */
     private static final Pattern PDD_PLATFORM_FEATURE_PATTERN = Pattern.compile(
-            "拼多多|百亿补贴|拼单|再次拼单|补贴后共优惠|退货包运费保障中");
+            "拼多多|拼单|再次拼单|补贴后共优惠");
     /**
      * 商品汇总区起始字段，SKU 无标签回退扫描到此处后停止。
      */
     private static final Pattern PRODUCT_SUMMARY_LINE_PATTERN = Pattern.compile(
             "商品总价|店铺优惠|平台(?:及达人)?优惠|红包已抵|实付款?|订单信息");
+    /**
+     * 带字段边界的优惠汇总及活动价标签，不能参与商品名称评分或拼接；保留“优惠装猫粮”等真实标题。
+     */
+    private static final Pattern ORDER_AMOUNT_SUMMARY_PATTERN = Pattern.compile(
+            "^(?:(?:[^：:¥￥\\r\\n]*后)?(?:共|已)?优惠(?:合计|总额|金额)?"
+                    + "|合计优惠|(?:该规格|合计)[^：:¥￥\\r\\n]*价)(?=\\s*(?:[：:]|[¥￥]|[-+]?\\d|$))");
     /**
      * 店铺优惠和金额汇总行，不能作为店铺名称。
      */
@@ -226,8 +251,64 @@ public class OrderImageTextParser {
      */
     private static final Pattern PRODUCT_TITLE_FRAGMENT_NOISE_PATTERN = Pattern.compile(
             "(?:#.*?\\d+秒|新配方?|大促价保|破损包退|上门换新|加入购物车|申请售后)"
-                    + "|^(?:NEW!?|EVER|CLEAN|OL|®|\\d+%)$",
+                    + "|^(?:NEW!?|EVER|CLEAN|OL|®|\\d+%|旗舰营养|超凡守护)$",
             Pattern.CASE_INSENSITIVE);
+    /**
+     * 页面省略号表示当前可见标题已经结束，后续规格不得用于猜测补全被隐藏的标题。
+     */
+    private static final Pattern TRUNCATED_TITLE_END_PATTERN = Pattern.compile("(?:\\.{2,}|…+)\\s*$");
+    /**
+     * 明确购买件数标签，兼容值与标签同行或分行；kg、ml 等计量单位不能作为件数。
+     */
+    private static final Pattern PURCHASE_COUNT_LABEL_PATTERN = Pattern.compile(
+            "^(?:已购数量|购买数量|商品数量|数量)\\s*[：:]?\\s*(\\d+)?\\s*(?:件|份|袋|包|盒|瓶|箱|套|组)?\\s*$");
+    /**
+     * 购买件数标签下一行的独立数量，不能从任意裸数字或金额推测购买件数。
+     */
+    private static final Pattern PURCHASE_COUNT_VALUE_PATTERN = Pattern.compile(
+            "^(\\d+)\\s*(?:件|份|袋|包|盒|瓶|箱|套|组)?\\s*$");
+    /**
+     * 商品价格旁的购买件数标记，只接受独立 ×N 或紧随人民币价格的 ×N，排除规格乘数。
+     */
+    private static final Pattern PURCHASE_COUNT_MARKER_PATTERN = Pattern.compile(
+            "^(?:.*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?\\s*)?[xX×]\\s*(\\d+)\\s*$");
+    /**
+     * 单商品候选最多允许一个价格旁件数标记；出现多个标记时需要人工区分商品。
+     */
+    private static final int MAX_PURCHASE_COUNT_MARKERS = 1;
+    /**
+     * 店铺名称旁的独立平台徽标，不删除真实店名中的品牌或旗舰店后缀。
+     */
+    private static final Pattern SHOP_BADGE_PATTERN = Pattern.compile(
+            "[【\\[]\\s*(?:官方旗舰店|旗舰店|11\\.11)\\s*[】\\]]");
+    /**
+     * OCR 拼接到店名尾部的双十一活动徽标，只清理尾部，保留店名内部的合法数字。
+     */
+    private static final Pattern TRAILING_SHOP_EVENT_PATTERN = Pattern.compile("\\s*11\\.11\\s*$");
+    /**
+     * 真实旗舰店名称后再次识别到的平台徽标，连续重复时仅保留真实店名的一次后缀。
+     */
+    private static final Pattern DUPLICATE_SHOP_SUFFIX_PATTERN = Pattern.compile("(旗舰店)(?:\\s*旗舰店)+$");
+    /**
+     * 口味后接分隔符或以计量值开头的描述为独立规格；不能作为商品标题主体或续行。
+     */
+    private static final Pattern SKU_DESCRIPTION_PREFIX_PATTERN = Pattern.compile(
+            "^(?:[^;；]+[;；]|\\d+(?:\\.\\d+)?\\s*(?:kg|g|ml|L)(?=$|[^a-zA-Z]))", Pattern.CASE_INSENSITIVE);
+    /** 带预售、预定标记的完整商品标题起点，优先于包装图中的品牌标志和短广告文字。 */
+    private static final Pattern PROMOTIONAL_TITLE_PREFIX_PATTERN = Pattern.compile(
+            "^[【\\[][^】\\]]*(?:预售|预定|预订)[^】\\]]*[】\\]]\\s*.+");
+    /** 明确预售标题起点的额外优先级，避免选择包装图片上的品牌标志。 */
+    private static final int PROMOTIONAL_TITLE_SCORE_BONUS = 30;
+    /** 淘宝预售徽标前短旁注的最大字符数，只在明确预售标题区块内使用。 */
+    private static final int MAX_BADGE_FRAGMENT_LENGTH = 4;
+    /** 独立品牌徽标，例如“品牌圣农”；仅用作文本证据，不作为完整标题。 */
+    private static final Pattern BRAND_BADGE_PATTERN = Pattern.compile("^品牌\\s*(\\S+)\\s*$");
+    /** 标题同时匹配前方独立品牌和紧邻商品价时的额外分数，避免短品牌徽标抢占主标题。 */
+    private static final int BRAND_AND_PRICE_TITLE_SCORE_BONUS = 40;
+    /** 价格之后重复包装图短文字的最大长度，不用于过滤普通标题续行。 */
+    private static final int MAX_REPEATED_CAPTION_LENGTH = 4;
+    /** 相邻包装小字在首字识别不同时，至少需要两个连续相同的尾字才能作为重复片段跳过。 */
+    private static final int MIN_REPEATED_CAPTION_SUFFIX_LENGTH = 2;
 
     /**
      * 将 OCR 原文解析为一个或多个候选样本。
@@ -246,26 +327,44 @@ public class OrderImageTextParser {
                                                String requestedPlatform,
                                                String requestedPurchaseDate) {
         String normalizedText = rawText == null ? "" : rawText.trim();
-        List<String> lines = normalizedText.lines().map(String::trim).filter(line -> !line.isBlank()).toList();
-        List<String> explicitProductNames = extractExplicitProductNames(lines);
+        List<String> recognizedLines = normalizedText.lines().map(String::trim).filter(line -> !line.isBlank()).toList();
+        OrderImageGiftParser.GiftSection giftSection = giftParser.extract(recognizedLines);
+        List<String> lines = giftSection.mainLines();
+        String mainText = String.join("\n", lines);
+        // 先确定平台，再应用平台专用清洗规则；请求指定的平台优先，未知平台仅使用通用规则。
+        String platform = hasText(requestedPlatform) ? normalizePlatform(requestedPlatform) : detectPlatform(mainText);
+        List<String> explicitProductNames = extractExplicitProductNames(lines, platform);
         boolean multipleProducts = explicitProductNames.size() > 1;
-        List<String> productNames = resolveProductNames(lines, explicitProductNames);
+        List<String> productNames = resolveProductNames(lines, explicitProductNames, platform);
 
-        String sku = findSku(lines, productNames.get(0));
-        Double price = multipleProducts ? null : findPrice(normalizedText);
-        Quantity quantity = findQuantity(sku, productNames, normalizedText);
-        String purchaseDate = hasText(requestedPurchaseDate) ? requestedPurchaseDate.trim() : findDate(normalizedText);
-        String platform = hasText(requestedPlatform) ? requestedPlatform.trim() : detectPlatform(normalizedText);
+        String sku = findSku(lines, productNames.get(0), platform);
+        Double price = multipleProducts ? null : findPrice(mainText);
+        Quantity quantity = findQuantity(sku, productNames, mainText);
+        // 购买件数与单件含量分开提取，多商品截图不把某一件商品的数量套用到其他商品。
+        Double purchaseQuantity = multipleProducts ? null : findPurchaseQuantity(lines);
+        String purchaseDate = hasText(requestedPurchaseDate) ? requestedPurchaseDate.trim() : findDate(mainText);
         String shopName = findShopName(lines);
         String sourceText = normalizedText.substring(0, Math.min(normalizedText.length(), MAX_SOURCE_TEXT_LENGTH));
 
         List<ParsedPurchaseCandidate> candidates = new ArrayList<>();
         for (String productName : productNames) {
+            boolean incompleteTitle = hasText(productName) && MARKETING_ONLY_TITLE_PATTERN.matcher(productName).matches();
+            // 保留原始标题作为规格定位锚点，但不能把营销标语作为可保存的商品名称。
+            if (incompleteTitle) {
+                productName = null;
+            }
             List<String> warnings = buildWarnings(productName, price, quantity, multipleProducts);
+            if (incompleteTitle) {
+                warnings.add("商品标题未完整显示，请展开截图或补充商品名称");
+            }
+            if (purchaseQuantity == null) {
+                warnings.add("未识别到明确购买数量，请核对");
+            }
             candidates.add(new ParsedPurchaseCandidate(
                     productName, sku, price, quantity.quantity(), quantity.unit(), platform, owner,
-                    purchaseDate, shopName, CANDIDATE_NOTE, sourceText,
-                    calculateConfidence(productName, price, quantity, purchaseDate, shopName), List.copyOf(warnings)));
+                    purchaseDate, shopName, ParsedPurchaseCandidate.formatOcrNote(false, giftSection.details()), sourceText,
+                    calculateConfidence(productName, price, quantity, purchaseDate, shopName),
+                    List.copyOf(warnings), null, purchaseQuantity, giftSection.details()));
         }
         return List.copyOf(candidates);
     }
@@ -274,14 +373,15 @@ public class OrderImageTextParser {
      * 从 OCR 文本行中提取带有"商品名称"标签的显式商品名。
      *
      * @param lines OCR 原文按行拆分的文本列表
+     * @param platform 已确定的平台，允许为空；仅拼多多订单清理其营销前缀
      * @return 清洗后的显式商品名称列表
      */
-    private List<String> extractExplicitProductNames(List<String> lines) {
+    private List<String> extractExplicitProductNames(List<String> lines, String platform) {
         List<String> names = new ArrayList<>();
         for (String line : lines) {
             Matcher matcher = PRODUCT_NAME_PATTERN.matcher(line);
             if (matcher.matches() && hasText(matcher.group(1))) {
-                names.add(cleanProductNameCandidate(matcher.group(1)));
+                names.add(cleanProductNameCandidate(matcher.group(1), platform));
             }
         }
         return names;
@@ -295,39 +395,86 @@ public class OrderImageTextParser {
      *
      * @param lines                OCR 文本行
      * @param explicitProductNames 明确“商品名称：xxx”解析出的商品名列表
+     * @param platform             已确定的平台，允许为空
      * @return 商品名称候选列表，无法识别时包含一个 null 元素
      */
-    private List<String> resolveProductNames(List<String> lines, List<String> explicitProductNames) {
+    private List<String> resolveProductNames(List<String> lines, List<String> explicitProductNames, String platform) {
         if (!explicitProductNames.isEmpty()) {
             return explicitProductNames;
         }
         List<String> productNames = new ArrayList<>();
-        productNames.add(findHeuristicProductName(lines));
+        productNames.add(findHeuristicProductName(lines, platform));
         return productNames;
     }
 
     /**
      * 在店铺之后、实付和规格详情之前选择商品标题，并排除横幅、物流和按钮等系统噪声。
+     *
+     * @param lines OCR 文本行
+     * @param platform 已确定的平台，允许为空
+     * @return 商品标题；没有可信候选时返回 null
      */
-    private String findHeuristicProductName(List<String> lines) {
+    private String findHeuristicProductName(List<String> lines, String platform) {
         int shopIndex = findFirstLineIndex(lines, this::isShopLine);
         int paidIndex = findFirstLineIndex(lines, line -> line.contains("实付"));
         int skuDetailIndex = findFirstLineIndex(lines, line -> SKU_LABEL_PATTERN.matcher(line).matches());
+        // 明确规格标签提供了另一份可核对的文本证据，用于识别商品标题下面的重复规格，而非推测平台布局。
+        String labeledSku = findSku(lines, null, platform);
+        int candidateEndIndex = findProductTitleCandidateEnd(lines);
 
         ProductNameCandidate bestCandidate = null;
-        for (int index = 0; index < lines.size(); index++) {
+        for (int index = 0; index < candidateEndIndex; index++) {
             String rawLine = lines.get(index);
-            String productNameCandidate = cleanProductNameCandidate(rawLine);
-            if (!isProductNameCandidate(productNameCandidate)) {
+            String productNameCandidate = cleanProductNameCandidate(rawLine, platform);
+            if (!isProductNameCandidate(productNameCandidate) || isLabeledSkuFragment(productNameCandidate, labeledSku)) {
                 continue;
             }
             int score = scoreProductNameCandidate(
                     rawLine, productNameCandidate, index, shopIndex, paidIndex, skuDetailIndex);
+            // 只有品牌、标题、相邻商品价三者相互印证时加分，不凭任意金额行提升标题候选。
+            if (index + 1 < lines.size() && isStandaloneProductPrice(lines.get(index + 1))
+                    && hasMatchingBrandBadge(lines, index, productNameCandidate)) {
+                score += BRAND_AND_PRICE_TITLE_SCORE_BONUS;
+            }
             if (bestCandidate == null || score > bestCandidate.score()) {
                 bestCandidate = new ProductNameCandidate(productNameCandidate, score, index);
             }
         }
-        return bestCandidate == null ? null : buildProductNameFromProductBlock(lines, bestCandidate);
+        return bestCandidate == null ? null : buildProductNameFromProductBlock(lines, bestCandidate, platform, labeledSku);
+    }
+
+    /**
+     * 以先出现的商品价和购买件数确定标题候选区域，避免订单下方任意新促销金额再次抢占标题。
+     *
+     * @param lines OCR 文本行
+     * @return 候选区域末尾的下一行索引；缺少价格或件数证据时保留原有整页候选范围
+     */
+    private int findProductTitleCandidateEnd(List<String> lines) {
+        boolean productPriceSeen = false;
+        for (int index = 0; index < lines.size(); index++) {
+            String line = lines.get(index);
+            productPriceSeen |= STANDALONE_PRICE_PATTERN.matcher(line).find();
+            if (productPriceSeen && PURCHASE_COUNT_MARKER_PATTERN.matcher(line).matches()) {
+                return index + 1;
+            }
+        }
+        return lines.size();
+    }
+
+    /** 根据前方独立品牌徽标判断标题是否确实以该品牌开头，不清理其他平台的品牌前缀。 */
+    private boolean hasMatchingBrandBadge(List<String> lines, int titleIndex, String title) {
+        for (int index = 0; index < titleIndex; index++) {
+            Matcher matcher = BRAND_BADGE_PATTERN.matcher(lines.get(index));
+            if (matcher.matches() && title.startsWith(matcher.group(1)) && !title.equals(matcher.group(1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 判断行是否只有商品金额，含业务说明或商品名称的金额行不能作为相邻价格锚点。 */
+    private boolean isStandaloneProductPrice(String line) {
+        return NON_PRODUCT_VALUE_PATTERN.matcher(line).matches() && STANDALONE_PRICE_PATTERN.matcher(line).find();
     }
 
     /**
@@ -335,26 +482,82 @@ public class OrderImageTextParser {
      *
      * @param lines         OCR 文本行
      * @param baseCandidate 已选出的主标题及其位置
+     * @param platform      已确定的平台，允许为空
+     * @param labeledSku    明确规格标签解析出的规格，允许为空；用于识别重复规格的起点
      * @return 拼接并清洗后的商品名称
      */
-    private String buildProductNameFromProductBlock(List<String> lines, ProductNameCandidate baseCandidate) {
+    private String buildProductNameFromProductBlock(List<String> lines, ProductNameCandidate baseCandidate,
+                                                  String platform, String labeledSku) {
         StringBuilder productNameBuilder = new StringBuilder(baseCandidate.value());
+        boolean afterStandalonePrice = false;
+        boolean repeatedCaptionSeen = false;
         for (int index = baseCandidate.lineIndex() + 1; index < lines.size(); index++) {
-            String line = lines.get(index);
-            if (PRODUCT_SUMMARY_LINE_PATTERN.matcher(line).find()
-                    || DIRECT_QUANTITY_PATTERN.matcher(line).find()) {
+            if (TRUNCATED_TITLE_END_PATTERN.matcher(productNameBuilder).find()) {
                 break;
             }
-            String titleFragment = cleanProductNameCandidate(line);
+            String line = lines.get(index);
+            if (isStandaloneProductPrice(line)) {
+                afterStandalonePrice = true;
+                repeatedCaptionSeen = false;
+                continue;
+            }
+            if (PRODUCT_SUMMARY_LINE_PATTERN.matcher(line).find()
+                    || ORDER_AMOUNT_SUMMARY_PATTERN.matcher(line).find()
+                    || SKU_PATTERN.matcher(line).matches()
+                    || SKU_LABEL_PATTERN.matcher(line).matches()
+                    || isShopLine(line)
+                    || isSkuDescription(line)
+                    || isLabeledSkuFragment(line, labeledSku)
+                    || SPECIFICATION_MULTIPLIER_PATTERN.matcher(line).find()
+                    || (line.startsWith("【") && DIRECT_QUANTITY_PATTERN.matcher(line).find())) {
+                break;
+            }
+            // 标题续行也会包含容量或重量，不能仅因出现 5kg、500ml 就把它当作独立规格。
+            String titleFragment = cleanProductNameCandidate(line, platform);
+            // 只在独立价格之后的重复小字组内去重；真实标题续行一旦出现，就恢复普通拼接。
+            if (afterStandalonePrice && isRepeatedPackagingCaption(
+                    titleFragment, productNameBuilder.toString(), repeatedCaptionSeen)) {
+                repeatedCaptionSeen = true;
+                continue;
+            }
+            // 淘宝预售标题附近可能混入包装图的小字，仅跳过紧邻独立预售徽标的短旁注。
+            // 普通平台、无明确预售起点、末尾短标题续行均继续沿用通用拼接规则。
+            if ("taobao".equals(platform)
+                    && PROMOTIONAL_TITLE_PREFIX_PATTERN.matcher(lines.get(baseCandidate.lineIndex())).matches()
+                    && titleFragment.length() <= MAX_BADGE_FRAGMENT_LENGTH
+                    && index + 1 < lines.size() && "预售".equals(lines.get(index + 1))) {
+                continue;
+            }
             if (isProductTitleContinuation(titleFragment)) {
                 productNameBuilder.append(titleFragment);
+                afterStandalonePrice = false;
+                repeatedCaptionSeen = false;
             }
         }
-        return cleanProductNameCandidate(productNameBuilder.toString());
+        return cleanProductNameCandidate(productNameBuilder.toString(), platform);
     }
 
     /**
-     * 判断文本是否是可拼接的商品标题续行，排除规格、价格、按钮、图标和营销短语。
+     * 判断紧跟价格的短文本是否重复了已选标题内容，不根据商品品牌或平台维护专属词表。
+     *
+     * @param fragment 待判断短文本
+     * @param title 已确认的标题起始内容
+     * @param repeatedCaptionSeen 相邻前一片段是否已被确认为重复包装文字
+     * @return 短文本直接重复标题，或在重复小字组内仅首字不同且尾字连续匹配时返回 true
+     */
+    private boolean isRepeatedPackagingCaption(String fragment, String title, boolean repeatedCaptionSeen) {
+        if (!hasText(fragment) || fragment.length() > MAX_REPEATED_CAPTION_LENGTH || !containsChinese(fragment)) {
+            return false;
+        }
+        if (title.contains(fragment)) {
+            return true;
+        }
+        return repeatedCaptionSeen && fragment.length() > MIN_REPEATED_CAPTION_SUFFIX_LENGTH
+                && title.contains(fragment.substring(1));
+    }
+
+    /**
+     * 判断文本是否是有效中文标题续行，排除价格、按钮、图标和营销短语；规格边界由调用方判断。
      *
      * @param line 已完成尾部价格清洗的 OCR 文本行
      * @return 包含有效中文商品描述且不属于噪声时返回 true
@@ -363,9 +566,10 @@ public class OrderImageTextParser {
         return hasText(line)
                 && containsChinese(line)
                 && !SYSTEM_LINE_PATTERN.matcher(line).find()
+                && !RECIPIENT_CONTACT_PATTERN.matcher(line).find()
+                && !ORDER_AMOUNT_SUMMARY_PATTERN.matcher(line).find()
                 && !PRODUCT_TITLE_FRAGMENT_NOISE_PATTERN.matcher(line).find()
                 && !NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()
-                && !DIRECT_QUANTITY_PATTERN.matcher(line).find()
                 && !isShopLine(line);
     }
 
@@ -392,22 +596,57 @@ public class OrderImageTextParser {
         return hasText(line)
                 && containsChinese(line)
                 && !SYSTEM_LINE_PATTERN.matcher(line).find()
+                && !RECIPIENT_CONTACT_PATTERN.matcher(line).find()
+                && !ORDER_AMOUNT_SUMMARY_PATTERN.matcher(line).find()
                 && !NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()
+                && !PRODUCT_TITLE_FRAGMENT_NOISE_PATTERN.matcher(line).find()
+                && !isSkuDescription(line)
                 && detectPlatform(line) == null
                 && !isShopLine(line);
+    }
+
+    /**
+     * 判断口味、颜色等分隔描述是否为含计量值的规格，保持标题中的年份及普通容量描述不受影响。
+     *
+     * @param line 已去除首尾空白的 OCR 文本行
+     * @return 有明确规格前缀且包含目标计量单位时返回 true
+     */
+    private boolean isSkuDescription(String line) {
+        return SKU_DESCRIPTION_PREFIX_PATTERN.matcher(line).find() && DIRECT_QUANTITY_PATTERN.matcher(line).find();
+    }
+
+    /**
+     * 判断含计量值的文本是否重复了明确已购规格的起始片段，作为标题与规格之间的边界。
+     *
+     * @param line 商品区文本行，允许为空
+     * @param labeledSku 明确规格标签的完整值，允许为空
+     * @return 片段含计量值且与已购规格起始内容一致时返回 true；不凭重量或包装单位单独判断
+     */
+    private boolean isLabeledSkuFragment(String line, String labeledSku) {
+        if (!hasText(line) || !hasText(labeledSku) || !DIRECT_QUANTITY_PATTERN.matcher(line).find()) {
+            return false;
+        }
+        // OCR 会在标题卡片和订单详情中使用不同空白分隔，同一规格比较时只忽略空白，不猜测或改写文字。
+        String compactFragment = cleanSkuCandidate(line).replaceAll("\\s+", "");
+        String compactSku = labeledSku.replaceAll("\\s+", "");
+        return !compactFragment.isEmpty() && compactSku.startsWith(compactFragment);
     }
 
     /**
      * 清除 OCR 商品标题尾部附着的价格、数量按钮和装饰符号，同时保留标题中的中英文及规格数字。
      *
      * @param line OCR 原始商品标题候选
+     * @param platform 已确定的平台，允许为空；拼多多专用前缀不得用于其他平台
      * @return 清洗后的商品标题；原始文本为空时返回空文本
      */
-    private String cleanProductNameCandidate(String line) {
+    private String cleanProductNameCandidate(String line, String platform) {
         if (!hasText(line)) {
             return line;
         }
-        String cleanedLine = PDD_PRODUCT_MARKETING_PREFIX_PATTERN.matcher(line.trim()).replaceFirst("");
+        String cleanedLine = line.trim();
+        if ("pdd".equalsIgnoreCase(platform) || "拼多多".equals(platform)) {
+            cleanedLine = PDD_PRODUCT_MARKETING_PREFIX_PATTERN.matcher(cleanedLine).replaceFirst("");
+        }
         cleanedLine = PRODUCT_NAME_TRAILING_PRICE_QUANTITY_PATTERN.matcher(cleanedLine).replaceFirst("")
                 .replaceFirst("\\s*√?\\s*[¥￥]\\s*\\d+(?:\\.\\d{1,2})?.*$", "");
         cleanedLine = PRODUCT_NAME_TRAILING_QUANTITY_PATTERN.matcher(cleanedLine).replaceFirst("")
@@ -425,6 +664,9 @@ public class OrderImageTextParser {
                                           int paidIndex,
                                           int skuDetailIndex) {
         int score = line.length();
+        if (PROMOTIONAL_TITLE_PREFIX_PATTERN.matcher(rawLine).matches()) {
+            score += PROMOTIONAL_TITLE_SCORE_BONUS;
+        }
         if (shopIndex >= 0 && lineIndex > shopIndex) {
             score += 30;
         }
@@ -456,14 +698,15 @@ public class OrderImageTextParser {
      *
      * @param lines       OCR 原文按行拆分的文本列表
      * @param productName 已识别的商品名称，用于兜底扫描范围限定
+     * @param platform    已确定的平台，允许为空
      * @return 规格文本，未找到时返回空
      */
-    private String findSku(List<String> lines, String productName) {
+    private String findSku(List<String> lines, String productName, String platform) {
         for (int index = 0; index < lines.size(); index++) {
             String line = lines.get(index);
             Matcher matcher = SKU_PATTERN.matcher(line);
             if (matcher.matches()) {
-                return cleanSkuCandidate(matcher.group(1));
+                return collectSkuLines(lines, index + 1, matcher.group(1));
             }
             if (SKU_LABEL_PATTERN.matcher(line).matches()) {
                 String nextValue = findNextValidSkuValue(lines, index + 1);
@@ -472,7 +715,7 @@ public class OrderImageTextParser {
                 }
             }
         }
-        return findSkuFromProductBlock(lines, productName);
+        return findSkuFromProductBlock(lines, productName, platform);
     }
 
     /**
@@ -480,48 +723,111 @@ public class OrderImageTextParser {
      *
      * @param lines       OCR 文本行
      * @param productName 已选出的商品名称，允许为空
+     * @param platform    已确定的平台，允许为空
      * @return 商品区块中的规格副标题；没有可信候选时返回 null
      */
-    private String findSkuFromProductBlock(List<String> lines, String productName) {
+    private String findSkuFromProductBlock(List<String> lines, String productName, String platform) {
         if (!hasText(productName)) {
             return null;
         }
         int productNameIndex = findFirstLineIndex(
-                lines, line -> productName.startsWith(cleanProductNameCandidate(line))
-                        && hasText(cleanProductNameCandidate(line)));
+                lines, line -> productName.startsWith(cleanProductNameCandidate(line, platform))
+                        && hasText(cleanProductNameCandidate(line, platform)));
         if (productNameIndex < 0) {
             return null;
         }
+        int specificationIndex = -1;
         for (int index = productNameIndex + 1; index < lines.size(); index++) {
             String line = lines.get(index);
             if (PRODUCT_SUMMARY_LINE_PATTERN.matcher(line).find()) {
-                return null;
+                break;
             }
             if (!SYSTEM_LINE_PATTERN.matcher(line).find()
                     && !NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()
                     && !isShopLine(line)
                     && DIRECT_QUANTITY_PATTERN.matcher(line).find()) {
-                return cleanSkuCandidate(line);
+                if (specificationIndex < 0 || isMoreCompleteSkuStart(lines.get(specificationIndex), line)) {
+                    specificationIndex = index;
+                }
             }
         }
-        return null;
+        return specificationIndex < 0 ? null
+                : collectSkuLines(lines, specificationIndex + 1, lines.get(specificationIndex));
     }
 
     /**
-     * 从规格标签之后读取首条有效规格文本，遇到其他业务字段时停止，避免跨区块误取值。
+     * 同一商品区内出现相同计量规格时，优先采用更长的描述行，避免先出现的缩略图小字抢占规格。
+     *
+     * @param previous 已选规格首行
+     * @param candidate 后续规格首行
+     * @return 后续行有相同明确计量值且描述更完整时为 true
+     */
+    private boolean isMoreCompleteSkuStart(String previous, String candidate) {
+        Matcher previousQuantity = DIRECT_QUANTITY_PATTERN.matcher(previous);
+        Matcher candidateQuantity = DIRECT_QUANTITY_PATTERN.matcher(candidate);
+        return previousQuantity.find() && candidateQuantity.find()
+                && previousQuantity.group().replaceAll("\\s+", "").equalsIgnoreCase(
+                        candidateQuantity.group().replaceAll("\\s+", ""))
+                && candidate.length() > previous.length();
+    }
+
+    /**
+     * 从规格标签之后读取连续规格文本，遇到其他业务字段时停止，避免跨区块误取值。
+     *
+     * @param lines OCR 文本行
+     * @param startIndex 规格标签之后的首行位置
+     * @return 合并后的规格，未识别到有效文本时返回 null
      */
     private String findNextValidSkuValue(List<String> lines, int startIndex) {
+        return collectSkuLines(lines, startIndex, "");
+    }
+
+    /**
+     * 合并被 OCR 换行拆开的规格；规则依据字段边界，不假设具体平台的行数或页面位置。
+     *
+     * @param lines OCR 文本行
+     * @param startIndex 需要继续读取的首行位置
+     * @param firstFragment 标签同一行或商品副标题中的规格片段，允许为空文本
+     * @return 完整可见规格；没有有效文本时返回 null，不补造截图未显示的内容
+     */
+    private String collectSkuLines(List<String> lines, int startIndex, String firstFragment) {
+        StringBuilder specification = new StringBuilder(cleanSkuCandidate(firstFragment));
         for (int index = startIndex; index < lines.size(); index++) {
             String line = lines.get(index);
-            if (SYSTEM_LINE_PATTERN.matcher(line).find() || NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()) {
-                return null;
+            // 原价与换行规格在视觉上并排，OCR 可能将其插入未闭合的括号中；只跨越这一种明确连续情形。
+            if (isStandaloneProductPrice(line) && index + 1 < lines.size()
+                    && hasUnclosedSkuBracket(specification.toString())
+                    && SKU_CONTINUATION_PATTERN.matcher(lines.get(index + 1)).matches()) {
+                continue;
+            }
+            if (SYSTEM_LINE_PATTERN.matcher(line).find()
+                    || ORDER_AMOUNT_SUMMARY_PATTERN.matcher(line).find()
+                    || PRODUCT_NAME_PATTERN.matcher(line).matches()
+                    || NON_PRODUCT_VALUE_PATTERN.matcher(line).matches()
+                    || PRODUCT_TITLE_FRAGMENT_NOISE_PATTERN.matcher(line).find()
+                    || isShopLine(line)) {
+                break;
             }
             String cleanedLine = cleanSkuCandidate(line);
-            if (isValidSkuValue(cleanedLine)) {
-                return cleanedLine;
+            // 首行可能只有商品描述，容量、包装数和被拆开的品牌名会出现在后续行。
+            if (containsChinese(cleanedLine) || isValidSkuValue(cleanedLine)) {
+                specification.append(cleanedLine);
             }
         }
-        return null;
+        String result = cleanSkuCandidate(specification.toString());
+        return result.isBlank() ? null : result;
+    }
+
+    /**
+     * 判断规格中是否存在尚未闭合的中英文括号，不按固定平台或固定行数合并文字。
+     *
+     * @param specification 已收集的规格
+     * @return 左括号数量多于右括号时为 true
+     */
+    private boolean hasUnclosedSkuBracket(String specification) {
+        long openings = specification.chars().filter(value -> "([（【".indexOf(value) >= 0).count();
+        long closings = specification.chars().filter(value -> ")]）】".indexOf(value) >= 0).count();
+        return openings > closings;
     }
 
     /**
@@ -575,7 +881,8 @@ public class OrderImageTextParser {
     }
 
     /**
-     * 按 SKU、商品名称、完整原文的顺序解析数量，并保守处理 SKU 包装数与标题规格冲突。
+     * 按 SKU、商品名称、完整原文的顺序解析单件含量，并保守处理 SKU 包装数与标题规格冲突。
+     * 次卡只根据完整 SKU 核对全部权益，证据不足时不回退到标题或商品图中的单次含量。
      *
      * @param sku          OCR 识别的规格文本，允许为空
      * @param productNames OCR 识别的商品名称列表
@@ -583,6 +890,9 @@ public class OrderImageTextParser {
      * @return 最高可信度的数量解析结果，冲突或无法识别时返回空结果
      */
     private Quantity findQuantity(String sku, List<String> productNames, String rawText) {
+        if (hasText(sku) && sku.contains("次卡")) {
+            return findCardQuantity(sku);
+        }
         QuantityCandidate skuCandidate = findBestQuantityCandidate(sku);
         if (skuCandidate != null) {
             return skuCandidate.toQuantity();
@@ -607,6 +917,75 @@ public class OrderImageTextParser {
         }
         QuantityCandidate rawTextCandidate = findBestQuantityCandidate(rawText);
         return rawTextCandidate == null ? Quantity.empty() : rawTextCandidate.toQuantity();
+    }
+
+    /**
+     * 根据同一规格中的卡次数与连续乘式计算整卡权益；证据缺失、冲突或多个表达式时留空待核对。
+     *
+     * @param sku 已隔离主商品的完整规格
+     * @return 明确权益总量及整卡金额核对提示，不修改购买件数
+     */
+    private Quantity findCardQuantity(String sku) {
+        Matcher cardCount = CARD_COUNT_PATTERN.matcher(sku);
+        Matcher specification = CARD_SPECIFICATION_PATTERN.matcher(sku);
+        if (!cardCount.find() || !specification.find()) {
+            return Quantity.empty("次卡权益规格不完整，请确认总含量与整卡金额");
+        }
+        BigDecimal count = new BigDecimal(cardCount.group(1));
+        BigDecimal rounds = new BigDecimal(specification.group(4));
+        BigDecimal packages = new BigDecimal(specification.group(3));
+        BigDecimal amount = new BigDecimal(specification.group(1));
+        String unit = normalizeUnit(specification.group(2));
+        if (count.signum() <= 0 || packages.signum() <= 0 || amount.signum() <= 0
+                || count.compareTo(rounds) != 0 || cardCount.find() || specification.find()) {
+            return Quantity.empty("次卡权益数量不一致，请确认总含量与整卡金额");
+        }
+        double totalQuantity = amount.multiply(packages).multiply(rounds).doubleValue();
+        return Double.isFinite(totalQuantity)
+                ? new Quantity(totalQuantity, unit, CARD_TOTAL_WARNING)
+                : Quantity.empty("次卡权益数量无效，请确认总含量");
+    }
+
+    /**
+     * 从购买件数标签和价格旁的 ×N 提取件数，不使用 5kg*1袋 等规格中的包装乘数。
+     *
+     * @param lines 已去除空行的 OCR 文本行
+     * @return 明确且一致的正整数件数；缺失、冲突或出现多个商品数量标记时返回 null
+     */
+    private Double findPurchaseQuantity(List<String> lines) {
+        List<Double> purchaseCountCandidates = new ArrayList<>();
+        int purchaseMarkerCount = 0;
+        for (int index = 0; index < lines.size(); index++) {
+            String line = lines.get(index);
+            Matcher labelMatcher = PURCHASE_COUNT_LABEL_PATTERN.matcher(line);
+            Matcher markerMatcher = PURCHASE_COUNT_MARKER_PATTERN.matcher(line);
+            String countText = null;
+            if (labelMatcher.matches()) {
+                countText = labelMatcher.group(1);
+                if (countText == null && index + 1 < lines.size()) {
+                    Matcher valueMatcher = PURCHASE_COUNT_VALUE_PATTERN.matcher(lines.get(index + 1));
+                    if (valueMatcher.matches()) {
+                        countText = valueMatcher.group(1);
+                    }
+                }
+            } else if (markerMatcher.matches()) {
+                countText = markerMatcher.group(1);
+                purchaseMarkerCount++;
+            }
+            if (countText == null) {
+                continue;
+            }
+            BigDecimal count = new BigDecimal(countText);
+            // 购买件数必须为可表示的正整数，异常识别值不能进入表单参与单价计算。
+            if (count.signum() > 0 && count.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) <= 0) {
+                double purchaseCount = count.doubleValue();
+                if (!purchaseCountCandidates.contains(purchaseCount)) {
+                    purchaseCountCandidates.add(purchaseCount);
+                }
+            }
+        }
+        return purchaseMarkerCount <= MAX_PURCHASE_COUNT_MARKERS && purchaseCountCandidates.size() == 1
+                ? purchaseCountCandidates.get(0) : null;
     }
 
     /**
@@ -807,8 +1186,7 @@ public class OrderImageTextParser {
     private String findShopName(List<String> lines) {
         for (String line : lines) {
             if (isShopLine(line)) {
-                int separatorIndex = Math.max(line.indexOf('：'), line.indexOf(':'));
-                return separatorIndex >= 0 ? line.substring(separatorIndex + 1).trim() : line;
+                return cleanShopNameCandidate(line);
             }
         }
         return null;
@@ -824,9 +1202,32 @@ public class OrderImageTextParser {
         if (isShopNoiseLine(line)) {
             return false;
         }
-        int separatorIndex = Math.max(line.indexOf('：'), line.indexOf(':'));
-        String shopNameCandidate = separatorIndex >= 0 ? line.substring(separatorIndex + 1).trim() : line.trim();
+        String shopNameCandidate = cleanShopNameCandidate(line);
+        if ("旗舰店".equals(shopNameCandidate) || "官方旗舰店".equals(shopNameCandidate)) {
+            return false;
+        }
         return SHOP_NAME_PATTERN.matcher(shopNameCandidate).matches();
+    }
+
+    /**
+     * 提取店铺名称文本，清理店铺标签、活动徽标和重复后缀，保留名称中的英文、数字和真实旗舰店后缀。
+     *
+     * @param line 店铺候选原文行，不允许为空
+     * @return 清理后的名称；仅有平台徽标时可能为空文本
+     */
+    private String cleanShopNameCandidate(String line) {
+        int separatorIndex = Math.max(line.indexOf('：'), line.indexOf(':'));
+        String shopName = separatorIndex >= 0 ? line.substring(separatorIndex + 1).trim() : line.trim();
+        shopName = SHOP_BADGE_PATTERN.matcher(shopName).replaceAll("").trim();
+        shopName = shopName.replaceFirst("\\s*[>〉]+\\s*$", "").trim();
+        shopName = TRAILING_SHOP_EVENT_PATTERN.matcher(shopName).replaceFirst("").trim();
+        shopName = shopName.replaceFirst("\\s*(?:直播中|直播)\\s*$", "").trim();
+        shopName = DUPLICATE_SHOP_SUFFIX_PATTERN.matcher(shopName).replaceFirst("$1").trim();
+        // 天猫标志可能与店名拼在同一 OCR 行；“天猫超市”本身是店名，必须保留。
+        if (shopName.startsWith("天猫") && !shopName.startsWith("天猫超市")) {
+            shopName = shopName.substring("天猫".length()).trim();
+        }
+        return shopName;
     }
 
     /**
@@ -847,7 +1248,7 @@ public class OrderImageTextParser {
             return "taobao";
         }
         if (rawText.contains("天猫")) {
-            return "tmall";
+            return "taobao";
         }
         if (rawText.contains("京东")) {
             return "jd";
@@ -865,6 +1266,17 @@ public class OrderImageTextParser {
             return "offline";
         }
         return null;
+    }
+
+    /**
+     * 统一截图请求中的平台别名，天猫归属淘宝；其余既有平台标识原样保留。
+     *
+     * @param platform 请求提供的非空平台名称或标识
+     * @return 已清理首尾空白的平台标识
+     */
+    private String normalizePlatform(String platform) {
+        String value = platform.trim();
+        return "tmall".equalsIgnoreCase(value) || "天猫".equals(value) || "淘宝".equals(value) ? "taobao" : value;
     }
 
     /**

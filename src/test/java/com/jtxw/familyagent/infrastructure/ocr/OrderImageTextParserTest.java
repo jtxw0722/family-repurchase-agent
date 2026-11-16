@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.stream.Stream;
@@ -13,12 +14,299 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/24 09:44:00
- * @Description: 订单截图 OCR 文本规则解析器测试，覆盖单商品核心字段、拼多多详情页优先级和缺失信息警告
+ * @Date: 2026/11/11 13:26:35
+ * @Description: 订单截图 OCR 文本规则解析器测试，覆盖跨平台字段边界、换行标题与规格和缺失信息警告
  */
 class OrderImageTextParserTest {
     /** 待测试的无状态 OCR 文本规则解析器。 */
     private final OrderImageTextParser parser = new OrderImageTextParser();
+
+    /** 使用实际 OCR 商品区块及合成收货信息，避免联系行、优惠汇总和重复规格抢占主商品标题。 */
+    @Test
+    void shouldReadBoostCatFoodTitleInsteadOfDiscountSummary() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                13:19
+                !!! 5GA (16
+                交易成功
+                合成收货人138****0000测试路1234号后
+                已签收
+                测试管理处2221
+                高高的
+                高高的宠物小铺五星好店！
+                定物小铺
+                格吾安boost乳铁蛋白鲜肉1.5kg全价
+                ￥69.9
+                冻干猫粮小圆盾烘焙鸡肉配方
+                X1
+                乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不
+                退不换
+                退货包运费保障中
+                分享商品
+                联系商家
+                申请退款
+                大促后共优惠￥6.99
+                实付：￥62.91(免运费)
+                已购规格
+                乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不退不换
+                该规格大促价
+                ￥69.9
+                已购数量
+                1
+                合计大促价
+                ￥69.9
+                平台优惠
+                -￥6.99
+                下单时间：2026-10-28 21:51:44
+                再次拼单
+                泰森
+                世界500强品牌
+                格吾安
+                格吾安
+                泰森
+                去皮鸡大脑
+                更多
+                查看物流
+                立即评价
+                """, "jtxw", null, null).get(0);
+
+        assertThat(candidate.productName()).isEqualTo("格吾安boost乳铁蛋白鲜肉1.5kg全价冻干猫粮小圆盾烘焙鸡肉配方");
+        assertThat(candidate.sku()).isEqualTo("乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不退不换");
+        assertThat(candidate.price()).isEqualTo(62.91D);
+        assertThat(candidate.purchaseQuantity()).isEqualTo(1D);
+        assertThat(candidate.quantity()).isEqualTo(1.5D);
+        assertThat(candidate.unit()).isEqualTo("kg");
+    }
+
+    /** 金额汇总与重复规格根据文本语义识别，不依赖某个平台的坐标或固定行数。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"pdd", "taobao", "tmall", "jd", ""})
+    void shouldKeepTitleSeparateFromRepeatedPurchasedSkuAcrossPlatforms(String platform) {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                格吾安boost乳铁蛋白鲜肉1.5kg全价
+                ￥69.9
+                冻干猫粮小圆盾烘焙鸡肉配方
+                ×1
+                乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不
+                退不换
+                活动后共优惠￥6.99
+                实付款：￥62.91
+                商品规格：乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不退不换
+                已购数量：1
+                """, "jtxw", platform, null).get(0);
+        assertThat(candidate.productName()).isEqualTo("格吾安boost乳铁蛋白鲜肉1.5kg全价冻干猫粮小圆盾烘焙鸡肉配方");
+        assertThat(candidate.sku()).isEqualTo("乳铁蛋白小圆盾1.5kg/袋，有防伪拆开不退不换");
+    }
+
+    /** 标题中的优惠装或每袋含量仍属于商品描述，不能仅因出现“优惠”或“kg/袋”而过滤。 */
+    @Test
+    void shouldKeepDiscountProductWordingAndPerBagContentInRealTitle() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                优惠装全价猫粮1.5kg/袋鸡肉配方
+                ×1
+                已购规格：原味1.5kg/袋
+                实付款：￥62.91
+                """, "jtxw", "jd", null).get(0);
+        assertThat(candidate.productName()).isEqualTo("优惠装全价猫粮1.5kg/袋鸡肉配方");
+    }
+
+    /**
+     * 使用已移除收货信息的实际 OCR 商品区块，验证年份、标题和已购规格跨行时不会被截断。
+     */
+    @Test
+    void shouldMergeRiceTitleAndPurchasedSpecificationAcrossLines() {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                柴火大院粮油旗舰店旗舰店
+                百亿补贴
+                品牌柴火大院【柴火大院】20
+                ￥47.9
+                26年新米五常生态香米5kg10斤五..
+                ×1
+                【官方旗舰正品保障】【五常核心产区地
+                道原粮】柴火大院五常生态香米5kg*1袋
+                7天价保>
+                7天无理由退货>
+                分享商品
+                实付：￥41.41（免运费）
+                已购规格
+                【官方旗舰正品保障】，【五常核心产区地道原粮】柴火
+                大院五常生态香米5kg*1袋
+                该规格补贴价
+                ￥47.9
+                已购数量
+                1
+                再次拼单
+                """, "jtxw", null, null).get(0);
+
+        assertThat(candidate.productName()).isEqualTo("柴火大院【柴火大院】2026年新米五常生态香米5kg10斤五..");
+        assertThat(candidate.sku()).isEqualTo("【官方旗舰正品保障】，【五常核心产区地道原粮】柴火大院五常生态香米5kg*1袋");
+        assertThat(candidate.price()).isEqualTo(41.41D);
+        assertThat(candidate.quantity()).isEqualTo(5D);
+        assertThat(candidate.purchaseQuantity()).isEqualTo(1D);
+        assertThat(candidate.unit()).isEqualTo("kg");
+        assertThat(candidate.platform()).isEqualTo("pdd");
+        assertThat(candidate.shopName()).isEqualTo("柴火大院粮油旗舰店");
+    }
+
+    /**
+     * 购买件数从价格旁标记或明确数量字段提取，单件 5kg 的规格不应替代购买件数。
+     */
+    @ParameterizedTest
+    @MethodSource("purchaseCountCases")
+    void shouldSeparatePurchaseCountFromSingleItemContent(String countText, double expectedCount) {
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "商品名称：合成测试大米\n规格：5kg*1袋\n实付：41.41元\n" + countText,
+                "jtxw", null, null).get(0);
+
+        assertThat(candidate.purchaseQuantity()).isEqualTo(expectedCount);
+        assertThat(candidate.quantity()).isEqualTo(5D);
+        assertThat(candidate.unit()).isEqualTo("kg");
+    }
+
+    /**
+     * 不同平台使用同一件数语义，不根据单个平台的固定页面位置取值。
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"pdd", "taobao", "tmall", "jd", ""})
+    void shouldReadPurchaseCountAcrossPlatforms(String platform) {
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "商品名称：合成测试大米\n规格：5kg*1袋\n￥49.9 ×2\n实付款：79.8元",
+                "jtxw", platform, null).get(0);
+
+        assertThat(candidate.purchaseQuantity()).isEqualTo(2D);
+        assertThat(candidate.quantity()).isEqualTo(5D);
+    }
+
+    /**
+     * 件数缺失、冲突、非法或包含多商品标记时保留空值，不把规格乘数或订单金额当作购买件数。
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"", "×2\n已购数量：1", "×1\n×1", "数量：0", "数量：-1", "已购数量：1.5",
+            "×9999999999999999999999999999"})
+    void shouldNotGuessMissingOrAmbiguousPurchaseCount(String countText) {
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "商品名称：合成测试大米\n规格：5kg*2袋\n实付：41.41元\n" + countText,
+                "jtxw", null, null).get(0);
+
+        assertThat(candidate.purchaseQuantity()).isNull();
+        assertThat(candidate.quantity()).isEqualTo(10D);
+        assertThat(candidate.warnings()).contains("未识别到明确购买数量，请核对");
+    }
+
+    /**
+     * 店铺名称仅移除附加徽标，保留真实店名中的旗舰店后缀和英文数字品牌。
+     */
+    @ParameterizedTest
+    @MethodSource("shopBadgeCases")
+    void shouldRemoveShopBadgesWithoutDamagingRealShopName(String shopLine, String expectedName) {
+        ParsedPurchaseCandidate candidate = parser.parse(shopLine
+                + "\n商品名称：合成测试商品\n规格：5kg\n×1\n实付：41.41元",
+                "jtxw", null, null).get(0);
+
+        assertThat(candidate.shopName()).isEqualTo(expectedName);
+    }
+
+    /**
+     * 提供价格同行、独立标记、同行标签和换行标签的购买件数样例。
+     *
+     * @return 件数文本与明确的预期件数
+     */
+    private static Stream<Arguments> purchaseCountCases() {
+        return Stream.of(Arguments.of("x1", 1D), Arguments.of("X2", 2D), Arguments.of("×3", 3D),
+                Arguments.of("￥41.41 ×2", 2D), Arguments.of("已购数量：2", 2D),
+                Arguments.of("购买数量\n2", 2D), Arguments.of("数量：2件", 2D), Arguments.of("商品数量2", 2D));
+    }
+
+    /**
+     * 提供店铺徽标同行、无空格拼接和真实名称需要保留数字的场景。
+     *
+     * @return 原始店铺行与清理后的真实名称
+     */
+    private static Stream<Arguments> shopBadgeCases() {
+        return Stream.of(
+                Arguments.of("柴火大院粮油旗舰店 【旗舰店】 【11.11】 >", "柴火大院粮油旗舰店"),
+                Arguments.of("柴火大院粮油旗舰店旗舰店11.11", "柴火大院粮油旗舰店"),
+                Arguments.of("店铺：柴火大院粮油旗舰店 旗舰店 11.11", "柴火大院粮油旗舰店"),
+                Arguments.of("天猫超市【11.11】", "天猫超市"),
+                Arguments.of("京东自营 [11.11]", "京东自营"),
+                Arguments.of("3M官方旗舰店旗舰店", "3M官方旗舰店"));
+    }
+
+    /**
+     * 通用换行规则不依赖拼多多标签或平台布局，其他平台及未知平台均保留含重量的标题续行。
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"taobao", "tmall", "jd", ""})
+    void shouldMergeWeightBearingTitleWithoutPddLayout(String platform) {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                合成粮油官方旗舰店
+                品牌精选东北新米20
+                ￥49.9
+                26年五常大米5kg家庭装
+                颜色分类：原味；
+                家庭装5kg*1袋
+                实付款：￥39.9
+                """, "jtxw", platform, null).get(0);
+
+        assertThat(candidate.productName()).isEqualTo("品牌精选东北新米2026年五常大米5kg家庭装");
+        assertThat(candidate.sku()).isEqualTo("原味；家庭装5kg*1袋");
+        assertThat(candidate.price()).isEqualTo(39.9D);
+        assertThat(candidate.quantity()).isEqualTo(5D);
+    }
+
+    /**
+     * 显式规格跨行时应在下一业务字段处停止，不能把数量和金额标签拼入规格。
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"pdd", "taobao", "jd", ""})
+    void shouldMergeLabeledSkuWithoutCrossingOrderFields(String platform) {
+        ParsedPurchaseCandidate candidate = parser.parse("""
+                商品名称：合成洗衣液
+                商品规格：清香型；
+                家庭装500ml*2瓶
+                已购数量：1
+                实付款：￥19.9
+                """, "jtxw", platform, null).get(0);
+
+        assertThat(candidate.sku()).isEqualTo("清香型；家庭装500ml*2瓶");
+        assertThat(candidate.quantity()).isEqualTo(1000D);
+        assertThat(candidate.unit()).isEqualTo("ml");
+    }
+
+    /**
+     * 拼多多专用营销前缀不得清理其他平台或未知平台商品名称中的同名文本。
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"taobao", "tmall", "jd", ""})
+    void shouldKeepOtherPlatformBrandPrefix(String platform) {
+        ParsedPurchaseCandidate candidate = parser.parse(
+                "商品名称：品牌好货 合成测试纸巾\n规格：100抽\n实付：10元", "jtxw", platform, null).get(0);
+
+        assertThat(candidate.productName()).isEqualTo("品牌好货 合成测试纸巾");
+    }
+
+    /**
+     * 百亿补贴为多平台共享营销文案，未知平台保持未知，不能据此套用拼多多清洗规则。
+     */
+    @ParameterizedTest
+    @MethodSource("sharedSubsidyPlatformCases")
+    void shouldNotInferPddFromSharedSubsidyBadge(String platformText, String expectedPlatform) {
+        ParsedPurchaseCandidate candidate = parser.parse(platformText
+                + "\n百亿补贴\n商品名称：品牌好货 合成测试纸巾\n规格：100抽\n实付：10元",
+                "jtxw", null, null).get(0);
+
+        assertThat(candidate.platform()).isEqualTo(expectedPlatform);
+        assertThat(candidate.productName()).isEqualTo("品牌好货 合成测试纸巾");
+    }
+
+    /**
+     * 提供共享补贴文案下各平台标识及无法判断平台的测试场景。
+     *
+     * @return 页面平台文字和预期平台标识，不读取真实订单数据
+     */
+    private static Stream<Arguments> sharedSubsidyPlatformCases() {
+        return Stream.of(Arguments.of("淘宝", "taobao"), Arguments.of("天猫", "taobao"),
+                Arguments.of("京东", "jd"), Arguments.of("", null));
+    }
 
     @Test
     void shouldParseSingleProductFromPddLikeText() {
@@ -197,7 +485,7 @@ class OrderImageTextParserTest {
         assertThat(candidate.price()).isEqualTo(45.82D);
         assertThat(candidate.quantity()).isEqualTo(10D);
         assertThat(candidate.unit()).isEqualTo("L");
-        assertThat(candidate.platform()).isEqualTo("tmall");
+        assertThat(candidate.platform()).isEqualTo("taobao");
         assertThat(candidate.purchaseDate()).isEqualTo("2026-06-15");
         assertThat(candidate.shopName()).isEqualTo("天猫超市");
     }
@@ -361,7 +649,7 @@ class OrderImageTextParserTest {
         assertThat(candidate.price()).isEqualTo(45.82D);
         assertThat(candidate.quantity()).isEqualTo(10D);
         assertThat(candidate.unit()).isEqualTo("L");
-        assertThat(candidate.platform()).isEqualTo("tmall");
+        assertThat(candidate.platform()).isEqualTo("taobao");
         assertThat(candidate.purchaseDate()).isEqualTo("2026-06-15");
         assertThat(candidate.shopName()).isEqualTo("天猫超市");
     }

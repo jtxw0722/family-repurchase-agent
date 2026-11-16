@@ -1,5 +1,7 @@
 package com.jtxw.familyagent.infrastructure.ocr;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +15,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/18 20:32:00
+ * @Date: 2026/11/10 12:10:15
  * @Description: 本地 OCR 客户端，通过显式配置的本机命令读取图片并将 stdout 转换为 OCR 原始文本
  */
 @Component
@@ -22,6 +24,10 @@ import java.util.List;
         havingValue = "true"
 )
 public class LocalOcrClient implements OcrClient {
+    /**
+     * OCR 进程诊断日志，不记录图片内容或标准输出中的订单原文。
+     */
+    private static final Logger LOGGER = LoggerFactory.getLogger(LocalOcrClient.class);
     /**
      * 图片真实路径参数占位符。
      */
@@ -70,6 +76,11 @@ public class LocalOcrClient implements OcrClient {
         LocalOcrProcessResult processResult = processRunner.run(
                 command, Duration.ofSeconds(timeoutSeconds), charset);
         String stderr = normalizeOutput(processResult.stderr());
+        if (!stderr.isBlank()) {
+            // 识别成功时也可能出现引擎诊断；记录在后台供排查，页面不直接展示此类技术信息。
+            LOGGER.warn("订单截图本地 OCR 进程诊断，executable={}，exitCode={}，stderr={}",
+                    command.get(0), processResult.exitCode(), truncateStderr(stderr));
+        }
         if (processResult.timedOut()) {
             throw new IllegalStateException("本地 OCR 执行超时：" + timeoutSeconds + " 秒。");
         }
@@ -86,6 +97,13 @@ public class LocalOcrClient implements OcrClient {
         return new OcrResult(rawText, null, warnings);
     }
 
+    /**
+     * 校验命令配置并替换图片路径占位符，保留独立参数以避免经过 shell 解释。
+     *
+     * @param imagePath 已完成安全校验的图片路径
+     * @return 可直接用于进程执行的命令参数列表
+     * @throws IllegalStateException 必需配置缺失或参数无效时抛出
+     */
     private List<String> buildCommand(Path imagePath) {
         String executable = properties.getExecutable();
         if (executable == null || executable.isBlank()) {
@@ -113,6 +131,12 @@ public class LocalOcrClient implements OcrClient {
         return List.copyOf(command);
     }
 
+    /**
+     * 解析进程输出字符集，未配置时使用 UTF-8。
+     *
+     * @return 有效的输出字符集
+     * @throws IllegalStateException 配置的字符集不可用时抛出
+     */
     private Charset resolveCharset() {
         String charsetName = properties.getCharset();
         try {
@@ -123,10 +147,22 @@ public class LocalOcrClient implements OcrClient {
         }
     }
 
+    /**
+     * 去除进程输出首尾空白，空输出统一为空文本。
+     *
+     * @param output 进程原始输出，允许为空
+     * @return 可用于判空的规范文本
+     */
     private String normalizeOutput(String output) {
         return output == null ? "" : output.trim();
     }
 
+    /**
+     * 限制进程诊断摘要长度，避免日志及接口被大量错误输出占满。
+     *
+     * @param stderr 已完成空值处理的错误输出
+     * @return 不超过配置常量长度的诊断摘要
+     */
     private String truncateStderr(String stderr) {
         return stderr.substring(0, Math.min(stderr.length(), MAX_STDERR_LENGTH));
     }
