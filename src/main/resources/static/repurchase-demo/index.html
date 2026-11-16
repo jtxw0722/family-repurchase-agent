@@ -93,6 +93,17 @@
             letter-spacing: -.02em;
         }
 
+        .brand-name { display: block; }
+        .brand-description {
+            margin: 4px 0 0;
+            max-width: 32em;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.6;
+            letter-spacing: normal;
+        }
+
         .brand-mark {
             width: 38px;
             height: 38px;
@@ -148,11 +159,14 @@
             padding: 22px 26px;
         }
 
+        .header-copy { display: flex; align-items: center; }
+
         .header-copy h1 {
-            margin: 0 0 10px;
-            font-size: clamp(34px, 5vw, 54px);
-            letter-spacing: -.07em;
-            line-height: 1.05;
+            margin: 0;
+            font-size: clamp(28px, 3vw, 40px);
+            letter-spacing: -.04em;
+            line-height: 1.3;
+            text-wrap: balance;
         }
 
         .header-copy p,
@@ -389,6 +403,10 @@
             margin-bottom: 16px;
         }
 
+        .image-result-metrics {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
         .metric {
             min-height: 86px;
             border: 1px solid var(--line);
@@ -450,6 +468,7 @@
         }
 
         .reason-card h4 { margin-bottom: 8px; text-align: center; }
+        .duplicate-notice { border: 2px solid var(--amber); background: var(--amber-soft); }
         .section-title { margin: 20px 0 10px; }
 
         .table-wrap {
@@ -509,9 +528,23 @@
         .keyword-tag.exclude { color: var(--amber); background: var(--amber-soft); }
 
         .library-panel { margin-bottom: 16px; }
+        .library-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .library-category-filter { width: 160px; min-height: 36px; padding: 8px 12px; font-size: 12px; }
         .library-body { min-width: 0; }
+        /* 仅加粗规则库中的归一化名称与中位数数据，保留其他列表的原有样式。 */
+        #normalization-library-list tbody td:nth-child(2),
+        #normalization-library-list tbody td:nth-child(3) { font-weight: 800; }
         .rule-row { cursor: pointer; }
         .rule-row.selected { background: rgba(100, 92, 245, .08); }
+        .online-import-warning { background: var(--amber-soft); }
+        .online-import-invalid { background: var(--red-soft); }
+        .online-import-table input { min-width: 120px; min-height: 36px; padding: 6px 8px; }
+        .online-import-table select { min-width: 120px; min-height: 36px; padding: 6px 8px; }
+        .online-import-table input[type="checkbox"] { min-width: 18px; width: 18px; }
+        .online-import-table td { vertical-align: top; }
+        .online-import-table .online-field-invalid { border: 2px solid var(--red); }
+        .online-import-scroll { max-height: min(65vh, 680px); overflow: auto; }
+        .online-import-scroll thead th { position: sticky; top: 0; z-index: 1; background: #f8f9ff; }
 
 
         .image-parser {
@@ -524,6 +557,24 @@
 
         .image-parser .actions {
             margin-top: 12px;
+        }
+
+        .image-parser.drag-over {
+            border-color: var(--primary);
+            background: var(--primary-soft);
+            box-shadow: 0 0 0 3px rgba(100, 92, 245, .12);
+        }
+
+        .image-parser:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 3px;
+        }
+
+        .image-drop-hint {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
         }
 
         .file-input {
@@ -727,6 +778,8 @@
             .result-head,
             .panel-title,
             .library-head { flex-direction: column; }
+            .library-controls { width: 100%; }
+            .library-category-filter { flex: 1; min-width: 0; }
         }
     </style>
 </head>
@@ -736,7 +789,10 @@
         <div class="brand-row">
             <div class="brand">
                 <span class="brand-mark"><img src="/repurchase-demo/favicon.png?v=1" alt="家庭复购品价格分析"></span>
-                <span>家庭复购品价格分析</span>
+                <div>
+                    <span class="brand-name">家庭复购品价格分析</span>
+                    <p class="brand-description">适合记录与对比纸巾、洗衣液、沐浴露等经常复购的家庭用品。</p>
+                </div>
             </div>
             <nav class="tabs" aria-label="功能切换">
                 <button class="tab active" data-target="compare" type="button">💰 价格比价</button>
@@ -747,15 +803,14 @@
             </nav>
         </div>
 
-        <div class="header-grid">
+        <div class="header-grid" aria-live="polite">
             <div class="header-copy">
-                <h1>查一下这次买得贵不贵</h1>
-                <p>输入商品名称、价格、SKU、购买数量和单位后，页面会根据历史购买记录给出价格基准线和购买建议。适合猫砂、纸巾、洗衣液、沐浴露、卫生巾等经常复购的家庭用品。</p>
+                <h1 id="module-description">比较当前价格与历史购买价格</h1>
             </div>
             <div class="usage-tips" aria-label="使用提示">
-                <div class="tip-line"><span class="tip-index">1</span><span>商品名越接近订单里的名称，越容易匹配到合适的历史样本。</span></div>
-                <div class="tip-line"><span class="tip-index">2</span><span>价格、SKU、购买数量和单位一起填写，页面会自动算出总量后再和历史记录比较。</span></div>
-                <div class="tip-line"><span class="tip-index">3</span><span>遇到赠品、组合装或规格变化时，建议再看一下购买记录。</span></div>
+                <div class="tip-line"><span class="tip-index">1</span><span id="module-tip-1">选择已有商品，或输入订单中的商品名称。</span></div>
+                <div class="tip-line"><span class="tip-index">2</span><span id="module-tip-2">填写总价、单件规格、购买数量和单位，系统自动计算单价。</span></div>
+                <div class="tip-line"><span class="tip-index">3</span><span id="module-tip-3">遇到赠品、组合装或规格变化时，建议结合购买记录核对。</span></div>
             </div>
         </div>
     </header>
@@ -770,6 +825,12 @@
                             <span class="tag">买前参考</span>
                         </div>
                         <form id="compare-form" class="form-grid">
+                            <label class="field-full">品类（可选）
+                                <select id="compare-category-select">
+                                    <option value="">全部品类</option>
+                                </select>
+                                <span class="field-hint">先选品类可筛选下方规则；选择规则后会自动带出所属品类。</span>
+                            </label>
                             <label class="field-full">从规则库选择（可选）
                                 <select id="compare-rule-select">
                                     <option value="">加载规则库后可选择</option>
@@ -827,13 +888,14 @@
                 <div class="panel">
                     <div class="panel-inner">
                         <div class="panel-title"><div><h2>记录样本</h2><p>把确认过的购买信息加入历史样本。</p></div></div>
-                        <div class="image-parser">
+                        <div id="record-image-drop-zone" class="image-parser" tabindex="0" role="group" aria-label="订单截图，可拖入图片或按 Ctrl+V 粘贴">
                             <div class="field-label">订单截图
                                 <label class="file-picker" for="record-image-file">
                                     <span class="file-picker-button">选择截图</span>
                                     <span id="record-image-file-name" class="file-picker-name">未选择文件</span>
                                 </label>
                                 <input id="record-image-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+                                <p class="image-drop-hint">将图片拖到此处，或复制图片后按 Ctrl+V 粘贴。</p>
                             </div>
                             <div id="record-image-preview" class="image-preview hidden">
                                 <div class="image-preview-head">
@@ -841,13 +903,13 @@
                                     <button id="open-record-image-preview" class="btn btn-secondary btn-small" type="button">查看大图</button>
                                 </div>
                                 <div class="image-preview-viewport">
-                                    <img id="record-image-preview-img" src="" alt="订单截图预览">
+                                    <img id="record-image-preview-img" src="" alt="订单截图预览" draggable="false">
                                 </div>
                             </div>
                             <div class="actions">
                                 <button id="parse-order-image-button" class="btn btn-secondary" type="button">订单截图解析</button>
                             </div>
-                            <div id="record-image-file-info" class="helper">支持 PNG、JPG、JPEG、WEBP 图片，解析结果会自动填入下面的记录表单。</div>
+                            <div id="record-image-file-info" class="helper" aria-live="polite">支持 PNG、JPG、JPEG、WEBP 图片，添加后点击“订单截图解析”。</div>
                         </div>
                         <form id="record-form" class="form-grid">
                             <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
@@ -866,13 +928,13 @@
                                 <span class="field-hint">实际写入购买记录的规格文本。</span>
                             </label>
                             <label>总价 *<input name="price" required type="number" min="0" step="0.01" value="35.22"></label>
-                            <label>SKU / 单件规格
+                            <label>每件含量
                                 <input name="skuQuantity" id="record-sku-quantity" type="number" min="0" step="any" placeholder="例如：550">
-                                <span class="field-hint">只用于计算总量，不写入规格字段。</span>
+                                <span class="field-hint">例如每袋 5kg 填 5，与购买数量相乘得到合计含量。</span>
                             </label>
                             <label>购买数量 *<input name="purchaseQuantity" id="record-purchase-quantity" required type="number" min="0" step="any" value="780"></label>
-                            <label>总量<input id="record-total-quantity" type="text" value="780" readonly></label>
-                            <label>单位 *<input name="unit" required value="ml" autocomplete="off"></label>
+                            <label>合计含量<input id="record-total-quantity" type="text" value="780" readonly></label>
+                            <label>计量单位 *<input name="unit" required value="ml" autocomplete="off"></label>
                             <label>平台<input name="platform" value="MANUAL" autocomplete="off"></label>
                             <label class="field-full">店铺<input name="shopName" placeholder="可不填" autocomplete="off"></label>
                             <label class="field-full">备注<textarea name="note" placeholder="可记录满减、券后价、组合装说明等">页面手动录入</textarea></label>
@@ -883,7 +945,7 @@
                             <button class="btn btn-secondary" data-submit="record" data-dry-run="true" type="button">先试算</button>
                             <button class="btn btn-primary" data-submit="record" data-dry-run="false" type="button">确认录入</button>
                         </div>
-                        <div class="helper">建议先试算；规格 / SKU文本会写入记录，SKU / 单件规格只用于计算总量。</div>
+                        <div class="helper">购买数量表示买了几件；合计含量用于计算每 kg、L 等计量单位的价格。建议核对后先试算。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
@@ -896,7 +958,12 @@
             <div class="panel library-panel">
                 <div class="library-head">
                     <div><h2>当前规则库</h2><p>这里展示已经启用或停用的归一化规则、关键词和历史样本数量。点击列表中的规则，可带入到“更新规则”。</p></div>
-                    <button id="refresh-normalization-library" class="btn btn-secondary btn-small" type="button">刷新列表</button>
+                    <div class="library-controls">
+                        <select id="normalization-library-category-filter" class="library-category-filter" aria-label="品类筛选">
+                            <option value="">全部品类</option>
+                        </select>
+                        <button id="refresh-normalization-library" class="btn btn-secondary btn-small" type="button">刷新列表</button>
+                    </div>
                 </div>
                 <div class="library-body">
                     <div id="normalization-library-list" class="library-state"><div><strong>等待加载</strong><span>打开规则管理后会自动加载规则库。</span></div></div>
@@ -918,6 +985,7 @@
                             </label>
                             <label id="normalization-rule-code-field">规则编码 *
                                 <input name="ruleCode" id="normalization-rule-code" value="body_wash" required autocomplete="off">
+                                <span class="field-hint" id="rule-code-generation-hint" aria-live="polite">填写归一化名称后自动生成英文编码，手动修改后保留。</span>
                                 <span class="field-hint hidden" id="rule-code-readonly-hint">更新、补齐或重算历史样本时，规则编码来自当前规则库，不允许修改。</span>
                             </label>
                             <label id="normalized-name-input-field">归一化名称
@@ -929,7 +997,13 @@
                                 </select>
                                 <span class="field-hint">选择已有规则后，下面的规则信息会自动带出。</span>
                             </label>
-                            <label id="normalization-category-field">品类<input name="category" id="normalization-category" value="个护清洁" autocomplete="off"></label>
+                            <div id="normalization-category-field" class="field-label">
+                                <label for="normalization-category-select">品类</label>
+                                <select id="normalization-category-select">
+                                    <option value="">手动输入品类</option>
+                                </select>
+                                <input name="category" id="normalization-category" placeholder="请输入品类" aria-label="手动输入品类" autocomplete="off">
+                            </div>
                             <label id="normalization-standard-unit-field">标准单位<input name="standardUnit" id="normalization-standard-unit" value="L" autocomplete="off"></label>
                             <label id="normalization-unit-family-field">单位族
                                 <select name="unitFamily" id="normalization-unit-family">
@@ -986,17 +1060,17 @@
             <div class="workspace">
                 <div class="panel">
                     <div class="panel-inner">
-                        <div class="panel-title"><div><h2>订单导入</h2><p>从服务器上的订单文件导入历史购买记录。</p></div></div>
+                        <div class="panel-title"><div><h2>订单导入</h2><p>上传订单文件，核对并勾选需要保存的记录。</p></div></div>
                         <form id="import-form" class="form-grid">
-                            <label class="field-full">文件路径 *<input name="filePath" required value="data/e2e/sample_orders.csv" autocomplete="off"><span class="field-hint">这里填写后端服务能读取到的文件路径。</span></label>
-                            <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
+                            <label class="field-full">订单文件 *<input id="online-order-file" type="file" accept=".csv,.xlsx" required><span class="field-hint">支持含商品名称、型号款式、商品数量、实付金额等列的中文订单 CSV / XLSX，最大 10 MB、5000 行。只处理交易成功订单。</span></label>
+                            <label>归属人<input name="owner" id="online-order-owner" value="jtxw" required maxlength="80" autocomplete="off"></label>
                         </form>
-                        <div class="actions"><button class="btn btn-primary" data-submit="import" type="button">开始导入</button></div>
-                        <div class="helper">导入后可以关注成功数量、重复数量和需要人工确认的数量。</div>
+                        <div class="actions"><button class="btn btn-primary" id="online-order-preview" type="button">解析并预览</button><button class="btn btn-secondary" id="online-order-clear" type="button">清空预览</button></div>
+                        <div class="helper">原文件仅在本次请求内存中解析。只保存确认勾选后的商品数据，不保存原文件、原文件名、订单号、收货信息或物流信息。预览不调用外部模型，未勾选的记录不入库。</div>
                     </div>
                 </div>
                 <div class="panel result-area">
-                    <div id="import-result" class="empty-state"><div><strong>还没有导入结果</strong><span>开始导入后，这里会显示本次批次情况。</span></div></div>
+                    <div id="import-result" class="empty-state"><div><strong>等待上传订单</strong><span>解析后可修改商品信息，再勾选需要保存的记录。</span></div></div>
                 </div>
             </div>
         </section>
@@ -1026,17 +1100,94 @@
             parseOrderImage: '/api/tools/parse-order-image',
             normalization: '/api/tools/normalization-library',
             normalizationLibrary: '/api/tools/normalization-library',
+            ruleCodeSuggestion: '/api/tools/normalization-rule-code-suggestion',
             import: '/api/tools/import-file'
         };
 
+        // 用户确认的模块说明集中维护；导航切换只更新说明文字，不清空表单或结果。
+        var MODULE_HELP_TEXT = {
+            compare: {
+                description: '比较当前价格与历史购买价格',
+                tips: [
+                    '选择已有商品，或输入订单中的商品名称。',
+                    '填写总价、单件规格、购买数量和单位，系统自动计算单价。',
+                    '遇到赠品、组合装或规格变化时，建议结合购买记录核对。'
+                ]
+            },
+            search: {
+                description: '查询历史购买记录',
+                tips: [
+                    '输入商品名称、品牌或关键词，查找相关记录。',
+                    '可按归属人和购买日期筛选，不填归属人时查询全家庭记录。',
+                    '比较不同记录的价格前，请先核对规格、数量和单位。'
+                ]
+            },
+            record: {
+                description: '记录已购买商品的价格',
+                tips: [
+                    '可以手动填写，也可以选择、拖入或粘贴订单截图进行识别。',
+                    '核对商品、规格、实付金额和购买数量，先试算，再确认录入。',
+                    '已上传的订单无需再次录入；提示“可能重复”时，请先核对历史记录。'
+                ]
+            },
+            normalization: {
+                description: '维护复购品品类，查看历史参考价格',
+                tips: [
+                    '新增规则，或点击已有规则，维护商品名称、品类和标准单位。',
+                    '用关键词匹配商品，用排除词避免误匹配。',
+                    '可按品类筛选规则；中位数为历史参考单价，请结合单位和样本数量查看。'
+                ]
+            },
+            import: {
+                description: '导入历史订单，保存购买记录',
+                tips: [
+                    '选择 CSV 或 XLSX 订单文件并填写归属人，先解析预览。',
+                    '修正高亮提示的数据，再勾选需要保存的记录；赠品和疑似重复默认不选。',
+                    '确认入库只保存勾选的业务数据，原文件及收货、物流信息不留存。'
+                ]
+            }
+        };
+
         var normalizationLibraryLoaded = false;
+        // 在线导入只保留当前页面的白名单预览；不写 localStorage、IndexedDB 或原文件缓存。
+        var onlineImportRows = [];
+        var onlineImportPage = 0;
+        var onlineImportRevision = 0;
+        var onlineImportBusy = false;
+        var ONLINE_IMPORT_PAGE_SIZE = 50;
+        var onlineImportMessage = '';
         var normalizationLibraryItems = [];
+        // 停止输入后再翻译；版本号防止较慢的旧请求覆盖新名称、手动编码或已有规则。
+        var RULE_CODE_DEBOUNCE_MS = 600;
+        var ruleCodeEditedManually = false;
+        var ruleCodeGenerationTimer = null;
+        var ruleCodeGenerationRevision = 0;
+        var ruleCodeGenerationPromise = null;
+        var generatedRuleCodeName = '';
+        var generatedRuleCodeExists = false;
+        var normalizationFormAction = 'create_rule';
         var lastParseOrderImageResult = null;
         var lastParsedPurchaseCandidates = [];
+        var activeParsedPurchaseCandidate = null;
+        var lastGeneratedOcrNote = '';
         var lastSelectedImageDataUrl = null;
         var lastSelectedImageFileName = '';
+        // 文件选择、拖拽与粘贴共用图片状态，不依赖浏览器是否允许写入 file input 的 files 属性。
+        var selectedOrderImageFile = null;
+        var selectedOrderImageReadPromise = null;
+        var orderImageSelectionRevision = 0;
+        var orderImageDragDepth = 0;
 
         function $(id) { return document.getElementById(id); }
+
+        function updateModuleHelp(moduleName) {
+            var help = MODULE_HELP_TEXT[moduleName];
+            if (!help) return;
+            $('module-description').textContent = help.description;
+            help.tips.forEach(function (tip, index) {
+                $('module-tip-' + (index + 1)).textContent = tip;
+            });
+        }
 
         function isEmptyValue(value) {
             return value === null || value === undefined || value === '';
@@ -1084,6 +1235,11 @@
 
         function formatAmount(value) { return formatDecimal(value, 2); }
         function formatUnitPrice(value) { return formatDecimal(value, 4); }
+
+        function formatLibraryMedian(value, row) {
+            if (isEmptyValue(value)) return '—';
+            return formatUnitPrice(value) + ' 元/' + row.standardUnit;
+        }
 
         function formatQuantity(value) {
             if (isEmptyValue(value)) return '—';
@@ -1340,7 +1496,7 @@
 
         function formatPlatform(value) {
             var map = {
-                manual: '手动录入', taobao: '淘宝', tmall: '天猫', jd: '京东', jingdong: '京东', pdd: '拼多多',
+                manual: '手动录入', taobao: '淘宝', tmall: '淘宝', jd: '京东', jingdong: '京东', pdd: '拼多多',
                 douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书', vip: '唯品会', suning: '苏宁', offline: '线下购买'
             };
             return map[String(value || '').trim().toLowerCase()] || display(value);
@@ -1606,38 +1762,66 @@
 
         function candidateWarnings(candidate) {
             if (!candidate) return [];
+            // 页面仅展示可操作的核对提示，接口中的模型、进程和规则诊断保留给后台排查。
             var warnings = [];
-            if (Array.isArray(candidate.warnings)) {
-                warnings = warnings.concat(candidate.warnings);
+            if (!candidate.productName) warnings.push('请补充商品名称');
+            if (!candidate.sku) warnings.push('请核对商品规格');
+            if (isEmptyValue(candidate.price)) warnings.push('请填写实付金额');
+            if (isEmptyValue(candidate.purchaseQuantity)) warnings.push('请填写购买数量');
+            if (isEmptyValue(candidate.quantity) || !candidate.unit) warnings.push('请确认每件含量和计量单位');
+            if (Array.isArray(candidate.warnings) && candidate.warnings.some(function (warning) {
+                return String(warning).indexOf('数量不一致') >= 0;
+            })) warnings.push('规格数量可能不一致，请核对');
+            if (Array.isArray(candidate.warnings) && candidate.warnings.some(function (warning) {
+                return String(warning).indexOf('商品标题未完整显示') >= 0;
+            })) warnings.push('请展开商品标题后重新截图，或手动补充商品名称');
+            if (Array.isArray(candidate.warnings) && candidate.warnings.some(function (warning) {
+                return String(warning).indexOf('次卡') >= 0;
+            })) warnings.push('次卡需核对全部权益总含量，并确认实付金额对应整张卡');
+            if (/\.{2,}|…/.test((candidate.productName || '') + (candidate.sku || ''))) {
+                warnings.push('截图中的文字未显示完整，请核对补充');
             }
-            if (candidate.normalization && candidate.normalization.warning) {
-                warnings.push(candidate.normalization.warning);
-            }
+            if (candidate.normalization && !candidate.normalization.matched) warnings.push('请手动选择商品分类');
             return warnings;
         }
 
         function fillRecordFormFromCandidate(candidate) {
             if (!candidate) return;
+            activeParsedPurchaseCandidate = candidate;
             setRecordField('owner', candidate.owner);
             setRecordField('purchaseDate', normalizeDateForInput(candidate.purchaseDate));
             setRecordField('productName', candidate.productName);
             setRecordField('normalizedName', candidateNormalizedName(candidate));
             setRecordField('sku', candidate.sku);
-            setRecordField('skuQuantity', '');
+            setRecordField('skuQuantity', candidate.quantity);
             setRecordField('price', candidate.price);
-            setRecordField('purchaseQuantity', candidate.quantity);
+            setRecordField('purchaseQuantity', candidate.purchaseQuantity);
             setRecordField('unit', candidate.unit);
             updateRecordTotalQuantity();
             syncRecordRuleSelectionByName(false);
             setRecordField('platform', candidate.platform);
             setRecordField('shopName', candidate.shopName);
 
-            var noteParts = [];
-            if (candidate.note) noteParts.push(candidate.note);
-            var warnings = candidateWarnings(candidate);
-            if (warnings.length) noteParts.push('解析提示：' + warnings.join('；'));
-            setRecordField('note', noteParts.join('\n') || '订单截图解析结果，请确认后录入。');
+            lastGeneratedOcrNote = formatParsedOrderNote(candidate, candidateNormalizedName(candidate));
+            setRecordField('note', lastGeneratedOcrNote);
             setRecordField('sourceText', candidate.sourceText || (lastParseOrderImageResult && lastParseOrderImageResult.rawText) || '');
+        }
+
+        function formatParsedOrderNote(candidate, normalizedName) {
+            var normalized = String(normalizedName || '').trim().length > 0;
+            var note = '【OCR解析】-【' + (normalized ? '已归一化' : '未归一化') + '】';
+            var giftDetails = candidate && String(candidate.giftDetails || '').trim();
+            return giftDetails ? note + '；赠品：' + giftDetails : note;
+        }
+
+        function updateParsedOrderNote() {
+            if (!activeParsedPurchaseCandidate) return;
+            var note = document.querySelector('#record-form [name="note"]');
+            var normalizedName = $('record-normalized-name');
+            // 人工改写过的备注保留原文；仅自动生成的备注随归一化状态更新。
+            if (!note || !normalizedName || note.value !== lastGeneratedOcrNote) return;
+            lastGeneratedOcrNote = formatParsedOrderNote(activeParsedPurchaseCandidate, normalizedName.value);
+            note.value = lastGeneratedOcrNote;
         }
 
         function buildParseOrderImagePayload(file, imageDataUrl) {
@@ -1659,25 +1843,33 @@
                 '</button>';
         }
 
+        function candidateSaveStatus(candidate) {
+            var status = candidate && candidate.duplicate && candidate.duplicate.status;
+            if (status === 'saved') return '已上传';
+            if (status === 'possible') return '可能重复';
+            return '待确认';
+        }
+
         function renderOrderImageCandidateTable(candidates, selectedIndex) {
             if (!candidates || !candidates.length) return '';
             var html = '<div class="table-wrap"><table><thead><tr>' +
-                '<th>操作</th><th>商品名称</th><th>归一化</th><th>规格</th><th>总价</th><th>总量</th><th>单位</th><th>平台</th><th>归属人</th><th>购买日期</th><th>店铺</th><th>置信度</th><th>提示</th>' +
+                '<th>操作</th><th>记录状态</th><th>商品名称</th><th>商品分类</th><th>规格</th><th>实付金额</th><th>购买数量</th><th>每件含量</th><th>平台</th><th>归属人</th><th>购买日期</th><th>店铺</th><th>核对提示</th>' +
                 '</tr></thead><tbody>';
             candidates.forEach(function (candidate, index) {
                 html += '<tr>' +
                     '<td>' + renderCandidateAction(index, selectedIndex) + '</td>' +
+                    '<td>' + htmlEscape(candidateSaveStatus(candidate)) + '</td>' +
                     '<td class="wrap">' + htmlEscape(candidate.productName) + '</td>' +
                     '<td>' + htmlEscape(candidateNormalizedName(candidate) || '—') + '</td>' +
                     '<td class="wrap">' + htmlEscape(candidate.sku) + '</td>' +
                     '<td>' + htmlEscape(formatAmount(candidate.price)) + '</td>' +
-                    '<td>' + htmlEscape(formatQuantity(candidate.quantity)) + '</td>' +
-                    '<td>' + htmlEscape(candidate.unit) + '</td>' +
+                    '<td>' + htmlEscape(formatQuantity(candidate.purchaseQuantity)) + '</td>' +
+                    '<td>' + htmlEscape(isEmptyValue(candidate.quantity) ? '—' :
+                        formatQuantity(candidate.quantity) + ' ' + (candidate.unit || '')) + '</td>' +
                     '<td>' + htmlEscape(formatPlatform(candidate.platform)) + '</td>' +
                     '<td>' + htmlEscape(candidate.owner) + '</td>' +
                     '<td>' + htmlEscape(candidate.purchaseDate) + '</td>' +
                     '<td class="wrap">' + htmlEscape(candidate.shopName) + '</td>' +
-                    '<td>' + htmlEscape(formatDecimal(candidate.confidence, 2)) + '</td>' +
                     '<td class="wrap">' + htmlEscape(candidateWarnings(candidate).join('；') || '—') + '</td>' +
                     '</tr>';
             });
@@ -1697,27 +1889,55 @@
             });
         }
 
+        function orderImageRecognitionSourceText(source) {
+            if (source === 'local') return '本次使用本地模型解析。';
+            if (source === 'llm') return '本次使用 LLM 模型解析。';
+            return '本次已完成截图解析。';
+        }
+
         function renderParseOrderImageResult(data, selectedIndex) {
             var candidates = data && Array.isArray(data.candidates) ? data.candidates : [];
-            var html = '<div class="result-head"><div><h3>截图解析完成</h3><p>' +
+            var selectedCandidate = candidates[selectedIndex];
+            var saveStatus = candidateSaveStatus(selectedCandidate);
+            var duplicateStatus = selectedCandidate && selectedCandidate.duplicate && selectedCandidate.duplicate.status;
+            var html = '<div class="result-head"><div><h3>已识别订单信息</h3><p>' +
                 htmlEscape(data && data.imagePath ? data.imagePath : '订单截图') +
-                '</p></div><span class="tag">候选样本</span></div>';
-            html += '<div class="metrics">';
-            html += metric('候选数量', formatQuantity(data && !isEmptyValue(data.candidateCount) ? data.candidateCount : candidates.length), '');
-            html += metric('解析模式', data && data.parseMode, '');
+                '</p></div><span class="tag">' + htmlEscape(saveStatus) + '</span></div>';
+            html += '<div class="metrics image-result-metrics">';
+            html += metric('识别商品', formatQuantity(data && !isEmptyValue(data.candidateCount) ? data.candidateCount : candidates.length), '');
             html += metric('已填入', candidates.length ? '第 ' + (selectedIndex + 1) + ' 条' : '—', '');
-            html += metric('OCR 文本长度', data && data.rawText ? formatQuantity(String(data.rawText).length) : '—', '');
+            html += metric('保存状态', saveStatus, '');
             html += '</div>';
-
-            if (data && data.warnings && data.warnings.length) {
-                html += '<div class="reason-card"><h4>解析提示</h4>' + htmlEscape(data.warnings.join('；')) + '</div>';
+            if (duplicateStatus === 'saved') {
+                html += '<div class="reason-card duplicate-notice" role="status"><h4>该订单记录已上传</h4>' +
+                    '已找到该订单下的相同商品记录，无需再次保存。</div>';
+            } else if (duplicateStatus === 'possible') {
+                html += '<div class="reason-card duplicate-notice" role="status"><h4>发现可能重复的记录</h4>' +
+                    '历史记录中有相同的购买信息，请先核对是否已经保存。</div>';
             }
+            html += '<div class="reason-card"><h4>解析提示</h4>' +
+                htmlEscape(orderImageRecognitionSourceText(data && data.recognitionSource));
 
             if (!candidates.length) {
-                html += '<div class="empty-state"><div><strong>没有解析到候选样本</strong><span>可以换一张更清晰的订单截图，或手动填写表单。</span></div></div>';
+                html += '请换一张清晰完整的截图，或手动填写。</div>';
+                html += '<div class="empty-state"><div><strong>没有识别到商品信息</strong><span>可以换一张更清晰的订单截图，或手动填写表单。</span></div></div>';
             } else {
-                html += '<div class="reason-card"><h4>已反写表单</h4>已将第 ' + htmlEscape(selectedIndex + 1) + ' 条候选样本填入左侧表单，请核对商品名称、金额、数量、单位和平台后再试算或确认录入。</div>';
-                html += '<h4 class="section-title">解析候选</h4>';
+                html += '已将第 ' + htmlEscape(selectedIndex + 1) + ' 件商品填入左侧表单。';
+                if (duplicateStatus === 'saved') html += '该商品已有购买记录，本次解析没有重复保存。';
+                else if (duplicateStatus === 'possible') html += '请核对历史记录，确认是另一笔购买后再保存。';
+                else {
+                    html += '请核对商品名称、规格、实付金额和购买数量，确认后保存。';
+                    if (!duplicateStatus || duplicateStatus === 'unavailable') html += '本次尚未完成历史记录核对。';
+                }
+                html += '</div>';
+                var reviewWarnings = candidateWarnings(selectedCandidate).filter(function (warning) {
+                    return warning.indexOf('展开商品标题') >= 0 || warning.indexOf('次卡') >= 0;
+                });
+                if (reviewWarnings.length) {
+                    html += '<div class="reason-card" role="status"><h4>请核对</h4>' +
+                        htmlEscape(reviewWarnings.join('；')) + '</div>';
+                }
+                html += '<h4 class="section-title">识别结果</h4>';
                 html += renderOrderImageCandidateTable(candidates, selectedIndex);
             }
 
@@ -1726,41 +1946,124 @@
             bindParsedCandidateButtons();
         }
 
-        async function updateRecordImageFileInfo() {
+        function updateRecordImageFileInfo() {
             var fileInput = $('record-image-file');
+            return selectRecordImageFile(fileInput && fileInput.files ? fileInput.files[0] : null);
+        }
+
+        function transferredImageFiles(transfer) {
+            if (!transfer) return [];
+            var files = Array.prototype.slice.call(transfer.files || []);
+            if (files.length) return files;
+            Array.prototype.forEach.call(transfer.items || [], function (item) {
+                if (item.kind !== 'file') return;
+                var file = item.getAsFile();
+                if (file) files.push(file);
+            });
+            return files;
+        }
+
+        function receiveRecordImageFiles(files) {
+            var info = $('record-image-file-info');
+            if (!files.length) {
+                info.textContent = '未读取到图片，请复制图片后粘贴，或点击“选择截图”。';
+                return Promise.resolve();
+            }
+            if (files.length !== 1) {
+                info.textContent = '一次只能添加一张订单截图，请重新选择。';
+                return Promise.resolve();
+            }
+            // 清除文件选择器中的旧文件，解析始终使用统一的当前图片状态。
+            $('record-image-file').value = '';
+            return selectRecordImageFile(files[0]);
+        }
+
+        function handleRecordImageDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            orderImageDragDepth = 0;
+            $('record-image-drop-zone').classList.remove('drag-over');
+            return receiveRecordImageFiles(transferredImageFiles(event.dataTransfer));
+        }
+
+        function handleRecordImagePaste(event) {
+            if (event.defaultPrevented || !$('record').classList.contains('active')) return;
+            var files = transferredImageFiles(event.clipboardData);
+            // 普通文字粘贴保持原样；只有记录样本页收到实际图片文件时才接管粘贴操作。
+            if (!files.length) return;
+            event.preventDefault();
+            return receiveRecordImageFiles(files);
+        }
+
+        function bindRecordImageTransferEvents() {
+            var imageDropZone = $('record-image-drop-zone');
+            if (imageDropZone) {
+                imageDropZone.addEventListener('dragenter', function (event) {
+                    event.preventDefault();
+                    orderImageDragDepth += 1;
+                    imageDropZone.classList.add('drag-over');
+                });
+                imageDropZone.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+                });
+                imageDropZone.addEventListener('dragleave', function (event) {
+                    event.preventDefault();
+                    orderImageDragDepth = Math.max(0, orderImageDragDepth - 1);
+                    if (!orderImageDragDepth) imageDropZone.classList.remove('drag-over');
+                });
+                imageDropZone.addEventListener('drop', handleRecordImageDrop);
+            }
+            document.addEventListener('paste', handleRecordImagePaste);
+        }
+
+        async function selectRecordImageFile(file) {
             var info = $('record-image-file-info');
             var fileName = $('record-image-file-name');
-            if (!fileInput || !info) return;
-            var file = fileInput.files && fileInput.files[0];
+            if (!info) return;
+            var revision = ++orderImageSelectionRevision;
+            selectedOrderImageFile = file || null;
+            selectedOrderImageReadPromise = null;
             lastSelectedImageDataUrl = null;
             lastSelectedImageFileName = '';
             lastParseOrderImageResult = null;
             lastParsedPurchaseCandidates = [];
+            activeParsedPurchaseCandidate = null;
+            lastGeneratedOcrNote = '';
             hideRecordImagePreview();
+            closeRecordImagePreview();
+            $('record-result').className = 'empty-state';
+            $('record-result').innerHTML = '<div><strong>等待截图解析</strong><span>添加截图后，点击“订单截图解析”查看识别结果。</span></div>';
             if (!file) {
                 if (fileName) fileName.textContent = '未选择文件';
-                info.textContent = '支持 PNG、JPG、JPEG、WEBP 图片，解析结果会自动填入下面的记录表单。';
+                info.textContent = '支持 PNG、JPG、JPEG、WEBP 图片，可选择、拖入或粘贴。';
                 return;
             }
             var sizeKb = file.size ? Math.round(file.size / 1024) : 0;
-            if (fileName) fileName.textContent = file.name;
-            lastSelectedImageFileName = file.name;
+            var displayName = file.name || '订单截图';
+            if (fileName) fileName.textContent = displayName;
+            lastSelectedImageFileName = displayName;
             if (!isSupportedImageFile(file)) {
                 info.textContent = '当前图片格式不支持，请选择 PNG、JPG、JPEG 或 WEBP 图片。';
                 return;
             }
-            info.textContent = '已选择：' + file.name + '，大小约 ' + sizeKb + ' KB。';
+            info.textContent = '已添加：' + displayName + '，大小约 ' + sizeKb + ' KB。点击“订单截图解析”继续。';
             try {
-                lastSelectedImageDataUrl = await readFileAsDataUrl(file);
-                renderRecordImagePreview(lastSelectedImageDataUrl, file.name);
+                selectedOrderImageReadPromise = readFileAsDataUrl(file);
+                var imageDataUrl = await selectedOrderImageReadPromise;
+                if (revision !== orderImageSelectionRevision) return;
+                lastSelectedImageDataUrl = imageDataUrl;
+                renderRecordImagePreview(imageDataUrl, displayName);
             } catch (error) {
+                if (revision !== orderImageSelectionRevision) return;
+                selectedOrderImageReadPromise = null;
                 info.textContent = error.message || '图片预览失败，请重新选择图片。';
             }
         }
 
         async function parseOrderImage(button) {
-            var fileInput = $('record-image-file');
-            var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+            var file = selectedOrderImageFile;
+            var revision = orderImageSelectionRevision;
             if (!file) {
                 renderError('record-result', '请选择订单截图', new Error('请先选择一张 PNG、JPG、JPEG 或 WEBP 图片。'));
                 return;
@@ -1772,12 +2075,15 @@
 
             setLoading(button, true);
             try {
-                var imageDataUrl = lastSelectedImageDataUrl || await readFileAsDataUrl(file);
+                var imageDataUrl = lastSelectedImageDataUrl || await (selectedOrderImageReadPromise || readFileAsDataUrl(file));
+                if (revision !== orderImageSelectionRevision) return;
                 lastSelectedImageDataUrl = imageDataUrl;
                 lastSelectedImageFileName = file.name;
                 renderRecordImagePreview(imageDataUrl, file.name);
                 var payload = buildParseOrderImagePayload(file, imageDataUrl);
                 var data = await postJson(endpoints.parseOrderImage, payload);
+                // 上传新截图后，旧截图的识别结果不能再回填表单或覆盖提示。
+                if (revision !== orderImageSelectionRevision) return;
                 lastParseOrderImageResult = data || {};
                 lastParsedPurchaseCandidates = Array.isArray(lastParseOrderImageResult.candidates)
                     ? lastParseOrderImageResult.candidates
@@ -1787,7 +2093,9 @@
                 }
                 renderParseOrderImageResult(lastParseOrderImageResult, 0);
             } catch (error) {
-                renderError('record-result', '订单截图解析失败', error);
+                if (revision !== orderImageSelectionRevision) return;
+                renderError('record-result', '暂时无法识别这张截图',
+                    new Error('请稍后重试，或换一张清晰完整的截图，也可以手动填写。'));
             } finally {
                 setLoading(button, false);
             }
@@ -1836,20 +2144,39 @@
             var target = $('normalization-library-list');
             if (!target) return;
             normalizationLibraryItems = Array.isArray(items) ? items : [];
+            populateNormalizationCategoryOptions();
             populateNormalizationRuleSelect();
+            populateCompareCategoryOptions();
             populateCompareRuleOptions();
             populateRecordRuleOptions();
             applyCompareRuleBinding();
             syncRecordRuleSelectionByName(false);
+            populateNormalizationLibraryCategoryFilter();
+            renderNormalizationLibraryTable();
+        }
+
+        // 筛选只影响规则列表展示，表单、比价和查重仍使用完整规则库。
+        function renderNormalizationLibraryTable() {
+            var target = $('normalization-library-list');
+            var category = $('normalization-library-category-filter').value;
+            var visibleItems = normalizationLibraryItems.filter(function (item) {
+                return !category || String(item.category || '').trim() === category;
+            });
             if (!normalizationLibraryItems.length) {
                 target.className = 'library-state';
                 target.innerHTML = '<div><strong>还没有规则记录</strong><span>可以先新增一条规则。</span></div>';
+                return;
+            }
+            if (!visibleItems.length) {
+                target.className = 'library-state';
+                target.innerHTML = '<div><strong>该品类下暂无规则</strong><span>可以选择其他品类或全部品类。</span></div>';
                 return;
             }
             target.className = '';
             target.innerHTML = renderTable([
                 { key: 'ruleCode', label: '规则编码' },
                 { key: 'normalizedName', label: '归一化名称' },
+                { key: 'medianUnitPrice', label: '中位数', formatter: formatLibraryMedian },
                 { key: 'category', label: '品类' },
                 { key: 'standardUnit', label: '标准单位' },
                 { key: 'unitFamily', label: '单位族', formatter: formatUnitFamily },
@@ -1859,12 +2186,30 @@
                 { key: 'priority', label: '优先级', formatter: formatQuantity },
                 { key: 'enabled', label: '状态', formatter: formatEnabled },
                 { key: 'source', label: '来源' }
-            ], normalizationLibraryItems).replace(/&lt;div class=&quot;keyword-tags&quot;&gt;/g, '<div class="keyword-tags">')
+            ], visibleItems).replace(/&lt;div class=&quot;keyword-tags&quot;&gt;/g, '<div class="keyword-tags">')
                 .replace(/&lt;\/div&gt;/g, '</div>')
                 .replace(/&lt;span class=&quot;keyword-tag &quot;&gt;/g, '<span class="keyword-tag ">')
                 .replace(/&lt;span class=&quot;keyword-tag exclude&quot;&gt;/g, '<span class="keyword-tag exclude">')
                 .replace(/&lt;\/span&gt;/g, '</span>');
             bindRuleRows();
+            if ($('normalization-action').value !== 'create_rule') {
+                markSelectedRule($('normalization-rule-code').value);
+            }
+        }
+
+        function populateNormalizationLibraryCategoryFilter() {
+            var select = $('normalization-library-category-filter');
+            var current = select.value;
+            var categories = normalizationLibraryCategories();
+            select.innerHTML = '<option value="">全部品类</option>';
+            categories.forEach(function (category) {
+                var option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+            // 刷新后保留仍然存在的品类；该品类已不存在时恢复全部，避免留下无效筛选。
+            select.value = categories.indexOf(current) >= 0 ? current : '';
         }
 
         async function loadNormalizationLibrary(force) {
@@ -1900,14 +2245,38 @@
             });
         }
 
-        function populateCompareRuleOptions() {
+        function populateCompareCategoryOptions() {
+            var select = $('compare-category-select');
+            var current = select.value;
+            var categories = normalizationLibraryCategories();
+            select.innerHTML = '<option value="">全部品类</option>';
+            categories.forEach(function (category) {
+                var option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+            select.value = categories.indexOf(current) >= 0 ? current : '';
+        }
+
+        // 仅筛选比价表单的可选规则，不缩小其他模块使用的完整规则库。
+        function compareRulesForCategory() {
+            var category = $('compare-category-select').value;
+            return compareCandidateRules().filter(function (rule) {
+                return !category || String(rule.category || '').trim() === category;
+            });
+        }
+
+        function populateCompareRuleOptions(matchProductName) {
             var select = $('compare-rule-select');
             if (!select) return;
 
             var currentRuleCode = select.value;
             var currentName = $('compare-product-name') ? $('compare-product-name').value : '';
-            var matchedByName = findRuleByNormalizedName(currentName);
-            var rules = compareCandidateRules();
+            var rules = compareRulesForCategory();
+            var matchedByName = matchProductName === false ? null : rules.find(function (rule) {
+                return String(rule.normalizedName || '').trim() === String(currentName || '').trim();
+            });
 
             select.innerHTML = '';
             var manualOption = document.createElement('option');
@@ -1925,7 +2294,7 @@
 
             if (matchedByName && matchedByName.ruleCode) {
                 select.value = matchedByName.ruleCode;
-            } else if (currentRuleCode && findRuleByCode(currentRuleCode)) {
+            } else if (currentRuleCode && rules.some(function (rule) { return rule.ruleCode === currentRuleCode; })) {
                 select.value = currentRuleCode;
             } else {
                 select.value = '';
@@ -1961,6 +2330,8 @@
             if (overwriteProductName && rule.normalizedName) {
                 nameInput.value = rule.normalizedName;
             }
+            $('compare-category-select').value = String(rule.category || '').trim();
+            populateCompareRuleOptions(false);
             if (select && rule.ruleCode) {
                 select.value = rule.ruleCode;
             }
@@ -1976,7 +2347,21 @@
         function applyCompareRuleBinding() {
             var nameInput = $('compare-product-name');
             if (!nameInput) return;
-            applyCompareRuleToCompareForm(findRuleByNormalizedName(nameInput.value), false);
+            var rule = compareRulesForCategory().find(function (item) {
+                return String(item.normalizedName || '').trim() === nameInput.value.trim();
+            });
+            applyCompareRuleToCompareForm(rule, false);
+        }
+
+        function handleCompareCategoryChange() {
+            // 切换品类只更新候选项；不替用户选择第一条规则，也不清空已填写的商品或价格。
+            populateCompareRuleOptions(false);
+            if (!$('compare-rule-select').value) {
+                populateCompareUnitOptions(null);
+                $('compare-unit-hint').textContent = compareRulesForCategory().length
+                    ? '请选择该品类下的规则，或手动输入商品名称和单位。'
+                    : '该品类下暂无可用规则，可以手动输入商品名称和单位。';
+            }
         }
 
         function handleCompareRuleSelectChange() {
@@ -1984,6 +2369,9 @@
             if (!select) return;
             var rule = findRuleByCode(select.value);
             if (!rule) {
+                $('compare-category-select').value = '';
+                populateCompareRuleOptions(false);
+                select.value = '';
                 populateCompareUnitOptions(null);
                 var hint = $('compare-unit-hint');
                 if (hint) hint.textContent = '可以手动输入商品名称和单位。';
@@ -2051,6 +2439,7 @@
             var rule = findRuleByCode(select.value);
             if (!rule) return;
             applyRecordRuleToForm(rule, true, true);
+            updateParsedOrderNote();
         }
 
         function syncRecordRuleSelectionByName(overwriteUnit) {
@@ -2090,12 +2479,51 @@
             }
         }
 
+        // 品类来自完整规则库，包含停用规则；去掉空值、首尾空格和重复选项。
+        function normalizationLibraryCategories() {
+            var categories = [];
+            normalizationLibraryItems.forEach(function (item) {
+                var category = String(item.category || '').trim();
+                if (category && categories.indexOf(category) < 0) categories.push(category);
+            });
+            return categories;
+        }
+
+        function populateNormalizationCategoryOptions() {
+            var select = $('normalization-category-select');
+            if (!select) return;
+            var current = select.value;
+            var categories = normalizationLibraryCategories();
+            select.innerHTML = '<option value="">手动输入品类</option>';
+            categories.forEach(function (category) {
+                var option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+            select.value = categories.indexOf(current) >= 0 ? current : '';
+            $('normalization-category').readOnly = Boolean(select.value);
+            $('normalization-category').classList.toggle('hidden', Boolean(select.value));
+        }
+
+        function handleNormalizationCategoryChange() {
+            var category = $('normalization-category-select').value;
+            var input = $('normalization-category');
+            input.readOnly = Boolean(category);
+            input.classList.toggle('hidden', Boolean(category));
+            if (category) input.value = category;
+            else input.focus();
+        }
+
         function fillRuleForm(rule) {
             if (!rule) return;
             $('normalization-rule-code').value = rule.ruleCode || '';
             $('normalized-name-input').value = rule.normalizedName || '';
             $('normalization-rule-select').value = rule.normalizedName || '';
             $('normalization-category').value = rule.category || '';
+            $('normalization-category-select').value = String(rule.category || '').trim();
+            $('normalization-category').readOnly = Boolean($('normalization-category-select').value);
+            $('normalization-category').classList.toggle('hidden', Boolean($('normalization-category-select').value));
             $('normalization-standard-unit').value = rule.standardUnit || '';
             $('normalization-unit-family').value = normalizeUnitFamily(rule.unitFamily);
             $('normalization-priority').value = !isEmptyValue(rule.priority) ? rule.priority : '';
@@ -2103,6 +2531,106 @@
             $('normalization-exclude-keywords').value = joinKeywords(rule.excludeKeywords);
             $('normalization-enabled').checked = Boolean(rule.enabled);
             markSelectedRule(rule.ruleCode);
+        }
+
+        function invalidateRuleCodeGeneration() {
+            ruleCodeGenerationRevision += 1;
+            clearTimeout(ruleCodeGenerationTimer);
+            ruleCodeGenerationTimer = null;
+            ruleCodeGenerationPromise = null;
+        }
+
+        function setRuleCodeHint(message) {
+            $('rule-code-generation-hint').textContent = message;
+        }
+
+        function validateRuleCodeInput() {
+            var input = $('normalization-rule-code');
+            input.setCustomValidity('');
+            if ($('normalization-action').value !== 'create_rule') return;
+            var code = input.value.trim().toLowerCase();
+            if (code && (findRuleByCode(code) || generatedRuleCodeExists)) {
+                input.setCustomValidity('规则编码已存在，请修改编码或选择更新规则。');
+                setRuleCodeHint('规则编码已存在，请修改编码或选择更新规则。');
+            } else {
+                setRuleCodeHint(ruleCodeEditedManually
+                    ? '已保留手动填写的编码。'
+                    : '填写归一化名称后自动生成英文编码，手动修改后保留。');
+            }
+        }
+
+        function handleNormalizedRuleNameInput() {
+            if ($('normalization-action').value !== 'create_rule' || ruleCodeEditedManually) return;
+            invalidateRuleCodeGeneration();
+            generatedRuleCodeName = '';
+            generatedRuleCodeExists = false;
+            $('normalization-rule-code').value = '';
+            validateRuleCodeInput();
+            if ($('normalized-name-input').value.trim()) {
+                ruleCodeGenerationTimer = setTimeout(ensureGeneratedRuleCode, RULE_CODE_DEBOUNCE_MS);
+            }
+        }
+
+        function handleRuleCodeInput() {
+            if ($('normalization-action').value !== 'create_rule') return;
+            invalidateRuleCodeGeneration();
+            ruleCodeEditedManually = Boolean($('normalization-rule-code').value.trim());
+            generatedRuleCodeName = '';
+            generatedRuleCodeExists = false;
+            validateRuleCodeInput();
+            // 清空手动编码表示恢复自动生成；仅点击或聚焦输入框不会停止自动生成。
+            if (!ruleCodeEditedManually) handleNormalizedRuleNameInput();
+        }
+
+        function ensureGeneratedRuleCode() {
+            clearTimeout(ruleCodeGenerationTimer);
+            ruleCodeGenerationTimer = null;
+            var name = $('normalized-name-input').value.trim();
+            if ($('normalization-action').value !== 'create_rule' || ruleCodeEditedManually || !name) {
+                validateRuleCodeInput();
+                return Promise.resolve();
+            }
+            if (generatedRuleCodeName === name && $('normalization-rule-code').value) {
+                validateRuleCodeInput();
+                return Promise.resolve();
+            }
+            if (ruleCodeGenerationPromise) return ruleCodeGenerationPromise;
+            var revision = ++ruleCodeGenerationRevision;
+            var input = $('normalization-rule-code');
+            input.setCustomValidity('正在生成英文编码，请稍候。');
+            setRuleCodeHint('正在生成英文编码…');
+            function isCurrentRequest() {
+                return revision === ruleCodeGenerationRevision && !ruleCodeEditedManually
+                    && $('normalization-action').value === 'create_rule'
+                    && $('normalized-name-input').value.trim() === name;
+            }
+            ruleCodeGenerationPromise = postJson(endpoints.ruleCodeSuggestion, { normalizedName: name })
+                .then(function (suggestion) {
+                    if (!isCurrentRequest()) return;
+                    if (!suggestion || typeof suggestion.ruleCode !== 'string'
+                        || !/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(suggestion.ruleCode)
+                        || suggestion.ruleCode.length > 96) throw new Error('无效的编码建议');
+                    input.value = suggestion.ruleCode;
+                    generatedRuleCodeName = name;
+                    generatedRuleCodeExists = suggestion.exists === true;
+                    validateRuleCodeInput();
+                    if (!input.validationMessage) setRuleCodeHint('已自动生成英文编码，可手动修改。');
+                })
+                .catch(function (error) {
+                    if (!isCurrentRequest()) return;
+                    // 失败时清空自动编码，避免误提交名称修改之前的旧编码。
+                    input.value = '';
+                    var missingEntryMessage = '离线词库未收录该完整名称或译义不明确，请手动填写英文编码。';
+                    // 只透传约定的缺词提示，不展示网络异常、内部堆栈或其他接口原文。
+                    var message = error && error.message === missingEntryMessage ? missingEntryMessage
+                        : '暂时无法生成英文编码，请手动填写或稍后重试。';
+                    input.setCustomValidity(message);
+                    setRuleCodeHint(message);
+                })
+                .finally(function () {
+                    if (revision === ruleCodeGenerationRevision) ruleCodeGenerationPromise = null;
+                });
+            return ruleCodeGenerationPromise;
         }
 
         function markSelectedRule(ruleCode) {
@@ -2168,6 +2696,14 @@
 
         function updateNormalizationFormMode() {
             var action = $('normalization-action').value;
+            invalidateRuleCodeGeneration();
+            if (action !== normalizationFormAction) {
+                ruleCodeEditedManually = false;
+                generatedRuleCodeName = '';
+                generatedRuleCodeExists = false;
+            }
+            normalizationFormAction = action;
+            validateRuleCodeInput();
             var isUpdate = action === 'update_rule';
             var isHistoryOperation = action === 'apply_rule_to_records' || action === 'recheck_rule_records';
             var useExistingRule = isUpdate || isHistoryOperation;
@@ -2177,6 +2713,7 @@
             $('normalization-rule-select').disabled = !useExistingRule;
             $('normalization-rule-code').readOnly = useExistingRule;
             $('rule-code-readonly-hint').classList.toggle('hidden', !useExistingRule);
+            $('rule-code-generation-hint').classList.toggle('hidden', useExistingRule);
             setNormalizationRuleFieldsVisible(!isHistoryOperation);
             $('apply-rule-fields').classList.toggle('hidden', !isHistoryOperation);
             updateHistoryOperationText(action);
@@ -2184,6 +2721,7 @@
             if (useExistingRule) {
                 if (!normalizationLibraryLoaded) {
                     loadNormalizationLibrary(true).then(function () {
+                        if ($('normalization-action').value !== action) return;
                         var rule = findRuleByNormalizedName($('normalization-rule-select').value) || normalizationLibraryItems[0];
                         fillRuleForm(rule);
                     });
@@ -2193,6 +2731,9 @@
                 }
             } else {
                 markSelectedRule(null);
+                $('normalization-category-select').value = '';
+                $('normalization-category').readOnly = false;
+                $('normalization-category').classList.toggle('hidden', false);
             }
         }
 
@@ -2309,7 +2850,14 @@
             html += metric('操作类型', formatNormalizationAction(action), '');
             html += metric('规则编码', data.ruleCode || values.ruleCode, '');
             html += metric('归一化名称', data.normalizedName || values.normalizedName, '');
-            html += metric('影响数量', formatQuantity(data.affectedRows), '');
+            var affectedLabel = action === 'create_rule' ? '新增规则数'
+                : action === 'update_rule' ? '更新规则数' : '处理条数';
+            html += metric(affectedLabel, formatQuantity(data.affectedRows), '');
+            if (action === 'create_rule' || action === 'update_rule') {
+                var rule = normalizationLibraryLoaded ? findRuleByCode(data.ruleCode || values.ruleCode) : null;
+                html += metric('样本数量', rule ? formatQuantity(rule.sampleCount) : '—',
+                    rule ? '当前有效历史样本，与上方规则库列表一致。' : '样本数量暂未获取，可刷新规则库查看。');
+            }
             html += metric('提示', data.warnings || data.message, '');
             html += '</div>';
             $('normalization-result').className = '';
@@ -2357,16 +2905,29 @@
 
         async function submit(moduleName, button) {
             var form = $(moduleName + '-form');
+            if (moduleName === 'normalization' && $('normalization-action').value === 'create_rule') {
+                var nameBeforeGeneration = $('normalized-name-input').value.trim();
+                setLoading(button, true);
+                try {
+                    // 输入后立即保存也必须等待当前名称的编码，不能提交旧值。
+                    await ensureGeneratedRuleCode();
+                } finally {
+                    setLoading(button, false);
+                }
+                if ($('normalization-action').value !== 'create_rule'
+                    || $('normalized-name-input').value.trim() !== nameBeforeGeneration) return;
+            }
             if (!form.reportValidity()) return;
             var payload = moduleName === 'record' ? buildRecordPayload(button.dataset.dryRun === 'true') : builders[moduleName]();
             setLoading(button, true);
             try {
                 var data = await postJson(endpoints[moduleName], payload);
-                renderers[moduleName](data || {});
                 if (moduleName === 'normalization') {
                     normalizationLibraryLoaded = false;
-                    loadNormalizationLibrary(true);
+                    // 保存的影响条数指规则操作；先读取最新规则库，再展示独立的历史样本数量。
+                    await loadNormalizationLibrary(true);
                 }
+                renderers[moduleName](data || {});
             } catch (error) {
                 var titles = { compare: '暂时无法给出价格建议', search: '暂时没有找到记录', record: '样本处理失败', normalization: '规则保存失败', import: '订单导入失败' };
                 renderError(moduleName + '-result', titles[moduleName], error);
@@ -2375,12 +2936,184 @@
             }
         }
 
+        function onlineFieldInvalid(row, key) {
+            if (key === 'amount') return isEmptyValue(row.amount) || !Number.isFinite(Number(row.amount)) || Number(row.amount) < 0;
+            if (key === 'quantity') return isEmptyValue(row.quantity) || !Number.isFinite(Number(row.quantity)) || Number(row.quantity) <= 0;
+            if (key === 'purchaseDate') return !/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?$/.test(String(row.purchaseDate || ''));
+            if (key === 'platform') return ['taobao', 'jd', 'pdd', 'douyin', 'offline', 'manual'].indexOf(row.platform) < 0;
+            if (['productName', 'normalizedName', 'unit', 'owner'].indexOf(key) >= 0) return !String(row[key] || '').trim();
+            return false;
+        }
+
+        function onlineRowInvalid(row) {
+            return ['productName', 'normalizedName', 'amount', 'quantity', 'unit', 'platform', 'purchaseDate', 'owner']
+                .some(function (key) { return onlineFieldInvalid(row, key); });
+        }
+
+        function updateOnlineImportCount() {
+            var selected = onlineImportRows.filter(function (row) { return row.selected; });
+            if ($('online-import-count')) $('online-import-count').textContent = '共 ' + onlineImportRows.length + ' 条，已勾选 ' + selected.length + ' 条';
+            if ($('online-import-save')) $('online-import-save').disabled = onlineImportBusy || !selected.length || selected.some(onlineRowInvalid);
+        }
+
+        function renderOnlineImport() {
+            var target = $('import-result');
+            target.className = '';
+            var pages = Math.max(1, Math.ceil(onlineImportRows.length / ONLINE_IMPORT_PAGE_SIZE));
+            onlineImportPage = Math.max(0, Math.min(onlineImportPage, pages - 1));
+            var html = '<h3>订单预览</h3><p id="online-import-count"></p><p role="status">' + htmlEscape(onlineImportMessage) + '</p>';
+            html += '<div class="actions"><button type="button" class="btn btn-secondary btn-small" id="online-import-normal">勾选正常记录</button>' +
+                '<button type="button" class="btn btn-secondary btn-small" id="online-import-none">全部不选</button>' +
+                '<button type="button" class="btn btn-primary" id="online-import-save">确认勾选入库</button></div>';
+            html += '<p class="helper">金额为人民币元；标准总含量已包含购买件数。红色字段请先修正；黄色为原解析核对提示，修正后可自行勾选。赠品手动保存后仍不参与价格基线。重复记录在保存前会再次检查并跳过。</p>';
+            html += '<datalist id="online-normalized-names">' + uniqueValues(normalizationLibraryItems.map(function (rule) { return rule.normalizedName; }))
+                .map(function (name) { return '<option value="' + htmlEscape(name) + '"></option>'; }).join('') + '</datalist>';
+            var columns = [['productName', '商品名称'], ['normalizedName', '归一化名称'], ['sku', '规格'], ['amount', '实付金额'],
+                ['quantity', '标准总含量'], ['unit', '单位'], ['platform', '平台'], ['purchaseDate', '购买时间'], ['owner', '归属人'], ['shopName', '店铺']];
+            html += '<div class="table-wrap online-import-scroll"><table class="online-import-table"><thead><tr><th>勾选</th><th>原行号</th><th>状态</th>' +
+                columns.map(function (column) { return '<th>' + column[1] + '</th>'; }).join('') + '<th>原解析核对提示</th></tr></thead><tbody>';
+            onlineImportRows.slice(onlineImportPage * ONLINE_IMPORT_PAGE_SIZE, (onlineImportPage + 1) * ONLINE_IMPORT_PAGE_SIZE).forEach(function (row, offset) {
+                var index = onlineImportPage * ONLINE_IMPORT_PAGE_SIZE + offset;
+                var invalid = onlineRowInvalid(row);
+                html += '<tr class="' + (invalid ? 'online-import-invalid' : row.warnings.length ? 'online-import-warning' : '') + '">' +
+                    '<td><input aria-label="勾选第 ' + row.rowNumber + ' 行" type="checkbox" data-online-check="' + index + '"' +
+                    (row.selected ? ' checked' : '') + (invalid ? ' disabled' : '') + '></td><td>' + htmlEscape(row.rowNumber) + '</td>' +
+                    '<td><span class="tag" data-online-status title="' + htmlEscape(row.warnings.join('；')) + '">' + (invalid ? '待修正' : row.warnings.length ? '需核对' : '正常') + '</span></td>';
+                columns.forEach(function (column) {
+                    var key = column[0];
+                    if (key === 'platform') {
+                        html += '<td><select aria-label="第 ' + row.rowNumber + ' 行平台" data-online-index="' + index + '" data-online-field="platform" class="' +
+                            (onlineFieldInvalid(row, key) ? 'online-field-invalid' : '') + '"><option value="">请选择平台</option>' +
+                            [['taobao','淘宝 / 天猫'],['jd','京东'],['pdd','拼多多'],['douyin','抖音'],['offline','线下'],['manual','其他']].map(function (option) {
+                                return '<option value="' + option[0] + '"' + (row.platform === option[0] ? ' selected' : '') + '>' + option[1] + '</option>';
+                            }).join('') + '</select></td>';
+                        return;
+                    }
+                    html += '<td><input aria-label="第 ' + row.rowNumber + ' 行' + column[1] + '" data-online-index="' + index + '" data-online-field="' + key +
+                        '" class="' + (onlineFieldInvalid(row, key) ? 'online-field-invalid' : '') + '"' +
+                        (key === 'amount' || key === 'quantity' ? ' type="number" step="any" min="0"' : ' type="text" maxlength="500"') +
+                        (key === 'normalizedName' ? ' list="online-normalized-names"' : '') +
+                        ' value="' + (isEmptyValue(row[key]) ? '' : htmlEscape(row[key])) + '"></td>';
+                });
+                html += '<td class="wrap">' + htmlEscape(row.warnings.join('；') || '正常') + '</td></tr>';
+            });
+            html += '</tbody></table></div><div class="actions"><button type="button" class="btn btn-secondary btn-small" id="online-import-prev">上一页</button>' +
+                '<span>第 ' + (onlineImportPage + 1) + ' / ' + pages + ' 页，每页 ' + ONLINE_IMPORT_PAGE_SIZE + ' 条</span>' +
+                '<button type="button" class="btn btn-secondary btn-small" id="online-import-next">下一页</button></div>';
+            target.innerHTML = html;
+            $('online-import-prev').disabled = onlineImportBusy || onlineImportPage === 0;
+            $('online-import-next').disabled = onlineImportBusy || onlineImportPage >= pages - 1;
+            $('online-import-prev').onclick = function () { onlineImportPage--; renderOnlineImport(); };
+            $('online-import-next').onclick = function () { onlineImportPage++; renderOnlineImport(); };
+            $('online-import-normal').disabled = onlineImportBusy;
+            $('online-import-none').disabled = onlineImportBusy;
+            $('online-import-normal').onclick = function () {
+                onlineImportRows.forEach(function (row) { row.selected = !row.warnings.length && !onlineRowInvalid(row); });
+                renderOnlineImport();
+            };
+            $('online-import-none').onclick = function () { onlineImportRows.forEach(function (row) { row.selected = false; }); renderOnlineImport(); };
+            $('online-import-save').onclick = saveOnlineImport;
+            Array.prototype.forEach.call(target.querySelectorAll('[data-online-check]'), function (input) {
+                input.disabled = onlineImportBusy || input.disabled;
+                input.onchange = function () { onlineImportRows[Number(input.dataset.onlineCheck)].selected = input.checked; updateOnlineImportCount(); };
+            });
+            Array.prototype.forEach.call(target.querySelectorAll('[data-online-field]'), function (input) {
+                input.disabled = onlineImportBusy;
+                input.oninput = function () {
+                    var row = onlineImportRows[Number(input.dataset.onlineIndex)];
+                    var key = input.dataset.onlineField;
+                    row[key] = key === 'amount' || key === 'quantity' ? input.value === '' ? null : Number(input.value) : input.value;
+                    input.classList.toggle('online-field-invalid', onlineFieldInvalid(row, key));
+                    var invalid = onlineRowInvalid(row);
+                    if (invalid) row.selected = false;
+                    var rowElement = input.closest('tr');
+                    rowElement.className = invalid ? 'online-import-invalid' : row.warnings.length ? 'online-import-warning' : '';
+                    rowElement.querySelector('[data-online-status]').textContent = invalid ? '待修正' : row.warnings.length ? '需核对' : '正常';
+                    var check = rowElement.querySelector('[data-online-check]');
+                    check.disabled = invalid; check.checked = row.selected;
+                    updateOnlineImportCount();
+                };
+            });
+            updateOnlineImportCount();
+        }
+
+        function setOnlineImportBusy(busy) {
+            onlineImportBusy = busy;
+            ['online-order-file', 'online-order-owner', 'online-order-preview', 'online-order-clear'].forEach(function (id) { $(id).disabled = busy; });
+        }
+
+        function clearOnlineImport() {
+            onlineImportRevision++;
+            onlineImportRows = []; onlineImportPage = 0; onlineImportMessage = '';
+            $('online-order-file').value = '';
+            $('import-result').className = 'empty-state';
+            $('import-result').innerHTML = '<div><strong>等待上传订单</strong><span>未确认的预览已清空。</span></div>';
+        }
+
+        async function previewOnlineImport() {
+            if (onlineImportBusy) return;
+            var file = $('online-order-file').files[0];
+            var owner = $('online-order-owner').value.trim();
+            var format = file && file.name.split('.').pop().toLowerCase();
+            if (!file || !owner || ['csv', 'xlsx'].indexOf(format) < 0 || !file.size || file.size > 10 * 1024 * 1024) {
+                renderError('import-result', '请选择订单文件', new Error('支持不超过 10 MB 的 CSV/XLSX，请填写归属人。')); return;
+            }
+            var revision = ++onlineImportRevision;
+            onlineImportRows = []; onlineImportPage = 0;
+            setOnlineImportBusy(true);
+            $('import-result').className = 'empty-state';
+            $('import-result').textContent = '正在解析文件，尚未保存购买记录……';
+            try {
+                var content = await new Promise(function (resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+                    reader.onerror = function () { reject(new Error('文件读取失败，请重新选择。')); };
+                    reader.readAsDataURL(file);
+                });
+                // 不传文件名、路径或 MIME 元数据；原内容不会进入后续确认请求。
+                var data = await postJson('/api/tools/online-order-import/preview', {contentBase64: content, format: format, owner: owner});
+                content = null;
+                if (revision !== onlineImportRevision) return;
+                onlineImportRows = (data.rows || []).map(function (row) { row.warnings = Array.isArray(row.warnings) ? row.warnings : []; return row; });
+                onlineImportMessage = '预览尚未入库。已跳过 ' + (data.skippedRows || 0) + ' 条非成功交易或空白续行。';
+            } catch (error) {
+                onlineImportMessage = error.message || '文件解析失败，请检查文件格式。';
+            } finally {
+                $('online-order-file').value = '';
+                setOnlineImportBusy(false);
+                if (revision === onlineImportRevision) renderOnlineImport();
+            }
+        }
+
+        async function saveOnlineImport() {
+            if (onlineImportBusy) return;
+            var selected = onlineImportRows.filter(function (row) { return row.selected; });
+            if (!selected.length || selected.some(onlineRowInvalid)) return;
+            setOnlineImportBusy(true); renderOnlineImport();
+            try {
+                // 只提交勾选的白名单字段，不发送原始文件内容、原文或文件元数据。
+                var data = await postJson('/api/tools/online-order-import/commit', selected.map(function (row) {
+                    return { rowNumber: row.rowNumber, productName: row.productName, normalizedName: row.normalizedName, sku: row.sku,
+                        amount: row.amount, quantity: row.quantity, unit: row.unit, platform: row.platform,
+                        purchaseDate: row.purchaseDate, owner: row.owner, shopName: row.shopName, selected: true, warnings: [] };
+                }));
+                var saved = data.savedRows || [], duplicates = data.duplicateRows || [];
+                onlineImportRows = onlineImportRows.filter(function (row) { return saved.indexOf(row.rowNumber) < 0; });
+                onlineImportRows.forEach(function (row) {
+                    if (duplicates.indexOf(row.rowNumber) >= 0) { row.selected = false; row.warnings = ['保存前查重发现重复，本次未重复入库']; }
+                });
+                onlineImportMessage = '已保存 ' + saved.length + ' 条，查重跳过 ' + duplicates.length + ' 条。剩余未保存的记录仍可修改。';
+            } catch (error) { onlineImportMessage = error.message || '保存结果未确认，请核对购买记录后重试，系统会再次查重。'; }
+            finally { setOnlineImportBusy(false); renderOnlineImport(); }
+        }
+
         Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
             tab.addEventListener('click', function () {
                 Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (item) { item.classList.remove('active'); });
                 Array.prototype.forEach.call(document.querySelectorAll('.module'), function (item) { item.classList.remove('active'); });
                 tab.classList.add('active');
                 $(tab.dataset.target).classList.add('active');
+                updateModuleHelp(tab.dataset.target);
                 if (tab.dataset.target === 'normalization' || tab.dataset.target === 'compare') loadNormalizationLibrary(false);
             });
         });
@@ -2397,8 +3130,20 @@
             normalizationLibraryLoaded = false;
             loadNormalizationLibrary(true);
         });
+        $('normalization-library-category-filter').addEventListener('change', renderNormalizationLibraryTable);
 
         $('normalization-action').addEventListener('change', updateNormalizationFormMode);
+        $('online-order-preview').addEventListener('click', previewOnlineImport);
+        $('online-order-clear').addEventListener('click', function () { if (!onlineImportBusy) clearOnlineImport(); });
+        $('online-order-file').addEventListener('change', function () {
+            if (onlineImportBusy) return;
+            onlineImportRevision++; onlineImportRows = []; onlineImportPage = 0;
+            $('import-result').className = 'empty-state';
+            $('import-result').textContent = '已选择新文件，请点击“解析并预览”；未提交的旧预览已清空。';
+        });
+        $('normalization-category-select').addEventListener('change', handleNormalizationCategoryChange);
+        $('normalized-name-input').addEventListener('input', handleNormalizedRuleNameInput);
+        $('normalization-rule-code').addEventListener('input', handleRuleCodeInput);
         $('normalization-rule-select').addEventListener('change', function () {
             fillRuleForm(findRuleByNormalizedName(this.value));
         });
@@ -2406,6 +3151,7 @@
         if ($('compare-rule-select')) {
             $('compare-rule-select').addEventListener('change', handleCompareRuleSelectChange);
         }
+        $('compare-category-select').addEventListener('change', handleCompareCategoryChange);
 
         if ($('compare-product-name')) {
             $('compare-product-name').addEventListener('input', applyCompareRuleBinding);
@@ -2415,6 +3161,8 @@
         if ($('record-image-file')) {
             $('record-image-file').addEventListener('change', updateRecordImageFileInfo);
         }
+
+        bindRecordImageTransferEvents();
 
         if ($('open-record-image-preview')) {
             $('open-record-image-preview').addEventListener('click', openRecordImagePreview);
@@ -2451,9 +3199,11 @@
         if ($('record-normalized-name')) {
             $('record-normalized-name').addEventListener('input', function () {
                 syncRecordRuleSelectionByName(false);
+                updateParsedOrderNote();
             });
             $('record-normalized-name').addEventListener('change', function () {
                 syncRecordRuleSelectionByName(false);
+                updateParsedOrderNote();
             });
         }
 
@@ -2477,6 +3227,7 @@
             $('record-purchase-quantity').addEventListener('change', updateRecordTotalQuantity);
         }
 
+        updateModuleHelp('compare');
         updateNormalizationFormMode();
         updateCompareTotalQuantity();
         updateRecordTotalQuantity();
