@@ -8,14 +8,16 @@ import java.util.*;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/15 09:30:00
+ * @Date: 2026/11/17 14:13:20
  * @Description: 价格决策规则，根据历史单价样本构造价格基准线，并在 compare 模式下判断当前价格水平。
  */
 @Component
 public class PriceDecisionPolicy {
 
+    /** 比价阈值策略，不允许为空，沿用现有业务口径。 */
     private final PriceDecisionThresholds thresholds;
 
+    /** 创建价格判断策略，阈值由现有配置注入，不访问数据库或修改样本。 */
     public PriceDecisionPolicy(PriceDecisionThresholds thresholds) {
         this.thresholds = thresholds;
     }
@@ -290,6 +292,14 @@ public class PriceDecisionPolicy {
                 .toList();
     }
 
+    /**
+     * 将原始购买记录转换为只读价格证据，归属人随该记录返回，不从查询条件猜测。
+     *
+     * @param record 已选出的代表性历史购买记录，不允许为空
+     * @param role 证据类型，不允许为空
+     * @param baselineUnit 该批可比记录的标准计量单位
+     * @return 保留原始归属人的证据响应，不修改记录或统计结果
+     */
     private PriceDecisionResult.SourceRecord sourceRecord(PurchaseRecord record, String role, String baselineUnit) {
         return new PriceDecisionResult.SourceRecord(
                 record.id(),
@@ -302,7 +312,8 @@ public class PriceDecisionPolicy {
                 record.unitPrice(),
                 baselineUnit,
                 record.quantity(),
-                record.unit()
+                record.unit(),
+                record.owner()
         );
     }
 

@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/15 09:30:00
+ * @Date: 2026/11/17 14:13:20
  * @Description: 价格分析结果对象，统一承载历史基准线查询和当前价格比较两种响应结构。
  */
 @Schema(description = "价格判断结果")
@@ -448,20 +448,54 @@ public class PriceDecisionResult {
         }
     }
 
+    /**
+     * @Author: jtxw
+     * @Date: 2026/11/17 14:13:20
+     * @Description: 价格证据响应明细，保留代表性购买记录的价格、单位与原始归属人，不推测缺失身份
+     */
     @Schema(description = "代表性历史记录")
     public static class SourceRecord {
+        /** 历史购买记录主键，允许为空，仅用于详情追踪。 */
         private final Long recordId;
+        /** 证据类型，例如历史最低或最近购买，不允许为空。 */
         private final String role;
+        /** 购买日期，格式 yyyy-MM-dd，历史数据缺失时允许为空。 */
         private final String purchaseDate;
+        /** 历史原始商品名称，允许为空，展示时可折叠但保留完整值。 */
         private final String productName;
+        /** 历史购买总金额，单位元，允许为空。 */
         private final Double price;
+        /** 参与单价计算的计量总量，允许为空，不表示购买件数。 */
         private final Double quantity;
+        /** 计量总量的单位，允许为空，与当前基线单位一致。 */
         private final String unit;
+        /** 历史标准单位单价，单位元/计量单位，允许为空。 */
         private final Double unitPrice;
+        /** 历史单价的计量单位，允许为空。 */
         private final String unitPriceUnit;
+        /** 原始记录计量总量，允许为空，用于核对原始证据。 */
         private final Double originalQuantity;
+        /** 原始记录计量单位，允许为空。 */
         private final String originalUnit;
 
+        /** 历史记录归属人，来自 purchase_records.owner；缺失时为 null，不回填为当前操作者。 */
+        private final String owner;
+
+        /**
+         * 创建不带归属人的兼容响应；旧调用方保留原有语义，归属人默认为 null。
+         *
+         * @param recordId 历史记录主键，允许为空
+         * @param role 证据类型，不允许为空
+         * @param purchaseDate 购买日期，允许为空
+         * @param productName 原始商品名称，允许为空
+         * @param price 购买总金额，单位元，允许为空
+         * @param quantity 标准计量总量，允许为空
+         * @param unit 标准计量单位，允许为空
+         * @param unitPrice 标准单位单价，允许为空
+         * @param unitPriceUnit 单价对应计量单位，允许为空
+         * @param originalQuantity 原始计量总量，允许为空
+         * @param originalUnit 原始计量单位，允许为空
+         */
         public SourceRecord(Long recordId,
                             String role,
                             String purchaseDate,
@@ -473,6 +507,30 @@ public class PriceDecisionResult {
                             String unitPriceUnit,
                             Double originalQuantity,
                             String originalUnit) {
+            this(recordId, role, purchaseDate, productName, price, quantity, unit, unitPrice,
+                    unitPriceUnit, originalQuantity, originalUnit, null);
+        }
+
+        /**
+         * 创建包含原始归属人的价格证据响应，不查询或修改数据库。
+         *
+         * @param recordId 历史记录主键，允许为空
+         * @param role 证据类型，不允许为空
+         * @param purchaseDate 购买日期，允许为空
+         * @param productName 原始商品名称，允许为空
+         * @param price 购买总金额，单位元，允许为空
+         * @param quantity 标准计量总量，允许为空
+         * @param unit 标准计量单位，允许为空
+         * @param unitPrice 标准单位单价，允许为空
+         * @param unitPriceUnit 单价对应计量单位，允许为空
+         * @param originalQuantity 原始计量总量，允许为空
+         * @param originalUnit 原始计量单位，允许为空
+         * @param owner 原始记录归属人，缺失时为 null，不自动回填
+         */
+        public SourceRecord(Long recordId, String role, String purchaseDate, String productName,
+                            Double price, Double quantity, String unit, Double unitPrice,
+                            String unitPriceUnit, Double originalQuantity, String originalUnit, String owner) {
+            this.owner = owner;
             this.recordId = recordId;
             this.role = role;
             this.purchaseDate = purchaseDate;
@@ -484,6 +542,16 @@ public class PriceDecisionResult {
             this.unitPriceUnit = unitPriceUnit;
             this.originalQuantity = originalQuantity;
             this.originalUnit = originalUnit;
+        }
+
+        /** 返回原始归属人，缺失时返回 null。 */
+        public String owner() {
+            return owner;
+        }
+
+        /** 为 JSON 响应提供归属人字段，不填充不存在的身份。 */
+        public String getOwner() {
+            return owner;
         }
 
         public Long recordId() {
