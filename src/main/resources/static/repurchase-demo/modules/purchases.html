@@ -1,0 +1,21 @@
+<section id="search" class="module">
+    <div class="workspace">
+        <div class="panel">
+            <div class="panel-inner">
+                <div class="panel-title"><div><h2>购买记录</h2><p>查找家里之前买过的相关商品。</p></div></div>
+                <form id="search-form" class="form-grid">
+                    <label class="field-full">关键词 *<input name="keyword" required value="沐浴露" placeholder="例如：猫砂 / 舒肤佳 / 纸巾" autocomplete="off"></label>
+                    <label>归属人<input name="owner" placeholder="可不填" autocomplete="off"></label>
+                    <label>最多显示<input name="limit" type="number" min="1" max="50" value="20"></label>
+                    <label>开始日期<input name="fromDate" type="date"></label>
+                    <label>结束日期<input name="toDate" type="date"></label>
+                </form>
+                <div class="actions"><button class="btn btn-primary" data-submit="search" type="button">查找记录</button></div>
+                <div class="helper">适合确认历史买过什么，或者查看某类商品的价格来源。</div>
+            </div>
+        </div>
+        <div class="panel result-area">
+            <div id="search-result" class="empty-state"><div><strong>等待检索</strong><span>输入关键词后即可查看历史购买记录。</span></div></div>
+        </div>
+    </div>
+</section>

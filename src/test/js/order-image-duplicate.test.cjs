@@ -2,14 +2,13 @@
 
 // 执行真实页面渲染函数，验证提示含义及多商品切换，禁止用“填入”推断历史保存状态。
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '../../main/resources/static/repurchase-demo/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const bootstrap = script.indexOf("        Array.prototype.forEach.call(document.querySelectorAll('.tab')");
+const {loadHtml,loadScript} = require('./helpers/frontend-source.cjs');
+const html = loadHtml();
+const script = loadScript();
+const bootstrap = script.indexOf("/* frontend-test-bootstrap */");
 assert.ok(bootstrap > 0);
 const executable = script.slice(0, bootstrap) + '\nglobalThis.render = renderParseOrderImageResult;\n}());';
 

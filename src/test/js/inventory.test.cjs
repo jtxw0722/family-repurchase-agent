@@ -1,11 +1,9 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const vm = require('node:vm');
-const path = require('node:path');
-const root = path.resolve(__dirname, '../../main/resources/static/repurchase-demo');
-const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
-const source = fs.readFileSync(path.join(root,'inventory.js'),'utf8');
+const {loadHtml,loadInventoryScript} = require('./helpers/frontend-source.cjs');
+const html = loadHtml();
+const source = loadInventoryScript();
 const flush = () => new Promise(resolve => setImmediate(resolve));
 // 库存预估虽使用POST，但仅查询；写入安全断言单独排除该只读接口。
 const inventoryWrites = app => app.calls.filter(call => call.body && !call.url.endsWith('/initialization/estimate'));

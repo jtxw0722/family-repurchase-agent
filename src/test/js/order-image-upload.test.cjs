@@ -2,15 +2,14 @@
 
 // 直接运行页面的图片输入逻辑，模拟浏览器文件、拖拽、粘贴及异步响应，无额外依赖或网络调用。
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '../../main/resources/static/repurchase-demo/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const {loadHtml,loadScript} = require('./helpers/frontend-source.cjs');
+const html = loadHtml();
+const script = loadScript();
 new vm.Script(script);
-const bootstrapStart = script.indexOf("        Array.prototype.forEach.call(document.querySelectorAll('.tab')");
+const bootstrapStart = script.indexOf("/* frontend-test-bootstrap */");
 assert.ok(bootstrapStart > 0);
 const testScript = script.slice(0, bootstrapStart) + `
     globalThis.ui = {

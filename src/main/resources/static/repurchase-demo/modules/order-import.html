@@ -1,0 +1,18 @@
+<section id="import" class="module">
+    <div class="workspace">
+        <div class="panel">
+            <div class="panel-inner">
+                <div class="panel-title"><div><h2>订单导入</h2><p>上传订单文件，核对并勾选需要保存的记录。</p></div></div>
+                <form id="import-form" class="form-grid">
+                    <label class="field-full">订单文件 *<input id="online-order-file" type="file" accept=".csv,.xlsx" required><span class="field-hint">支持含商品名称、型号款式、商品数量、实付金额等列的中文订单 CSV / XLSX，最大 10 MB、5000 行。只处理交易成功订单。</span></label>
+                    <label>归属人<input name="owner" id="online-order-owner" value="jtxw" required maxlength="80" autocomplete="off"></label>
+                </form>
+                <div class="actions"><button class="btn btn-primary" id="online-order-preview" type="button">解析并预览</button><button class="btn btn-secondary" id="online-order-clear" type="button">清空预览</button></div>
+                <div class="helper">原文件仅在本次请求内存中解析。只保存确认勾选后的商品数据，不保存原文件、原文件名、订单号、收货信息或物流信息。预览不调用外部模型，未勾选的记录不入库。</div>
+            </div>
+        </div>
+        <div class="panel result-area">
+            <div id="import-result" class="empty-state"><div><strong>等待上传订单</strong><span>解析后可修改商品信息，再勾选需要保存的记录。</span></div></div>
+        </div>
+    </div>
+</section>

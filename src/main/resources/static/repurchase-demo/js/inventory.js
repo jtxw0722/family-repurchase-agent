@@ -1,5 +1,5 @@
 /* 独立库存交互；操作失败保留幂等键，网络重试不重复入库。 */
-(function () {
+export function initInventory() {
     'use strict';
     const $ = id => document.getElementById('inventory-' + id);
     const units = ['kg','g','L','ml','袋','包','瓶','盒','件','个','卷','抽','片','支','罐','桶','套'];
@@ -431,4 +431,4 @@
         referenceUnit:$('source').value === 'MANUAL' ? $('reference-unit').value : null,
         referenceDays:$('source').value === 'MANUAL' ? $('reference-days').value || null : null, leadDays:Number($('lead').value)
     })); };
-}());
+}

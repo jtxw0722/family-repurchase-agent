@@ -1,0 +1,101 @@
+<section id="normalization" class="module">
+    <div class="panel library-panel">
+        <div class="library-head">
+            <div><h2>当前规则库</h2><p>这里展示已经启用或停用的归一化规则、关键词和历史样本数量。点击列表中的规则，可带入到“更新规则”。</p></div>
+            <div class="library-controls">
+                <select id="normalization-library-category-filter" class="library-category-filter" aria-label="品类筛选">
+                    <option value="">全部品类</option>
+                </select>
+                <button id="refresh-normalization-library" class="btn btn-secondary btn-small" type="button">刷新列表</button>
+            </div>
+        </div>
+        <div class="library-body">
+            <div id="normalization-library-list" class="library-state"><div><strong>等待加载</strong><span>打开规则管理后会自动加载规则库。</span></div></div>
+        </div>
+    </div>
+
+    <div class="workspace">
+        <div class="panel">
+            <div class="panel-inner">
+                <div class="panel-title"><div><h2>规则管理</h2><p>维护商品归一化规则和关键词。</p></div></div>
+                <form id="normalization-form" class="form-grid">
+                    <label class="field-full">操作类型
+                        <select name="action" id="normalization-action">
+                            <option value="create_rule">新增规则</option>
+                            <option value="update_rule">更新规则</option>
+                            <option value="apply_rule_to_records">补齐历史样本</option>
+                            <option value="recheck_rule_records">重算历史样本</option>
+                        </select>
+                    </label>
+                    <label id="normalization-rule-code-field">规则编码 *
+                        <input name="ruleCode" id="normalization-rule-code" value="body_wash" required autocomplete="off">
+                        <span class="field-hint" id="rule-code-generation-hint" aria-live="polite">填写归一化名称后自动生成英文编码，手动修改后保留。</span>
+                        <span class="field-hint hidden" id="rule-code-readonly-hint">更新、补齐或重算历史样本时，规则编码来自当前规则库，不允许修改。</span>
+                    </label>
+                    <label id="normalized-name-input-field">归一化名称
+                        <input name="normalizedName" id="normalized-name-input" value="沐浴露" autocomplete="off">
+                    </label>
+                    <label id="normalized-name-select-field" class="hidden">归一化名称
+                        <select name="normalizedName" id="normalization-rule-select" disabled>
+                            <option value="">请先加载规则库</option>
+                        </select>
+                        <span class="field-hint">选择已有规则后，下面的规则信息会自动带出。</span>
+                    </label>
+                    <div id="normalization-category-field" class="field-label">
+                        <label for="normalization-category-select">品类</label>
+                        <select id="normalization-category-select">
+                            <option value="">手动输入品类</option>
+                        </select>
+                        <input name="category" id="normalization-category" placeholder="请输入品类" aria-label="手动输入品类" autocomplete="off">
+                    </div>
+                    <label id="normalization-standard-unit-field">标准单位<input name="standardUnit" id="normalization-standard-unit" value="L" autocomplete="off"></label>
+                    <label id="normalization-unit-family-field">单位族
+                        <select name="unitFamily" id="normalization-unit-family">
+                            <option value="volume">体积</option>
+                            <option value="weight">重量</option>
+                            <option value="count">计数</option>
+                            <option value="mass">重量</option>
+                        </select>
+                    </label>
+                    <label id="normalization-priority-field">优先级<input name="priority" id="normalization-priority" type="number" value="80"></label>
+                    <label id="normalization-enabled-field" class="inline-check"><input name="enabled" id="normalization-enabled" type="checkbox" checked>规则启用</label>
+                    <label id="normalization-keywords-field" class="field-full">初始正向关键词
+                        <textarea name="keywords" id="normalization-keywords">沐浴露,沐浴乳</textarea>
+                        <span class="field-hint">多个关键词请以英文逗号隔开，例如：沐浴露,沐浴乳</span>
+                    </label>
+                    <label id="normalization-exclude-keywords-field" class="field-full">初始排除关键词
+                        <textarea name="excludeKeywords" id="normalization-exclude-keywords" placeholder="可不填；多个关键词请以英文逗号隔开"></textarea>
+                    </label>
+                    <div id="apply-rule-fields" class="field-full hidden">
+                        <div class="reason-card">
+                            <h4 id="history-operation-title">历史样本处理范围</h4>
+                            <p id="history-operation-description" class="field-hint">选择规则和范围后，可以先预览再决定是否写入历史记录。</p>
+                            <div class="form-grid">
+                                <label>归属人
+                                    <input name="owner" id="apply-owner" placeholder="可不填，默认全家庭" autocomplete="off">
+                                    <span class="field-hint">为空时不按归属人筛选。</span>
+                                </label>
+                                <label>导入批次
+                                    <input name="batchId" id="apply-batch-id" type="number" min="1" step="1" placeholder="可不填">
+                                    <span class="field-hint">为空时不按批次筛选。</span>
+                                </label>
+                                <label>最多扫描
+                                    <input name="limit" id="apply-limit" type="number" min="1" max="500" step="1" value="100">
+                                    <span class="field-hint">最大 500 条。</span>
+                                </label>
+                                <label class="inline-check"><input name="dryRun" id="apply-dry-run" type="checkbox" checked>只预览，不写入历史记录</label>
+                                <label id="apply-only-legacy-field" class="inline-check"><input name="onlyLegacyFallback" id="apply-only-legacy" type="checkbox" checked>只处理未命中明确规则的记录</label>
+                                <label id="apply-only-excluded-field" class="inline-check"><input name="onlyExcluded" id="apply-only-excluded" type="checkbox" checked>只处理当前已排除的记录</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div class="actions"><button id="normalization-submit-button" class="btn btn-primary" data-submit="normalization" type="button">保存规则</button></div>
+                <div class="helper">规则会影响后续购买记录的归一化和价格基准线统计。</div>
+            </div>
+        </div>
+        <div class="panel result-area">
+            <div id="normalization-result" class="empty-state"><div><strong>等待操作</strong><span>选择操作类型并保存后查看结果。</span></div></div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,78 @@
+<section id="record" class="module">
+    <div class="workspace">
+        <div class="panel">
+            <div class="panel-inner">
+                <div class="panel-title"><div><h2>记录样本</h2><p>把确认过的购买信息加入历史样本。</p></div></div>
+                <div id="record-image-drop-zone" class="image-parser record-upload" tabindex="0" role="group" aria-label="订单截图，可拖入图片或粘贴">
+                    <div class="record-upload-row">
+                        <label class="file-picker" for="record-image-file">
+                            <span class="file-picker-button">选择截图</span>
+                            <span id="record-image-file-name" class="file-picker-name">可拖放或粘贴</span>
+                        </label>
+                        <input id="record-image-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+                        <button id="parse-order-image-button" class="btn btn-secondary btn-small" type="button">解析</button>
+                    </div>
+                    <details id="record-image-preview" class="image-preview hidden">
+                        <summary>截图预览</summary>
+                        <div class="image-preview-head">
+                            <div id="record-image-preview-title" class="image-preview-title">订单截图预览</div>
+                            <button id="open-record-image-preview" class="btn btn-secondary btn-small" type="button">查看大图</button>
+                        </div>
+                        <div class="image-preview-viewport"><img id="record-image-preview-img" src="" alt="订单截图预览" draggable="false"></div>
+                    </details>
+                    <div id="record-image-file-info" class="helper" aria-live="polite">支持 PNG、JPG、WEBP</div>
+                </div>
+                <form id="record-form" class="form-grid">
+                    <label>归属人<input name="owner" value="jtxw" autocomplete="off"></label>
+                    <label>购买日期<input name="purchaseDate" type="date"></label>
+                    <details id="record-name-editor" class="field-full" open>
+                        <summary>商品名称：<span id="record-name-summary"></span><span class="compare-name-edit">修改</span></summary>
+                        <label>商品名称 *<input name="productName" required placeholder="输入订单中的商品名称" autocomplete="off"></label>
+                    </details>
+                    <label class="field-full">标准商品
+                        <select id="record-normalized-rule-select"><option value="">手动填写标准名称</option></select>
+                    </label>
+                    <label id="record-normalized-name-field" class="field-full">标准名称
+                        <input name="normalizedName" id="record-normalized-name" placeholder="例如：沐浴露" autocomplete="off">
+                    </label>
+                    <label>购买价格 *<input name="price" required type="number" min="0" step="0.01" placeholder="例如：19.99"></label>
+                    <label>购买数量 *<input name="purchaseQuantity" id="record-purchase-quantity" required type="number" min="0" step="any" value="1"></label>
+                    <label>每件含量<input name="skuQuantity" id="record-sku-quantity" type="number" min="0" step="any" placeholder="例如：780"></label>
+                    <label>计量单位 *<input name="unit" required placeholder="例如：ml / kg / 片" autocomplete="off"></label>
+                    <div class="record-total-line field-full" aria-live="polite">合计 <output id="record-total-quantity">1</output> <span id="record-total-unit"></span></div>
+                    <details id="record-more" class="field-full record-more">
+                        <summary>更多信息 <span id="record-more-summary">原始规格、平台、店铺、备注</span></summary>
+                        <div class="form-grid">
+                            <label class="field-full">原始规格 / SKU<input name="sku" placeholder="例如：780ml*2瓶 / 100抽*8包" autocomplete="off"></label>
+                            <label class="field-full">平台<select name="platform"><option value="manual">手动录入</option><option value="taobao">淘宝 / 天猫</option><option value="jd">京东</option><option value="pdd">拼多多</option><option value="douyin">抖音</option><option value="offline">线下</option></select></label>
+                            <label class="field-full">店铺<input name="shopName" placeholder="可不填" autocomplete="off"></label>
+                            <label class="field-full">备注<textarea name="note" placeholder="可记录赠品、满减或组合装说明"></textarea></label>
+                        </div>
+                    </details>
+                    <textarea name="sourceText" id="record-source-text" class="hidden"></textarea>
+                    <label class="inline-check field-full"><input id="record-receive-inventory" type="checkbox" checked>本次真实购买同时入库（历史补录请取消）</label>
+                    <label id="record-price-confirmation" class="inline-check field-full hidden"><input id="record-confirm-out-of-range" name="confirmOutOfRange" type="checkbox" disabled>已核对价格、数量和单位，确认接受本次异常价格</label>
+                </form>
+                <div class="actions record-actions">
+                    <button class="btn btn-secondary" data-submit="record" data-dry-run="true" type="button">先试算</button>
+                    <button class="btn btn-primary" data-submit="record" data-dry-run="false" type="button">确认录入</button>
+                </div>
+            </div>
+        </div>
+        <div class="panel result-area">
+            <div id="record-result" class="empty-state"><div><strong>还没有录入结果</strong><span>点击“先试算”或“确认录入”后查看处理结果。</span></div></div>
+        </div>
+    </div>
+</section>
+
+<div id="record-image-modal" class="preview-modal hidden" aria-hidden="true">
+    <div class="preview-modal-panel" role="dialog" aria-modal="true" aria-labelledby="record-image-modal-title">
+        <div class="preview-modal-head">
+            <div id="record-image-modal-title" class="preview-modal-title">订单截图预览</div>
+            <button id="close-record-image-preview" class="btn btn-secondary btn-small" type="button">关闭</button>
+        </div>
+        <div class="preview-modal-body">
+            <img id="record-image-modal-img" src="" alt="订单截图大图预览">
+        </div>
+    </div>
+</div>

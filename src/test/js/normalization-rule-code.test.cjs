@@ -2,14 +2,13 @@
 
 // 使用真实页面脚本测试异步表单交互；无需浏览器、额外 npm 依赖或外部模型。
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '../../main/resources/static/repurchase-demo/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const bootstrapStart = script.indexOf("        Array.prototype.forEach.call(document.querySelectorAll('.tab')");
+const {loadHtml,loadScript} = require('./helpers/frontend-source.cjs');
+const html = loadHtml();
+const script = loadScript();
+const bootstrapStart = script.indexOf("/* frontend-test-bootstrap */");
 assert.ok(bootstrapStart > 0, '页面事件绑定入口必须存在');
 const testableScript = script.slice(0, bootstrapStart) + `
     globalThis.ui = {

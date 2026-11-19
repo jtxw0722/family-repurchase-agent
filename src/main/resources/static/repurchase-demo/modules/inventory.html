@@ -1,0 +1,85 @@
+<section id="inventory" class="module">
+    <div class="panel" style="padding:24px">
+        <div class="panel-title"><div><h2>库存复购</h2><p>独立记录家中现有数量，无需价格。自动结果是购买历史估算，并非实际消耗记录。</p></div></div>
+        <p id="inventory-message" role="status" aria-live="polite" hidden></p>
+        <div class="actions">
+            <button id="inventory-initialize" class="btn btn-primary" type="button" aria-expanded="false" aria-controls="inventory-init-panel">同步购买记录</button>
+            <label class="inventory-sort-control">耗尽日期排序<select id="inventory-sort-order"><option value="asc">升序（最近耗尽优先）</option><option value="desc">降序（最晚耗尽优先）</option></select></label>
+        </div>
+        <div id="inventory-init-panel" class="inventory-init-panel" hidden>
+            <h3>购买记录同步库存</h3>
+            <p>默认查询近一年，可调整起止日期。勾选后按商品合并已同步记录，从购买日起连续估算消耗；未勾选的不会入库，已同步的不会重复增加。人工确认过的当前库存作为新基准。</p>
+            <form id="inventory-init-query-form" class="form-grid">
+                <label>开始日期<input id="inventory-init-start" type="date" required></label>
+                <label>结束日期<input id="inventory-init-end" type="date" required></label>
+                <button class="btn btn-secondary" type="submit">查询同步记录</button>
+            </form>
+            <form id="inventory-init-filter-form" class="form-grid">
+                <label>品类<select id="inventory-init-category"><option value="">全部品类</option></select></label>
+                <label>归一化名称<select id="inventory-init-name"><option value="">全部归一化名称</option></select></label>
+                <button class="btn btn-secondary" type="submit">筛选记录</button>
+            </form>
+            <div class="actions">
+                <button id="inventory-init-select-visible" class="btn btn-secondary" type="button">勾选当前可同步记录</button>
+                <button id="inventory-init-clear" class="btn btn-secondary" type="button">清空全部勾选</button>
+            </div>
+            <p id="inventory-init-summary" role="status" aria-live="polite">请先查询记录，默认不勾选任何记录。</p>
+            <div id="inventory-init-rows" class="table-wrap inventory-init-records"></div>
+            <div id="inventory-init-estimate" class="inventory-init-estimate" hidden>
+                <strong>同步后库存预估</strong>
+                <p id="inventory-init-estimate-message" class="helper" role="status" aria-live="polite"></p>
+                <div id="inventory-init-estimate-rows" class="table-wrap"></div>
+                <button id="inventory-init-estimate-retry" class="btn btn-secondary btn-small" type="button" hidden>重试估算</button>
+            </div>
+            <div class="actions"><button id="inventory-init-confirm" class="btn btn-primary" type="button" disabled>同步已勾选记录（0）</button></div>
+        </div>
+        <div id="inventory-list" class="table-wrap"></div>
+        <details id="inventory-manual-entry" class="inventory-manual">
+            <summary><h3>手动入库</h3></summary>
+            <div class="inventory-manual-content">
+                <form id="inventory-create-form" class="form-grid">
+                    <label><span class="inventory-field-title">归一化商品<span class="inventory-field-meta" data-required="true">必填</span></span><select id="inventory-product" required></select></label>
+                    <label><span class="inventory-field-title">入库数量<span class="inventory-field-meta" data-required="true">必填</span></span><input id="inventory-create-quantity" type="number" min="0" step="any" required placeholder="例如 2"></label>
+                    <label><span class="inventory-field-title">单位<span class="inventory-field-meta" data-required="true">必填</span></span><select id="inventory-create-unit" required></select></label>
+                    <label><span class="inventory-field-title">单包装规格<span id="inventory-create-specification-state" class="inventory-field-meta" data-required="false">按需填写</span></span><input id="inventory-create-specification" placeholder="例如 4.5kg/袋" aria-describedby="inventory-create-specification-help"><small id="inventory-create-specification-help">直接使用kg/g、L/ml等标准单位时可不填。</small></label>
+                    <label>入库日期（可选）<input id="inventory-create-date" type="date"></label>
+                    <label>备注（可选）<input id="inventory-create-note" maxlength="500"></label>
+                    <button class="btn btn-primary" type="submit">确认手动入库</button>
+                </form>
+                <p class="helper">同一商品已有档案时合并入库，没有时自动创建。入库日期默认今天，填写过去日期时从该日估算消耗；确认当前库存后，更早的入库已被该数量覆盖。包装转重量须填写明确单包装规格。</p>
+            </div>
+        </details>
+        <div id="inventory-detail" hidden>
+            <div class="inventory-detail-top">
+                <div>
+                    <div class="inventory-detail-heading">
+                        <h3 id="inventory-detail-title"></h3>
+                        <button id="inventory-reset" class="btn btn-secondary btn-small" type="button" title="将当前库存设为0，让该商品已同步的购买记录可以重新同步">重置库存</button>
+                    </div>
+                    <p id="inventory-auto"></p>
+                </div>
+                <form id="inventory-quantity-form" class="form-grid inventory-quantity-form">
+                    <label>确认当前数量<input id="inventory-quantity" type="number" min="0" step="any"></label>
+                    <label>单位<select id="inventory-unit"></select></label>
+                    <button class="btn btn-secondary" type="submit">修改库存</button>
+                </form>
+            </div>
+            <p id="inventory-timeline-note" class="inventory-timeline-note" role="status" hidden></p>
+            <details id="inventory-warning-details" class="inventory-warning-details" hidden>
+                <summary>不兼容明细</summary>
+                <p id="inventory-warning" hidden></p>
+            </details>
+            <form id="inventory-settings-form" class="form-grid inventory-detail-grid">
+                <label>消耗周期计算方式<select id="inventory-source"><option value="AUTO">系统自动估算</option><option value="MANUAL">用户自定义</option></select></label>
+                <label>提前提醒天数<input id="inventory-lead" type="number" min="0" max="3650" value="3"></label>
+                <button class="btn btn-primary btn-small inventory-settings-save" type="submit">保存周期设置</button>
+                <div id="inventory-manual-fields" class="form-grid field-full inventory-settings-pair" hidden>
+                    <label>通常购买数量<input id="inventory-reference-quantity" type="number" min="0" step="any" placeholder="4.5"></label>
+                    <label>数量单位<select id="inventory-reference-unit"></select></label>
+                    <label>通常能用多少天<input id="inventory-reference-days" type="number" min="0" step="any" placeholder="14"></label>
+                </div>
+            </form>
+            <p class="helper">自然日按 Asia/Shanghai 计算，完整可用天数向下取整。库存与日均消耗按商品规则的标准单位展示，数量同步换算；“袋”与重量不混用。</p>
+        </div>
+    </div>
+</section>

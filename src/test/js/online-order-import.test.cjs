@@ -2,13 +2,12 @@
 
 // 运行真实页面脚本，覆盖上传元数据隔离、白名单确认、失败重试和预览生命周期；原生 DOM 编辑另有浏览器验证。
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
-const html = fs.readFileSync(path.join(__dirname, '../../main/resources/static/repurchase-demo/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const bootstrap = script.indexOf("        Array.prototype.forEach.call(document.querySelectorAll('.tab')");
+const {loadHtml,loadScript} = require('./helpers/frontend-source.cjs');
+const html = loadHtml();
+const script = loadScript();
+const bootstrap = script.indexOf("/* frontend-test-bootstrap */");
 assert.ok(bootstrap > 0);
 const executable = script.slice(0, bootstrap) + `
 globalThis.ui = {previewOnlineImport,saveOnlineImport,clearOnlineImport,onlineRowInvalid,renderOnlineImport,

@@ -1,0 +1,34 @@
+// 跨模块共享的页面内存状态，不写入浏览器持久存储。
+export const state = {
+    // 完整规则库供规则维护、比价及样本选择共用；列表筛选不改这个数据源。
+    normalizationLibraryLoaded: false,
+    // 订单文件仅保留本次预览的白名单数据；翻页、忙状态和版本用于隔离异步响应。
+    onlineImportRows: [],
+    onlineImportPage: 0,
+    onlineImportRevision: 0,
+    onlineImportBusy: false,
+    onlineImportMessage: '',
+    normalizationLibraryItems: [],
+    // 编码建议的防抖及请求版本，避免迟到响应覆盖手动输入或已选规则。
+    ruleCodeEditedManually: false,
+    ruleCodeGenerationTimer: null,
+    ruleCodeGenerationRevision: 0,
+    ruleCodeGenerationPromise: null,
+    generatedRuleCodeName: '',
+    generatedRuleCodeExists: false,
+    normalizationFormAction: 'create_rule',
+    // 截图识别、选中候选和样本复核共用的数据；确认前仅在当前页面内存保留。
+    lastParseOrderImageResult: null,
+    lastParsedPurchaseCandidates: [],
+    activeParsedPurchaseCandidate: null,
+    lastGeneratedOcrNote: '',
+    recordPreviewFingerprint: '',
+    recordSubmissionBusy: false,
+    lastSelectedImageDataUrl: null,
+    lastSelectedImageFileName: '',
+    // 文件选择、拖放和粘贴共用同一图片状态；版本号防止旧读取结果回写。
+    selectedOrderImageFile: null,
+    selectedOrderImageReadPromise: null,
+    orderImageSelectionRevision: 0,
+    orderImageDragDepth: 0,
+};
