@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -19,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/20 12:39:31
- * @Description: OpenAI-compatible 通用供应商适配器测试，验证文本图片请求、响应元数据和安全异常
+ * @Date: 2026/11/19 17:52:58
+ * @Description: OpenAI-compatible 基础设施适配器测试，验证请求形状、同步响应和流式回复边界
  */
 class OpenAiCompatibleLlmClientTest {
     /**
@@ -28,6 +29,7 @@ class OpenAiCompatibleLlmClientTest {
      */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 测试生成调试文件的隔离目录，由 JUnit 注入。 */
     @TempDir
     Path tempDir;
 
@@ -67,6 +69,63 @@ class OpenAiCompatibleLlmClientTest {
 
             assertThat(requestBody.get()).contains("\"content\":\"plain user text\"")
                     .doesNotContain("image_url");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 验证流式请求开启 stream、保留正文空格并忽略供应商推理内容。
+     *
+     * @throws Exception 本地模拟供应商启动失败时抛出
+     */
+    @Test
+    void shouldStreamOnlyVisibleContentInOrder() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        String response = """
+                : ping
+                data: {"choices":[{"delta":{"reasoning_content":"internal"}}]}
+
+                data: {"choices":[
+                data: {"delta":{"content":"### 价格"}}]}
+
+                data: {"choices":[{"delta":{"content":" "}}]}
+
+                data: {"choices":[{"delta":{"content":"依据"},"finish_reason":"stop"}]}
+
+                """;
+        HttpServer server = server(response, 200, requestBody);
+        server.start();
+        try {
+            List<String> deltas = new ArrayList<>();
+
+            client(server, "safe-key", 2).streamChat(imageRequest(), deltas::add);
+
+            assertThat(deltas).containsExactly("### 价格", " ", "依据");
+            assertThat(objectMapper.readTree(requestBody.get()).path("stream").asBoolean()).isTrue();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 上游断开时保留已交付正文，并向下游明确报告回复提前结束。
+     *
+     * @throws Exception 本地模拟供应商启动失败时抛出
+     */
+    @Test
+    void shouldReportInterruptedStreamAfterDeliveringPartialText() throws Exception {
+        HttpServer server = server("""
+                data: {"choices":[{"delta":{"content":"部分正文"}}]}
+
+                """, 200, new AtomicReference<>());
+        server.start();
+        try {
+            List<String> deltas = new ArrayList<>();
+            assertThatThrownBy(() -> client(server, "safe-key", 2).streamChat(imageRequest(), deltas::add))
+                    .isInstanceOf(LlmException.class)
+                    .hasMessageContaining("提前结束");
+            assertThat(deltas).containsExactly("部分正文");
         } finally {
             server.stop(0);
         }

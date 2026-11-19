@@ -4,11 +4,12 @@ import { initRecord, updateRecordMoreSummary, updateRecordNormalizedField, updat
 import { initNormalization, loadNormalizationLibrary, updateNormalizationFormMode } from "./normalization.js";
 import { initOrderImport } from "./order-import.js";
 import { initActions } from "./actions.js";
-import { initNavigation, updateModuleHelp } from "./navigation.js";
+import { initNavigation } from "./navigation.js?v=20261119-assistant-home";
 import { initInventory } from "./inventory.js";
+import { initAssistant } from "./assistant.js?v=20261119-stream";
 
-export const modules = ["compare", "purchases", "record", "normalization", "order-import", "inventory"];
-const VERSION = '20261119-modules';
+export const modules = ["compare", "purchases", "record", "normalization", "order-import", "inventory", "assistant"];
+const VERSION = '20261119-assistant-home';
 
 export async function loadModule(name) {
     const response = await fetch(new URL('../modules/' + name + '.html?v=' + VERSION, import.meta.url));
@@ -28,15 +29,15 @@ export async function bootstrap() {
     initActions();
     initNavigation();
     initInventory();
+    initAssistant();
     updateCompareNameEditor();
-    updateModuleHelp('compare');
     updateNormalizationFormMode();
     updateCompareTotalQuantity();
     updateRecordTotalQuantity();
     updateRecordNormalizedField();
     updateRecordMoreSummary();
     loadNormalizationLibrary(false);
-    document.querySelectorAll('.tab').forEach(button => { button.disabled = false; });
+    document.querySelectorAll('.tab, #home-button').forEach(button => { button.disabled = false; });
     document.getElementById('modules-root').removeAttribute('aria-busy');
 }
 

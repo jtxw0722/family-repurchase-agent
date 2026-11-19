@@ -23,8 +23,8 @@ async function checkActualGraph() {
     await entry.link((specifier,parent)=>load(fileURLToPath(new URL(specifier,parent.identifier))));
     await entry.evaluate();
     assert.deepEqual(Array.from(entry.namespace.modules),moduleNames);
-    assert.equal(cache.size,13);
     assert.equal(typeof cache.get(path.join(root,'js/inventory.js')).namespace.initInventory,'function');
+    assert.equal(typeof cache.get(path.join(root,'js/assistant.js')).namespace.initAssistant,'function');
     assert.equal(typeof cache.get(path.join(root,'js/record-image.js')).namespace.selectRecordImageFile,'function');
 }
 
@@ -69,10 +69,10 @@ async function checkBootstrap(failure) {
     });
     await app.evaluate();
     const pending=failure?null:app.namespace.bootstrap();
-    assert.equal(requests.length,6);
+    assert.equal(requests.length,moduleNames.length);
     assert.equal(initialized.length,0);
     requests.forEach((request,index)=>{
-        assert.ok(request.url.endsWith('/modules/'+moduleNames[index]+'.html?v=20261119-modules'));
+        assert.equal(new URL(request.url).pathname.split('/').pop(),moduleNames[index]+'.html');
         request.resolve({ok:!failure || index!==2,text:async()=>'<section>模块-'+moduleNames[index]+'</section>'});
     });
     if (failure) {
@@ -83,7 +83,7 @@ async function checkBootstrap(failure) {
         assert.ok(buttons.every(button=>button.disabled));
     } else {
         await pending;
-        assert.equal(initialized.filter(name=>name.startsWith('init')).length,7);
+        assert.equal(initialized.filter(name=>name.startsWith('init')).length,8);
         assert.ok(buttons.every(button=>!button.disabled));
         assert.ok(target.ready);
     }

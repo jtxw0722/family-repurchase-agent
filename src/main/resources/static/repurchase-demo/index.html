@@ -7,21 +7,21 @@
     <link rel="icon" type="image/png" href="/repurchase-demo/favicon.png?v=1">
     <link rel="shortcut icon" type="image/png" href="/repurchase-demo/favicon.png?v=1">
     <link rel="apple-touch-icon" href="/repurchase-demo/favicon.png?v=1">
-    <link rel="stylesheet" href="css/styles.css?v=20261119-modules">
+    <link rel="stylesheet" href="css/styles.css?v=20261119-assistant-home">
 </head>
 <body>
 <div class="app">
     <header class="product-header glass">
         <div class="brand-row">
-            <div class="brand">
-                <span class="brand-mark"><img src="/repurchase-demo/favicon.png?v=1" alt="家庭复购品价格分析"></span>
-                <div>
+            <button id="home-button" class="brand brand-home" type="button" aria-label="返回复购助手首页" aria-controls="assistant" disabled>
+                <span class="brand-mark"><img src="/repurchase-demo/favicon.png?v=1" alt=""></span>
+                <span>
                     <span class="brand-name">家庭复购品价格分析</span>
-                    <p class="brand-description">适合记录与对比纸巾、洗衣液、沐浴露等经常复购的家庭用品。</p>
-                </div>
-            </div>
+                    <span class="brand-description">适合记录与对比纸巾、洗衣液、沐浴露等经常复购的家庭用品。</span>
+                </span>
+            </button>
             <nav class="tabs" aria-label="功能切换">
-                <button class="tab active" data-target="compare" type="button" disabled>💰 价格比价</button>
+                <button class="tab" data-target="compare" type="button" disabled>💰 价格比价</button>
                 <button class="tab" data-target="search" type="button" disabled>🔎 购买记录</button>
                 <button class="tab" data-target="record" type="button" disabled>📝 记录样本</button>
                 <button class="tab" data-target="normalization" type="button" disabled>🧩 规则管理</button>
@@ -37,6 +37,6 @@
     </main>
 </div>
 
-<script type="module" src="js/app.js?v=20261119-modules"></script>
+<script type="module" src="js/app.js?v=20261119-assistant-home"></script>
 </body>
 </html>

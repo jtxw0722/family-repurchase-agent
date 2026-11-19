@@ -1,0 +1,26 @@
+<section id="assistant" class="module" aria-labelledby="assistant-title">
+    <div class="panel panel-inner assistant-panel">
+        <div class="panel-title">
+            <div>
+                <h2 id="assistant-title">复购助手</h2>
+                <p id="assistant-description">可以咨询复购和商品规格。家庭库存与历史订单请在对应页面查询。</p>
+            </div>
+            <button id="assistant-minimize" class="btn btn-secondary assistant-minimize" type="button"
+                    aria-controls="assistant" aria-label="收起复购助手" hidden>收起</button>
+        </div>
+        <ol id="assistant-messages" class="assistant-messages" role="log" aria-label="聊天记录"></ol>
+        <form id="assistant-form" class="assistant-form">
+            <label for="assistant-message">消息</label>
+            <textarea id="assistant-message" maxlength="2000" rows="2" required
+                      aria-describedby="assistant-privacy" placeholder="例如：买纸巾时怎么比较不同规格的价格？"></textarea>
+            <div class="assistant-controls">
+                <p id="assistant-privacy">消息及近期对话会发送到服务端配置的模型。</p>
+                <button id="assistant-send" class="btn btn-primary" type="submit">发送</button>
+            </div>
+            <p id="assistant-status" class="assistant-status" role="status"></p>
+        </form>
+    </div>
+</section>
+<button id="assistant-launcher" class="assistant-launcher" type="button"
+        aria-controls="assistant" aria-expanded="false" aria-label="展开复购助手"
+        title="展开复购助手" hidden><span aria-hidden="true">💬</span></button>

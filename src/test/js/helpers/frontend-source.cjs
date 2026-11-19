@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../../main/resources/static/repurchase-demo');
-const moduleNames = ['compare','purchases','record','normalization','order-import','inventory'];
+const moduleNames = ['compare','purchases','record','normalization','order-import','inventory','assistant'];
 const scriptNames = ['config','state','shared','compare','purchases','record-image','record','normalization','order-import','actions','navigation'];
 const read = file => fs.readFileSync(path.join(root,file),'utf8');
 

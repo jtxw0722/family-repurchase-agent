@@ -8,15 +8,20 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.function.Consumer;
 
 /**
  * @Author: jtxw
- * @Date: 2026/06/20 12:39:31
- * @Description: OpenAI-compatible 通用供应商适配器，负责构造文本或图片聊天请求并提取首个模型消息
+ * @Date: 2026/11/19 17:52:58
+ * @Description: OpenAI-compatible 基础设施适配器，负责构造对话请求并解析完整回复或流式文本片段
  */
 public class OpenAiCompatibleLlmClient implements LlmClient {
     /**
@@ -31,6 +36,9 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
      * 未配置有效超时时使用的默认秒数。
      */
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
+
+    /** 供应商用于标记流式响应已正常结束的 SSE 数据值。 */
+    private static final String STREAM_DONE = "[DONE]";
 
     /**
      * 不包含业务配置的供应商连接设置。
@@ -78,7 +86,7 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
     @Override
     public LlmResponse chat(LlmRequest request) {
         validate(request);
-        String requestJson = buildRequestJson(request);
+        String requestJson = buildRequestJson(request, false);
         long startNanos = System.nanoTime();
         try {
             String responseJson = execute(requestJson);
@@ -90,6 +98,81 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
             long durationMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
             debugLogger.logFailure(request, exception, durationMillis);
             throw exception;
+        }
+    }
+
+    /** 流式调用逐段读取供应商 SSE，只交付可见回复文本。 */
+    @Override
+    public void streamChat(LlmRequest request, Consumer<String> onDelta) {
+        validate(request);
+        String requestJson = buildRequestJson(request, true);
+        try {
+            prepareRequest(requestJson, MediaType.TEXT_EVENT_STREAM).exchange((httpRequest, httpResponse) -> {
+                if (!httpResponse.getStatusCode().is2xxSuccessful()) {
+                    throw new LlmException("LLM HTTP 响应异常：" + httpResponse.getStatusCode().value());
+                }
+                readStream(httpResponse.getBody(), onDelta);
+                return null;
+            });
+        } catch (LlmException | UncheckedIOException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new LlmException("LLM 流式请求失败：" + rootExceptionName(exception));
+        }
+    }
+
+    /**
+     * 按 SSE 事件边界读取正文；只有收到结束信号且有可见文本时才正常返回。
+     *
+     * @param body 供应商的 UTF-8 事件流，非空
+     * @param onDelta 按到达顺序接收正文的回调
+     * @throws IOException 读取事件流或解析事件 JSON 失败时抛出
+     * @throws LlmException 上游返回错误、提前关闭或未生成正文时抛出
+     */
+    private void readStream(InputStream body, Consumer<String> onDelta) throws IOException {
+        boolean finished = false;
+        boolean hasText = false;
+        StringBuilder eventData = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            while (!finished) {
+                String line = reader.readLine();
+                if (line != null && !line.isEmpty()) {
+                    if (line.startsWith("data:")) {
+                        if (!eventData.isEmpty()) {
+                            eventData.append('\n');
+                        }
+                        String payload = line.substring("data:".length());
+                        eventData.append(payload.startsWith(" ") ? payload.substring(1) : payload);
+                    }
+                    continue;
+                }
+                if (!eventData.isEmpty()) {
+                    String payload = eventData.toString().trim();
+                    eventData.setLength(0);
+                    if (STREAM_DONE.equals(payload)) {
+                        finished = true;
+                    } else if (!payload.isEmpty()) {
+                        JsonNode event = objectMapper.readTree(payload);
+                        if (event.hasNonNull("error")) {
+                            throw new LlmException("LLM 流式响应返回错误");
+                        }
+                        // 角色、推理和用量事件可能没有 content，空格和换行仍属于正文。
+                        JsonNode choice = event.path("choices").path(0);
+                        String delta = choice.path("delta").path("content").textValue();
+                        if (delta != null && !delta.isEmpty()) {
+                            onDelta.accept(delta);
+                            hasText = hasText || !delta.isBlank();
+                        }
+                        finished = choice.hasNonNull("finish_reason");
+                    }
+                }
+                if (line == null) {
+                    break;
+                }
+            }
+        }
+        if (!finished || !hasText) {
+            throw new LlmException(finished ? "LLM 流式响应正文为空" : "LLM 流式响应提前结束");
         }
     }
 
@@ -110,14 +193,18 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
     }
 
     /**
-     * 构造 OpenAI-compatible 请求；有图片时使用 content array，无图片时使用普通文本。
+     * 构造 OpenAI-compatible 请求，历史问答按原有角色写入，有图片时使用多模态消息。
      *
      * @param request 通用聊天请求
+     * @param streaming 是否请求供应商逐段生成回复
      * @return JSON 请求体，不应写入日志或异常
      */
-    private String buildRequestJson(LlmRequest request) {
+    private String buildRequestJson(LlmRequest request, boolean streaming) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", request.model().trim());
+        if (streaming) {
+            root.put("stream", true);
+        }
         root.put("temperature", request.temperature() == null ? 0D : request.temperature());
         if (request.maxTokens() != null) {
             root.put("max_tokens", request.maxTokens());
@@ -125,6 +212,10 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         ArrayNode messages = root.putArray("messages");
         if (request.systemPrompt() != null && !request.systemPrompt().isBlank()) {
             messages.addObject().put("role", "system").put("content", request.systemPrompt());
+        }
+        for (LlmRequest.ChatTurn turn : request.history()) {
+            messages.addObject().put("role", "user").put("content", turn.question());
+            messages.addObject().put("role", "assistant").put("content", turn.answer());
         }
         ObjectNode userMessage = messages.addObject().put("role", "user");
         if (request.images().isEmpty()) {
@@ -151,19 +242,8 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
      * @return 非空 HTTP 响应正文
      */
     private String execute(String requestJson) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        int timeoutSeconds = settings.timeoutSeconds() > 0
-                ? settings.timeoutSeconds() : DEFAULT_TIMEOUT_SECONDS;
-        requestFactory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
-        requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
-        RestClient restClient = RestClient.builder().requestFactory(requestFactory).build();
         try {
-            return restClient.post()
-                    .uri(endpointUrl())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + settings.apiKey())
-                    .body(requestJson)
+            return prepareRequest(requestJson, MediaType.APPLICATION_JSON)
                     .exchange((httpRequest, httpResponse) -> {
                         byte[] responseBytes = httpResponse.getBody().readAllBytes();
                         if (!httpResponse.getStatusCode().is2xxSuccessful()) {
@@ -180,6 +260,27 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         } catch (RuntimeException exception) {
             throw new LlmException("LLM 请求失败：" + rootExceptionName(exception));
         }
+    }
+
+    /**
+     * 为同步或流式对话组装带有相同鉴权和超时设置的 HTTP 请求。
+     *
+     * @param requestJson 请求 JSON，非空且不写入日志
+     * @param responseType 预期响应类型
+     * @return 可直接发送的请求，构建时不发起网络调用
+     */
+    private RestClient.RequestBodySpec prepareRequest(String requestJson, MediaType responseType) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        int timeoutSeconds = settings.timeoutSeconds() > 0
+                ? settings.timeoutSeconds() : DEFAULT_TIMEOUT_SECONDS;
+        requestFactory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
+        requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
+        return RestClient.builder().requestFactory(requestFactory).build().post()
+                .uri(endpointUrl())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(responseType)
+                .header("Authorization", "Bearer " + settings.apiKey())
+                .body(requestJson);
     }
 
     /**

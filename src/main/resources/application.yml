@@ -12,6 +12,12 @@ server:
 
 family-agent:
   reports-dir: ./reports
+  assistant:
+    # 网页聊天使用独立配置，三项为空时页面提示完成服务端配置。
+    base-url: ${FAMILY_AGENT_ASSISTANT_BASE_URL:}
+    model: ${FAMILY_AGENT_ASSISTANT_MODEL:}
+    api-key: ${FAMILY_AGENT_ASSISTANT_API_KEY:}
+    timeout-seconds: 30
   llm:
     # 是否生成统一 LLM debug dump 文件，默认关闭；开启后 parse_order_image 和 normalization-rule-suggestions 都会写入
     debug-log-enabled: true

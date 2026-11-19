@@ -143,6 +143,12 @@ OpenAPI：
 http://localhost:8080/swagger-ui.html
 ```
 
+### 网页复购助手
+
+在服务端环境变量或工作目录下的 `.env` 中填写 `FAMILY_AGENT_ASSISTANT_BASE_URL`、`FAMILY_AGENT_ASSISTANT_MODEL` 和 `FAMILY_AGENT_ASSISTANT_API_KEY`，重启应用后打开 `http://localhost:8080/repurchase-demo/index.html` 即可进入复购助手首页。切换到其他功能页后，可以通过右下角的浮球展开或收起同一个会话；点击顶部品牌区可返回首页。Base URL 填写模型服务的基础地址，应用会拼接 `/chat/completions`。
+
+网页通过 `POST /api/assistant/chat/stream` 提交问题和最近四轮问答，服务端使用模型的 Chat Completions 流式接口，网页逐段显示 Markdown 回复。对话在当前页面内保留。家庭库存、历史比价和购买记录在各自的功能页查询。
+
 ---
 
 ## REST 示例
