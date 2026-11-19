@@ -2,6 +2,7 @@ package com.jtxw.familyagent.infrastructure.persistence;
 
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
+import com.jtxw.familyagent.domain.model.PriceOverviewItem;
 import com.jtxw.familyagent.domain.policy.ProductRule;
 import com.jtxw.familyagent.domain.policy.UnitFamily;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,7 +19,7 @@ import java.util.Optional;
 
 /**
  * @Author: jtxw
- * @Date: 2026/11/11 13:20:37
+ * @Date: 2026/11/19 19:39:30
  * @Description: 归一化规则仓储，负责读取和维护 SQLite 商品规则、关键词及有效历史样本统计
  */
 @Repository
@@ -31,6 +32,18 @@ public class NormalizationRuleRepository {
      * 负向排除关键词类型，命中后仅排除当前规则。
      */
     private static final String MATCH_TYPE_EXCLUDE = "exclude";
+
+    /** 规则库价格统计的有效样本过滤条件，查询中购买记录的别名固定为 p。 */
+    private static final String EFFECTIVE_PRICE_SAMPLE = """
+            p.decision = 'include'
+            AND p.is_duplicate = 0
+            AND p.dedupe_status = 'unique'
+            AND p.unit_price IS NOT NULL
+            AND p.total_amount > 0
+            """;
+
+    /** 偶数样本的两个中间单价使用算术平均，除数固定为二。 */
+    private static final BigDecimal MEDIAN_DIVISOR = BigDecimal.valueOf(2);
 
     /**
      * SQLite 访问模板，用于读取归一化规则和动态样本统计。
@@ -100,6 +113,45 @@ public class NormalizationRuleRepository {
                     rs.getString("source"),
                     medianEffectiveUnitPrice(normalizedName, rs.getString("standard_unit"))
             );
+        });
+    }
+
+    /**
+     * 批量查询所有规则的首页单价摘要，避免对每个商品单独查询三项价格。
+     *
+     * @return 每个归一化商品一条结果，无可比样本时保留商品行
+     */
+    public List<PriceOverviewItem> listPriceOverview() {
+        // 以规则标准单位筛选可比样本，时间相同以较新的入库主键判定最近一笔。
+        return jdbcTemplate.query("""
+                WITH ranked_prices AS (
+                    SELECT r.id AS rule_id, p.unit_price, datetime(p.order_time) AS purchase_time,
+                           ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY p.unit_price) AS price_rank,
+                           COUNT(*) OVER (PARTITION BY r.id) AS sample_count,
+                           ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY datetime(p.order_time) DESC, p.id DESC) AS recent_rank
+                    FROM normalization_rules r
+                    JOIN purchase_records p ON p.normalized_name = r.normalized_name
+                    WHERE %s
+                      AND LOWER(TRIM(p.unit)) = NULLIF(LOWER(TRIM(r.standard_unit)), '')
+                      AND COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'CNY') = 'CNY'
+                )
+                SELECT r.normalized_name, r.category, r.standard_unit,
+                       MIN(p.unit_price) AS minimum_price,
+                       MAX(CASE WHEN p.price_rank = (p.sample_count + 1) / 2 THEN p.unit_price END) AS lower_middle,
+                       MAX(CASE WHEN p.price_rank = (p.sample_count + 2) / 2 THEN p.unit_price END) AS upper_middle,
+                       MAX(CASE WHEN p.recent_rank = 1 AND p.purchase_time IS NOT NULL THEN p.unit_price END) AS latest_price,
+                       MAX(CASE WHEN p.recent_rank = 1 THEN date(p.purchase_time) END) AS latest_date
+                FROM normalization_rules r LEFT JOIN ranked_prices p ON p.rule_id = r.id
+                GROUP BY r.id
+                ORDER BY COALESCE(r.category, ''), r.priority DESC, r.id
+                """.formatted(EFFECTIVE_PRICE_SAMPLE), (rs, rowNum) -> {
+            // 在 Java 中用十进制数求中位，避免 SQL 浮点平均产生尾差。
+            BigDecimal lower = rs.getBigDecimal("lower_middle");
+            BigDecimal median = lower == null ? null
+                    : lower.add(rs.getBigDecimal("upper_middle")).divide(MEDIAN_DIVISOR);
+            return new PriceOverviewItem(rs.getString("normalized_name"), rs.getString("category"),
+                    rs.getString("standard_unit"), rs.getBigDecimal("minimum_price"), median,
+                    rs.getBigDecimal("latest_price"), rs.getString("latest_date"));
         });
     }
 
@@ -442,14 +494,9 @@ public class NormalizationRuleRepository {
      */
     private int countEffectiveSamples(String normalizedName) {
         Integer count = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*) FROM purchase_records
-                WHERE normalized_name = ?
-                  AND decision = 'include'
-                  AND is_duplicate = 0
-                  AND dedupe_status = 'unique'
-                  AND unit_price IS NOT NULL
-                  AND total_amount > 0
-                """, Integer.class, normalizedName);
+                SELECT COUNT(*) FROM purchase_records p
+                WHERE normalized_name = ? AND %s
+                """.formatted(EFFECTIVE_PRICE_SAMPLE), Integer.class, normalizedName);
         return count == null ? 0 : count;
     }
 
@@ -470,18 +517,15 @@ public class NormalizationRuleRepository {
                     SELECT unit_price,
                            ROW_NUMBER() OVER (ORDER BY unit_price) AS price_rank,
                            COUNT(*) OVER () AS sample_count
-                    FROM purchase_records
+                    FROM purchase_records p
                     WHERE normalized_name = ?
-                      AND decision = 'include'
-                      AND is_duplicate = 0
-                      AND dedupe_status = 'unique'
-                      AND unit_price IS NOT NULL
-                      AND total_amount > 0
+                      AND %s
                       AND LOWER(TRIM(unit)) = LOWER(TRIM(?))
                 )
                 SELECT unit_price FROM ranked_prices
                 WHERE price_rank IN ((sample_count + 1) / 2, (sample_count + 2) / 2)
-                """, (rs, rowNum) -> rs.getBigDecimal("unit_price"), normalizedName, standardUnit);
+                """.formatted(EFFECTIVE_PRICE_SAMPLE),
+                (rs, rowNum) -> rs.getBigDecimal("unit_price"), normalizedName, standardUnit);
         if (middlePrices.isEmpty()) {
             return null;
         }

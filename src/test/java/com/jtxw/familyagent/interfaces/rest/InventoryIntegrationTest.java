@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * @Author: jtxw
- * @Date: 2026/11/18 22:20:17
+ * @Date: 2026/11/19 19:39:30
  * @Description: 隔离SQLite与完整REST集成测试，验证库存事务幂等、每商品参数、动态提醒和价格数据隔离
  */
 @SpringBootTest(properties={"spring.config.import=optional:classpath:inventory-test-no-env.properties", "family-agent.normalization.llm.enabled=false", "family-agent.parse-order-image.model.enabled=false", "family-agent.parse-order-image.local-ocr.enabled=false"})
@@ -128,6 +128,36 @@ class InventoryIntegrationTest {
         assertThat(action(id,"set",Map.of("quantity","1","unit","kg")).get("status").asText()).isEqualTo("立即补货");
         getJson(""); getJson("");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM replenishment_predictions",Integer.class)).isEqualTo(1);
+    }
+
+    /**
+     * 验证首页按现有提醒分组、排除已延后的商品，读取过程不落盘库存预测。
+     *
+     * @throws Exception 模拟请求或响应解析失败时抛出
+     */
+    @Test
+    void dashboardGroupsAlertsWithoutRefreshingStoredPredictions() throws Exception {
+        create(90001, "0", "kg");
+        long litter = create(90002, "5", "kg").get("id").asLong();
+        action(litter, "settings", Map.of("source", "MANUAL", "referenceQuantity", "1",
+                "referenceUnit", "kg", "referenceDays", "1", "leadDays", 3));
+        var savedPredictions = jdbc.queryForList("SELECT * FROM replenishment_predictions ORDER BY inventory_item_id");
+        var savedRates = jdbc.queryForList("SELECT * FROM inventory_consumption_rates ORDER BY inventory_item_id, effective_date");
+
+        var alerts = getJson("/replenishment-overview");
+        assertThat(alerts.size()).isEqualTo(2);
+        assertThat(alerts.get(0).get("normalizedName").asText()).isEqualTo("测试猫粮");
+        assertThat(alerts.get(0).get("immediate").asBoolean()).isTrue();
+        assertThat(alerts.get(1).get("normalizedName").asText()).isEqualTo("测试猫砂");
+        assertThat(alerts.get(1).get("immediate").asBoolean()).isFalse();
+        assertThat(alerts.get(1).get("remainingDays").asInt()).isEqualTo(5);
+        assertThat(jdbc.queryForList("SELECT * FROM replenishment_predictions ORDER BY inventory_item_id"))
+                .isEqualTo(savedPredictions);
+        assertThat(jdbc.queryForList("SELECT * FROM inventory_consumption_rates ORDER BY inventory_item_id, effective_date"))
+                .isEqualTo(savedRates);
+
+        action(litter, "snooze", Map.of("snoozeDays", 3));
+        assertThat(getJson("/replenishment-overview").size()).isEqualTo(1);
     }
 
     /** 同一商品手动入库自动创建或累加；使用标准重量单位且完全不写购买和关联表。 */

@@ -2,7 +2,7 @@
 import { applyCompareRuleBinding, populateCompareCategoryOptions, populateCompareRuleOptions } from "./compare.js";
 import { RULE_CODE_DEBOUNCE_MS, endpoints } from "./config.js";
 import { populateRecordRuleOptions, syncRecordRuleSelectionByName } from "./record.js";
-import { $, compact, display, firstValue, formValues, formatDecision, formatEnabled, formatLibraryMedian, formatQuantity, formatUnitFamily, formatUnitPrice, get, getJson, htmlEscape, isEmptyValue, joinKeywords, metric, normalizeUnitFamily, optionalNumber, optionalText, postJson, renderTable, splitKeywords } from "./shared.js";
+import { $, compact, display, firstValue, formValues, formatDecision, formatEnabled, formatQuantity, formatUnitFamily, formatUnitPrice, get, getJson, htmlEscape, isEmptyValue, joinKeywords, metric, normalizeUnitFamily, optionalNumber, optionalText, postJson, renderTable, splitKeywords } from "./shared.js";
 import { state } from "./state.js";
 
 export function buildNormalizationPayload() {
@@ -94,7 +94,6 @@ export function renderNormalizationLibraryTable() {
     target.innerHTML = renderTable([
         { key: 'ruleCode', label: '规则编码' },
         { key: 'normalizedName', label: '归一化名称' },
-        { key: 'medianUnitPrice', label: '中位数', formatter: formatLibraryMedian },
         { key: 'category', label: '品类' },
         { key: 'standardUnit', label: '标准单位' },
         { key: 'unitFamily', label: '单位族', formatter: formatUnitFamily },

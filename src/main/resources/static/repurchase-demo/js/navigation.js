@@ -1,5 +1,6 @@
 // 导航与模块说明。
 import { MODULE_HELP_TEXT } from "./config.js";
+import { loadHomeDashboards } from "./dashboard.js";
 import { loadNormalizationLibrary } from "./normalization.js";
 import { $ } from "./shared.js";
 
@@ -49,6 +50,7 @@ export function initNavigation() {
         if (isHome) {
             homeButton.setAttribute('aria-current', 'page');
             setAssistantExpanded(false);
+            loadHomeDashboards();
         } else {
             homeButton.removeAttribute('aria-current');
         }

@@ -213,6 +213,66 @@ main { margin-top: 18px; }
 .module.active { display: block; }
 
 .assistant-panel { max-width: 820px; margin-inline: auto; }
+#assistant.active .assistant-home-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+}
+.assistant-home-layout .assistant-panel { width: 100%; }
+.assistant-dashboards { display: grid; gap: 18px; min-width: 0; }
+.assistant-floating .assistant-dashboards { display: none; }
+.dashboard-heading,
+.dashboard-price-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dashboard-heading { margin-bottom: 12px; }
+.dashboard-heading h2 { font-size: 21px; }
+.dashboard-price-controls { margin-bottom: 12px; }
+.dashboard-price-controls p { margin: 0; color: var(--muted); font-size: 13px; }
+.dashboard-price-controls select { width: auto; max-width: 55%; min-height: 34px; padding: 6px 10px; }
+.dashboard-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+}
+.dashboard-price-table { min-width: 320px; font-variant-numeric: tabular-nums; }
+.dashboard-price-table thead th { position: sticky; top: 0; z-index: 1; background: #f3f5ff; }
+.dashboard-price-table th, .dashboard-price-table td { padding: 8px 9px; }
+.dashboard-price-table tbody th { min-width: 108px; text-align: start; white-space: normal; }
+.dashboard-price-table small,
+.dashboard-alert-list small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.dashboard-price-table tbody tr:last-child > * { border-bottom: 0; }
+.dashboard-feedback { margin: 0; padding: 10px 12px; color: var(--muted); font-size: 13px; }
+.dashboard-alert-group + .dashboard-alert-group { margin-top: 14px; }
+.dashboard-alert-group h3 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+    padding: 7px 10px;
+    border-radius: 9px;
+    font-size: 13px;
+}
+.dashboard-alert-now h3 { color: var(--red); background: var(--red-soft); }
+.dashboard-alert-soon h3 { color: var(--amber); background: var(--amber-soft); }
+.dashboard-alert-list { max-height: 180px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.dashboard-alert-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.dashboard-alert-list li:last-child { border-bottom: 0; }
+.dashboard-alert-date { flex: none; text-align: end; }
+
+@media (max-width: 960px) {
+    #assistant.active .assistant-home-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
 .assistant-launcher {
     position: fixed;
     right: calc(18px + env(safe-area-inset-right, 0px));
@@ -686,9 +746,8 @@ td.center { text-align: center; }
 .library-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .library-category-filter { width: 160px; min-height: 36px; padding: 8px 12px; font-size: 12px; }
 .library-body { min-width: 0; }
-/* 仅加粗规则库中的归一化名称与中位数数据，保留其他列表的原有样式。 */
-#normalization-library-list tbody td:nth-child(2),
-#normalization-library-list tbody td:nth-child(3) { font-weight: 800; }
+/* 突出规则库中的归一化名称。 */
+#normalization-library-list tbody td:nth-child(2) { font-weight: 800; }
 .rule-row { cursor: pointer; }
 .rule-row.selected { background: rgba(100, 92, 245, .08); }
 .online-import-warning { background: var(--amber-soft); }

@@ -51,11 +51,6 @@ export function formatAmount(value) { return formatDecimal(value, 2); }
 
 export function formatUnitPrice(value) { return formatDecimal(value, 4); }
 
-export function formatLibraryMedian(value, row) {
-    if (isEmptyValue(value)) return '—';
-    return formatUnitPrice(value) + ' 元/' + row.standardUnit;
-}
-
 export function formatQuantity(value) {
     if (isEmptyValue(value)) return '—';
     var number = toFiniteNumber(value);

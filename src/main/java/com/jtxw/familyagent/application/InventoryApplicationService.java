@@ -1,5 +1,6 @@
 package com.jtxw.familyagent.application;
 
+import com.jtxw.familyagent.domain.model.ReplenishmentOverviewItem;
 import com.jtxw.familyagent.domain.policy.InventoryPolicy;
 import com.jtxw.familyagent.domain.policy.InventoryPolicy.Purchase;
 import com.jtxw.familyagent.infrastructure.persistence.InventoryRepository;
@@ -12,7 +13,7 @@ import java.util.*;
 
 /**
  * @Author: jtxw
- * @Date: 2026/11/18 22:20:17
+ * @Date: 2026/11/19 19:39:30
  * @Description: 独立库存应用服务，协调事务、幂等入库与重置、自动估算缓存、人工参数及查询时补货提醒
  */
 @Service
@@ -26,6 +27,14 @@ public class InventoryApplicationService {
     private static final int MAX_REMINDER_DAYS = 3650;
     /** 即将提醒窗口，单位自然日，固定3天。 */
     private static final int UPCOMING_REMINDER_DAYS = 3;
+    /** 提醒日期已到的补货状态。 */
+    private static final String REPLENISH_NOW = "立即补货";
+    /** 提醒日期在未来三天内的补货状态。 */
+    private static final String REPLENISH_SOON = "即将进入补货周期";
+    /** 预计耗尽日期已过的补货状态。 */
+    private static final String DEPLETION_OVERDUE = "已超过预计耗尽日期";
+    /** 数量确认为零且缺少有效预测时的补货状态。 */
+    private static final String OUT_OF_STOCK = "库存为零，请补货";
     /** 最近入库备注长度上限，单位字符，固定500。 */
     private static final int MAX_RECEIPT_NOTE_LENGTH = 500;
     /** 库存仓储，不允许为空。 */
@@ -49,6 +58,45 @@ public class InventoryApplicationService {
 
     /** @return 动态更新估算后的库存列表，提醒只计算不插入任务 */
     public List<Map<String, Object>> list() { return repository.ids().stream().map(this::detail).toList(); }
+
+    /**
+     * 只读计算首页补货看板。自动速度和时间线变化只在内存中模拟，避免打开首页写入库存缓存。
+     *
+     * @return 需要补货的商品，紧急商品优先，再按提醒日期排序；无提醒时返回空列表
+     */
+    @Transactional(readOnly = true)
+    public List<ReplenishmentOverviewItem> replenishmentOverview() {
+        return repository.ids().stream()
+                .map(this::replenishmentItem)
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(ReplenishmentOverviewItem::immediate).reversed()
+                        .thenComparing(ReplenishmentOverviewItem::reminderDate,
+                                Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(ReplenishmentOverviewItem::normalizedName))
+                .toList();
+    }
+
+    /**
+     * 按现有库存视图判定单个商品是否进入首页的补货分组。
+     *
+     * @param id 库存档案 ID
+     * @return 即时或临近提醒；未到窗口、已延后或资料不足时返回 null
+     */
+    private ReplenishmentOverviewItem replenishmentItem(long id) {
+        Map<String, Object> item = repository.find(id);
+        BigDecimal currentRate = "MANUAL".equals(item.get("effective_source")) ? rate(item)
+                : automaticEstimate(number(item, "normalized_product_id"), (String) item.get("base_unit"),
+                        new ArrayList<>()).rate();
+        var result = view(item, timeline.preview(item, List.of(), currentRate), currentRate);
+        String status = (String) result.get("status");
+        return switch (status) {
+            case REPLENISH_NOW, REPLENISH_SOON, DEPLETION_OVERDUE, OUT_OF_STOCK ->
+                    new ReplenishmentOverviewItem((String) result.get("normalized_name"),
+                            !REPLENISH_SOON.equals(status), status, (BigDecimal) result.get("remaining_days"),
+                            (LocalDate) result.get("depletion_date"), (LocalDate) result.get("reminder_date"));
+            default -> null;
+        };
+    }
 
     /**
      * 只读模拟一个商品勾选历史后的今日库存，不创建档案、不更新速度缓存或建立关联。
@@ -80,7 +128,8 @@ public class InventoryApplicationService {
     /** @param id 库存ID @return 详情；查询时刷新自动缓存，人工参数不被覆盖 */
     public Map<String, Object> detail(long id) {
         refresh(id);
-        return view(repository.find(id));
+        Map<String, Object> item = repository.find(id);
+        return view(item, timeline.project(item), rate(item));
     }
 
     /**
@@ -262,12 +311,17 @@ public class InventoryApplicationService {
         return InventoryPolicy.estimate(valid, lowSampleThreshold);
     }
 
-    /** 构建动态预测，向下取整完整可用天数，提醒已到期时不创建过去任务。 */
-    private Map<String, Object> view(Map<String, Object> item) {
+    /**
+     * 构建详情与首页共用的动态库存视图，按完整天数和提醒日期判定状态。
+     *
+     * @param item 已保存的库存与配置快照
+     * @param projection 当前时间线投影
+     * @param rate 当前生效的消耗速度，单位为基础单位/天，未知时为空
+     * @return 附有余量和提醒状态的只读展示数据
+     */
+    private Map<String, Object> view(Map<String, Object> item, InventoryPolicy.Projection projection, BigDecimal rate) {
         Map<String, Object> result = new LinkedHashMap<>(item);
-        var projection = timeline.project(item);
         BigDecimal quantity = projection.quantity();
-        BigDecimal rate = rate(item);
         result.put("estimated_quantity", quantity);
         result.put("estimate_pending", projection.pending());
         result.put("received_quantity", projection.receivedQuantity());
@@ -283,10 +337,10 @@ public class InventoryApplicationService {
             result.put("remaining_days", InventoryPolicy.completeDays(quantity, rate));
             result.put("depletion_date", depletion);
             result.put("reminder_date", reminder);
-            result.put("status", depletion.isBefore(today()) ? "已超过预计耗尽日期" : !reminder.isAfter(today()) ? "立即补货" : !reminder.isAfter(today().plusDays(UPCOMING_REMINDER_DAYS)) ? "即将进入补货周期" : "暂时不需要");
+            result.put("status", depletion.isBefore(today()) ? DEPLETION_OVERDUE : !reminder.isAfter(today()) ? REPLENISH_NOW : !reminder.isAfter(today().plusDays(UPCOMING_REMINDER_DAYS)) ? REPLENISH_SOON : "暂时不需要");
             Object snoozed = item.get("snoozed_until");
             if (snoozed != null && date(snoozed).isAfter(today())) { result.put("status", "已延后提醒"); }
-        } else if (quantity != null && quantity.signum() == 0) { result.put("status", "库存为零，请补货"); }
+        } else if (quantity != null && quantity.signum() == 0) { result.put("status", OUT_OF_STOCK); }
         appendStandardDisplay(result, item);
         return result;
     }

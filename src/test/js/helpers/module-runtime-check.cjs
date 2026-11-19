@@ -83,7 +83,7 @@ async function checkBootstrap(failure) {
         assert.ok(buttons.every(button=>button.disabled));
     } else {
         await pending;
-        assert.equal(initialized.filter(name=>name.startsWith('init')).length,8);
+        assert.equal(initialized.filter(name=>name.startsWith('init')).length,9);
         assert.ok(buttons.every(button=>!button.disabled));
         assert.ok(target.ready);
     }

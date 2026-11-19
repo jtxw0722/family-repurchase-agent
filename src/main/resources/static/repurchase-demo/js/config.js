@@ -1,6 +1,8 @@
 // 页面接口及展示常量，不保存用户业务数据。
 export const endpoints = {
     compare: '/api/tools/compare-price',
+    dashboardPrices: '/api/dashboard/prices',
+    dashboardReplenishment: '/api/inventory/replenishment-overview',
     search: '/api/tools/purchase-records/search',
     record: '/api/inventory/record-sample',
     parseOrderImage: '/api/tools/parse-order-image',
@@ -36,11 +38,11 @@ export const MODULE_HELP_TEXT = {
         ]
     },
     normalization: {
-        description: '维护复购品品类，查看历史参考价格',
+        description: '维护商品归一化规则与匹配关键词',
         tips: [
             '新增规则，或点击已有规则，维护商品名称、品类和标准单位。',
             '用关键词匹配商品，用排除词避免误匹配。',
-            '可按品类筛选规则；中位数为历史参考单价，请结合单位和样本数量查看。'
+            '可按品类筛选规则，并查看各规则的有效样本数量。'
         ]
     },
     import: {

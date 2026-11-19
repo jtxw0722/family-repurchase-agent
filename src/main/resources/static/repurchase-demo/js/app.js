@@ -4,12 +4,13 @@ import { initRecord, updateRecordMoreSummary, updateRecordNormalizedField, updat
 import { initNormalization, loadNormalizationLibrary, updateNormalizationFormMode } from "./normalization.js";
 import { initOrderImport } from "./order-import.js";
 import { initActions } from "./actions.js";
-import { initNavigation } from "./navigation.js?v=20261119-assistant-home";
+import { initNavigation } from "./navigation.js?v=20261119-dashboards";
+import { initHomeDashboard } from "./dashboard.js";
 import { initInventory } from "./inventory.js";
 import { initAssistant } from "./assistant.js?v=20261119-stream";
 
 export const modules = ["compare", "purchases", "record", "normalization", "order-import", "inventory", "assistant"];
-const VERSION = '20261119-assistant-home';
+const VERSION = '20261119-dashboards';
 
 export async function loadModule(name) {
     const response = await fetch(new URL('../modules/' + name + '.html?v=' + VERSION, import.meta.url));
@@ -27,6 +28,7 @@ export async function bootstrap() {
     initNormalization();
     initOrderImport();
     initActions();
+    initHomeDashboard();
     initNavigation();
     initInventory();
     initAssistant();

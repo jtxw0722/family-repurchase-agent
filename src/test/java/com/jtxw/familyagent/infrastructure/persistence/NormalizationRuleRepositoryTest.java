@@ -2,6 +2,7 @@ package com.jtxw.familyagent.infrastructure.persistence;
 
 import com.jtxw.familyagent.common.ClockUtils;
 import com.jtxw.familyagent.domain.model.NormalizationLibraryItem;
+import com.jtxw.familyagent.domain.model.PriceOverviewItem;
 import com.jtxw.familyagent.domain.policy.ProductRule;
 import com.jtxw.familyagent.domain.policy.ProductRuleMatcher;
 import com.jtxw.familyagent.domain.policy.UnitFamily;
@@ -19,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @Author: jtxw
- * @Date: 2026/11/11 13:20:37
- * @Description: 归一化规则仓储测试，验证 SQLite 规则加载、关键词拆分、有效样本数量与单价中位数
+ * @Date: 2026/11/19 19:39:30
+ * @Description: 归一化规则仓储测试，验证 SQLite 规则加载、有效样本及首页价格摘要的统计口径
  */
 class NormalizationRuleRepositoryTest {
     /**
@@ -167,6 +168,38 @@ class NormalizationRuleRepositoryTest {
         insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 1.001D, 10.01D);
         insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 1.002D, 10.02D);
         assertThat(catLitterItem().medianUnitPrice()).isEqualByComparingTo("1.0015");
+    }
+
+    /**
+     * 验证首页批量聚合使用同单位人民币样本，且最近购买以日期和记录主键确定。
+     */
+    @Test
+    void shouldSummarizeComparablePricesAndRetainRulesWithoutSamples() {
+        insertPurchaseRecord(1L, "猫砂", "include", 0, "unique", 3.1D, 31D);
+        insertPurchaseRecord(2L, "猫砂", "include", 0, "unique", 5.5D, 55D);
+        insertPurchaseRecord(3L, "猫砂", "include", 0, "unique", 8.88D, 88.8D);
+        insertPurchaseRecord(4L, "猫砂", "include", 0, "unique", 9.99D, 99.9D);
+        insertPurchaseRecord(5L, "猫砂", "include", 0, "unique", 0.1D, 1D);
+        insertPurchaseRecord(6L, "猫砂", "include", 0, "unique", 0.1D, 1D);
+        insertPurchaseRecord(7L, "猫砂", "include", 1, "duplicate", 0.1D, 1D);
+        jdbcTemplate.update("UPDATE purchase_records SET order_time = '2026-11-16 12:00:00' WHERE id IN (2, 3)");
+        jdbcTemplate.update("UPDATE purchase_records SET order_time = '2026-11-18', unit = 'g' WHERE id = 5");
+        jdbcTemplate.update("UPDATE purchase_records SET order_time = '2026-11-18', currency = 'USD' WHERE id = 6");
+        jdbcTemplate.update("UPDATE purchase_records SET order_time = '2026-11-18' WHERE id = 7");
+        jdbcTemplate.update("UPDATE purchase_records SET unit = ' KG ' WHERE id = 3");
+
+        List<PriceOverviewItem> rows = repository.listPriceOverview();
+        assertThat(rows).filteredOn(row -> "猫砂".equals(row.normalizedName())).singleElement().satisfies(row -> {
+            assertThat(row.category()).isEqualTo("宠物用品");
+            assertThat(row.historicalMin()).isEqualByComparingTo("3.1");
+            assertThat(row.historicalMedian()).isEqualByComparingTo("7.19");
+            assertThat(row.latestUnitPrice()).isEqualByComparingTo("8.88");
+            assertThat(row.latestPurchaseDate()).isEqualTo("2026-11-16");
+        });
+        assertThat(rows).filteredOn(row -> "猫粮".equals(row.normalizedName())).singleElement().satisfies(row -> {
+            assertThat(row.historicalMin()).isNull();
+            assertThat(row.latestUnitPrice()).isNull();
+        });
     }
 
     /** 读取猫砂规则，复用真实 SQLite 查询路径验证列表展示值。 */
